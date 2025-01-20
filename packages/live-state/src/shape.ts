@@ -2,20 +2,56 @@ import { z, ZodType, ZodTypeAny } from "zod";
 
 export type Shape<T extends ZodType = ZodTypeAny> = T;
 
-export type Shapes<N extends string = string> = Record<N, Shape>;
+export type ShapeRecord = Record<string, Shape>;
 
-export type ShapeNames<T extends Shapes> = keyof T;
+export type ShapeNamesFromRecord<T extends ShapeRecord> = keyof T extends string
+  ? keyof T
+  : never;
 
 export type InferShape<T extends Shape> = z.infer<T>;
 
-export const number = z.object({
-  value: z.number(),
-  _metadata: z.object({
-    timestamp: z.string(),
-  }),
-});
+export const number = () =>
+  z.object({
+    value: z.number(),
+    _metadata: z.object({
+      timestamp: z.string(),
+    }),
+  });
 
-export type LiveNumber = z.infer<typeof number>;
+export type LiveNumber = z.infer<ReturnType<typeof number>>;
+
+export const string = () =>
+  z.object({
+    value: z.string(),
+    _metadata: z.object({
+      timestamp: z.string(),
+    }),
+  });
+
+export type LiveString = z.infer<ReturnType<typeof string>>;
+
+export const boolean = () =>
+  z.object({
+    value: z.boolean(),
+    _metadata: z.object({
+      timestamp: z.string(),
+    }),
+  });
+
+export type LiveBoolean = z.infer<ReturnType<typeof boolean>>;
+
+export type AtomicType =
+  | ReturnType<typeof boolean>
+  | ReturnType<typeof number>
+  | ReturnType<typeof string>;
+
+export const object = (obj: Record<string, AtomicType>) => z.object(obj);
+
+export type LiveObject<T extends Record<string, AtomicType>> = z.infer<
+  ReturnType<typeof object>
+>;
+
+export const array = <T extends ZodTypeAny>(arr: T) => z.array(arr);
 
 // type LiveTypeDef = {};
 

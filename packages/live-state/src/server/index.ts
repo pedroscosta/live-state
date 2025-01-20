@@ -1,7 +1,6 @@
 import ws from "ws";
-import { z, ZodType, ZodTypeAny } from "zod";
-import { clientMessageSchema, ServerMessage } from "../core/internals";
-import { InferShape, number, Shape, Shapes } from "../shape";
+import { z, ZodType } from "zod";
+import { ShapeNamesFromRecord, ShapeRecord } from "../shape";
 
 // export * from "./procedures";
 export * from "./web-socket";
@@ -12,131 +11,233 @@ type Subscription = {
 };
 
 export type Query<
-  S extends string = string,
-  Input extends ZodType = ZodTypeAny,
+  S extends string,
+  Input extends ZodType | never,
   Output = any,
 > = {
+  _type: "query";
   shape: S;
   input: Input;
   output: Output;
 };
 
-export type Mutation<Input = any> = {
+export type Mutation<Input> = {
+  _type: "mutation";
   input: Input;
 };
 
-export type LiveStateOptions<ShapeNames extends string = string> = {
-  shapes: Shapes<ShapeNames>;
-  procedures: Record<string, Query | Mutation>;
-};
+export type AnyQuery = Query<any, any, any>;
+export type AnyMutation = Mutation<any>;
+export type AnyProcedure = AnyMutation | AnyQuery;
 
-export const createLiveStateRouter = <ShapeNames extends string = string>(
-  constructor: (
-    query: <s extends ShapeNames>(shapeName: s) => Query<s>
-  ) => LiveStateOptions<ShapeNames>
-) => {
-  const createQuery = <s extends ShapeNames>(shapeName: s) => ({
-    shape: shapeName,
-    input: undefined as any,
-    output: undefined as any,
-  });
+export type ProcedureRecord = Record<string, AnyProcedure>;
 
-  const opts = constructor(createQuery);
-  const shapes = opts.shapes;
-  const procedures = opts.procedures;
+export type QueryFactory<
+  Shapes extends ShapeRecord,
+  ShapeName extends ShapeNamesFromRecord<Shapes>,
+> = <
+  Input extends ZodType | never,
+  Output extends Query<
+    ShapeName,
+    Input extends ZodType ? Input : never,
+    z.output<Shapes[ShapeName]>
+  >,
+>(
+  shapeName: ShapeName,
+  input?: Input
+) => Output;
 
-  const connections = new Set<ws.WebSocket>();
-  const subscriptions: Record<ShapeNames, Subscription[]> = {} as Record<
-    ShapeNames,
-    Subscription[]
-  >;
+export type MutationFactory = <
+  Input extends ZodType,
+  Output extends Mutation<Input>,
+>(
+  input: Input,
+  mutation: (input: z.output<Input>) => void
+) => Output;
 
-  const sendMutations = <T extends Shape>(
-    shape: ShapeNames,
-    mutations: Partial<InferShape<T>>[],
-    ignoreConnection?: ws.WebSocket
-  ) => {
-    subscriptions[shape]?.forEach(({ connection, filters }) => {
-      if (connection === ignoreConnection) return;
-
-      connection.send(
-        JSON.stringify({
-          type: "MUTATE",
-          shape,
-          mutations,
-        } satisfies ServerMessage)
-      );
-    });
+export class Router<
+  Shapes extends ShapeRecord,
+  ShapeNames extends ShapeNamesFromRecord<Shapes>,
+  Procedures extends ProcedureRecord,
+> {
+  /**
+   * @internal
+   */
+  readonly _def: {
+    shapeNames: ShapeNames[];
   };
+  /**
+   * @internal
+   */
+  readonly _shapes: Shapes;
+  /**
+   * @internal
+   */
+  readonly _procedures: Procedures;
 
-  const addConnection = (connection: ws.WebSocket) => {
-    connections.add(connection);
+  private constructor(shapes: Shapes, procedures?: Procedures) {
+    this._def = {
+      shapeNames: Object.keys(shapes) as ShapeNames[],
+    };
+    this._shapes = shapes;
+    this._procedures = procedures ?? ({} as Procedures);
+  }
 
-    connection.on("close", () => {
-      console.log("Connection closed");
-      connections.delete(connection);
-    });
+  public procedures<TProcedures extends ProcedureRecord>(
+    procedureFactory: (
+      query: QueryFactory<Shapes, ShapeNames>,
+      mutation: MutationFactory
+    ) => TProcedures
+  ) {
+    const queryFactory: QueryFactory<Shapes, ShapeNames> = <
+      S extends ShapeNames,
+      I extends ZodType,
+      O extends Query<S, I extends ZodType ? I : never, z.output<Shapes[S]>>,
+    >(
+      shapeName: S,
+      input?: I
+    ) => {
+      return {
+        _type: "query",
+        shape: shapeName,
+        input: input as I extends ZodType ? I : never,
+        output: {} as O["output"],
+      } as O;
+    };
 
-    connection.on("message", (_message) => {
-      console.log("Message received from the client:", _message);
-      const message = clientMessageSchema.parse(
-        JSON.parse(_message.toString())
-      );
+    const mutationFactory: MutationFactory = <
+      I extends ZodType,
+      O extends Mutation<I>,
+    >(
+      input: I,
+      mutation: (input: I) => void
+    ) => {
+      return {
+        _type: "mutation",
+        input: input,
+      } as O;
+    };
 
-      const sendResponse = (response: any) => {
-        connection.send(JSON.stringify(response));
-      };
+    return new Router(
+      this._shapes,
+      procedureFactory(queryFactory, mutationFactory)
+    );
+  }
 
-      if (message.type === "SUBSCRIBE") {
-        console.log("Subscribing to", message);
-        const { shape: shape_ } = message;
+  static create<TShapes extends ShapeRecord>(shapes: TShapes) {
+    return new Router(shapes);
+  }
+}
 
-        if (!shapes[shape_ as ShapeNames]) return;
+export const createRouter = Router.create;
 
-        const shape = shape_ as ShapeNames;
+export type AnyRouter = Router<Record<string, any>, any, any>;
 
-        if (!subscriptions[shape]) {
-          subscriptions[shape] = [];
-        }
+// TODO: Port this back to the server
 
-        subscriptions[shape].push({
-          connection,
-        });
-      }
+// export const createLiveStateRouter = <ShapeNames extends string>(
+//   constructor: (
+//     query: <S extends ShapeNames, I extends ZodType>(shapeName: S) => AnyQuery
+//   ) => LiveStateOptions<ShapeNames, ProcedureRecord>
+// ) => {
+//   const createQuery = <s extends ShapeNames, i extends ZodType>(shapeName: s) =>
+//     ({
+//       shape: shapeName,
+//       input: undefined as any,
+//       output: undefined as any,
+//     }) as Query<s, i>;
 
-      if (message.type === "MUTATE") {
-        console.log("Mutating", message.shape);
+//   const opts = constructor(createQuery);
+//   const shapes = opts.shapes;
+//   const procedures = opts.procedures;
 
-        const { shape: shape_, mutations } = message;
+//   const connections = new Set<ws.WebSocket>();
+//   const subscriptions: Record<ShapeNames, Subscription[]> = {} as Record<
+//     ShapeNames,
+//     Subscription[]
+//   >;
 
-        const shapeName = shape_ as ShapeNames;
-        const shapeSchema = shapes[shapeName];
+//   const sendMutations = <T extends Shape>(
+//     shape: ShapeNames,
+//     mutations: Partial<InferShape<T>>[],
+//     ignoreConnection?: ws.WebSocket
+//   ) => {
+//     subscriptions[shape]?.forEach(({ connection, filters }) => {
+//       if (connection === ignoreConnection) return;
 
-        if (!shapeSchema) return;
+//       connection.send(
+//         JSON.stringify({
+//           type: "MUTATE",
+//           shape,
+//           mutations,
+//         } satisfies ServerMessage)
+//       );
+//     });
+//   };
 
-        const { success, data } = z.array(shapeSchema).safeParse(mutations);
+//   const addConnection = (connection: ws.WebSocket) => {
+//     connections.add(connection);
 
-        // TODO: Send response
-        if (!success) return;
+//     connection.on("close", () => {
+//       console.log("Connection closed");
+//       connections.delete(connection);
+//     });
 
-        sendMutations(shapeName, data, connection);
-      }
-    });
-  };
+//     connection.on("message", (_message) => {
+//       console.log("Message received from the client:", _message);
+//       const message = clientMessageSchema.parse(
+//         JSON.parse(_message.toString())
+//       );
 
-  return {
-    addConnection,
-    connections,
-    shapes,
-    procedures,
-  };
-};
+//       const sendResponse = (response: any) => {
+//         connection.send(JSON.stringify(response));
+//       };
 
-const test = createLiveStateRouter((query) => ({
-  shapes: { counter: number },
-  procedures: {
-    getCounter: query("counter"),
-  },
-}));
+//       if (message.type === "SUBSCRIBE") {
+//         console.log("Subscribing to", message);
+//         const { shape: shape_ } = message;
 
-export type AnyLiveStateRouter = ReturnType<typeof createLiveStateRouter>;
+//         if (!shapes[shape_ as ShapeNames]) return;
+
+//         const shape = shape_ as ShapeNames;
+
+//         if (!subscriptions[shape]) {
+//           subscriptions[shape] = [];
+//         }
+
+//         subscriptions[shape].push({
+//           connection,
+//         });
+//       }
+
+//       if (message.type === "MUTATE") {
+//         console.log("Mutating", message.shape);
+
+//         const { shape: shape_, mutations } = message;
+
+//         const shapeName = shape_ as ShapeNames;
+//         const shapeSchema = shapes[shapeName];
+
+//         if (!shapeSchema) return;
+
+//         const { success, data } = z.array(shapeSchema).safeParse(mutations);
+
+//         // TODO: Send response
+//         if (!success) return;
+
+//         sendMutations(shapeName, data, connection);
+//       }
+//     });
+//   };
+
+//   return {
+//     addConnection,
+//     connections,
+//     shapes,
+//     procedures,
+//   };
+// };
+
+// export type AnyLiveStateRouter = ReturnType<typeof createLiveStateRouter>;
+
+console.log("Hello");
