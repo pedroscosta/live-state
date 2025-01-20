@@ -1,6 +1,7 @@
 import ws from "ws";
 import { z, ZodType } from "zod";
 import { ShapeNamesFromRecord, ShapeRecord } from "../shape";
+import { Query, queryFactory, QueryFactory } from "./procedures";
 
 // export * from "./procedures";
 export * from "./web-socket";
@@ -10,16 +11,16 @@ type Subscription = {
   filters?: Record<string, any>;
 };
 
-export type Query<
-  S extends string,
-  Input extends ZodType | never,
-  Output = any,
-> = {
-  _type: "query";
-  shape: S;
-  input: Input;
-  output: Output;
-};
+// export type Query<
+//   S extends string,
+//   Input extends ZodType | never,
+//   Output = any,
+// > = {
+//   _type: "query";
+//   shape: S;
+//   input: Input;
+//   output: Output;
+// };
 
 export type Mutation<Input> = {
   _type: "mutation";
@@ -32,20 +33,16 @@ export type AnyProcedure = AnyMutation | AnyQuery;
 
 export type ProcedureRecord = Record<string, AnyProcedure>;
 
-export type QueryFactory<
-  Shapes extends ShapeRecord,
-  ShapeName extends ShapeNamesFromRecord<Shapes>,
-> = <
-  Input extends ZodType | never,
-  Output extends Query<
-    ShapeName,
-    Input extends ZodType ? Input : never,
-    z.output<Shapes[ShapeName]>
-  >,
->(
-  shapeName: ShapeName,
-  input?: Input
-) => Output;
+// export type QueryFactory<
+//   Shapes extends ShapeRecord,
+//   ShapeName extends ShapeNamesFromRecord<Shapes>,
+// > = <
+//   Input extends ZodType,
+//   Output extends Query<ShapeName, Input, z.output<Shapes[ShapeName]>>,
+// >(
+//   shapeName: ShapeName,
+//   input?: Input
+// ) => Output;
 
 export type MutationFactory = <
   Input extends ZodType,
@@ -89,22 +86,6 @@ export class Router<
       mutation: MutationFactory
     ) => TProcedures
   ) {
-    const queryFactory: QueryFactory<Shapes, ShapeNames> = <
-      S extends ShapeNames,
-      I extends ZodType,
-      O extends Query<S, I extends ZodType ? I : never, z.output<Shapes[S]>>,
-    >(
-      shapeName: S,
-      input?: I
-    ) => {
-      return {
-        _type: "query",
-        shape: shapeName,
-        input: input as I extends ZodType ? I : never,
-        output: {} as O["output"],
-      } as O;
-    };
-
     const mutationFactory: MutationFactory = <
       I extends ZodType,
       O extends Mutation<I>,
@@ -120,7 +101,10 @@ export class Router<
 
     return new Router(
       this._shapes,
-      procedureFactory(queryFactory, mutationFactory)
+      procedureFactory(
+        queryFactory as QueryFactory<Shapes, ShapeNames>,
+        mutationFactory
+      )
     );
   }
 
