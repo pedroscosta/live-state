@@ -1,5 +1,5 @@
 {
-  "name": "@repo/logger",
+  "name": "@repo/ls-impl",
   "version": "0.0.0",
   "private": true,
   "main": "./dist/index.js",
@@ -18,9 +18,18 @@
     "@jest/globals": "^29.7.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@types/express-ws": "^3.0.5",
     "@types/node": "^20.11.24",
+    "@types/ws": "^8.5.13",
     "jest": "^29.7.0",
     "tsup": "^8.0.2",
     "typescript": "5.5.4"
+  },
+  "dependencies": {
+    "@repo/logger": "workspace:*",
+    "@repo/live-state": "workspace:*",
+    "express-ws": "^5.0.2",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
   }
 }

@@ -11,19 +11,22 @@
     "start": "next start"
   },
   "dependencies": {
+    "@repo/live-state": "workspace:*",
     "@repo/logger": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "nanoid": "^5.0.9",
     "next": "^14.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "@repo/ui": "workspace:*"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.1.1",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
     "@types/node": "^20.11.24",
     "@types/react": "^18.2.62",
     "@types/react-dom": "^18.2.19",
-    "@repo/eslint-config": "workspace:*",
-    "@repo/typescript-config": "workspace:*",
     "typescript": "5.5.4"
   }
 }

@@ -1,6 +1,6 @@
 {
-  "name": "@repo/logger",
-  "version": "0.0.0",
+  "name": "@repo/live-state",
+  "version": "0.0.0-alpha.1",
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,9 +18,28 @@
     "@jest/globals": "^29.7.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@types/express-ws": "^3.0.5",
     "@types/node": "^20.11.24",
+    "@types/ws": "^8.5.13",
     "jest": "^29.7.0",
     "tsup": "^8.0.2",
     "typescript": "5.5.4"
+  },
+  "dependencies": {
+    "express-ws": "^5.0.2",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "require": "./dist/server.js"
+    }
   }
 }

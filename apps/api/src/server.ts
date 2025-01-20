@@ -1,10 +1,14 @@
+import { createMiddleware } from "@repo/live-state/server";
+import { lsRouter } from "@repo/ls-impl";
 import { json, urlencoded } from "body-parser";
-import express, { type Express } from "express";
-import morgan from "morgan";
 import cors from "cors";
+import express from "express";
+import expressWs from "express-ws";
+import morgan from "morgan";
 
-export const createServer = (): Express => {
-  const app = express();
+export const createServer = (): ReturnType<typeof expressWs>["app"] => {
+  const { app } = expressWs(express());
+
   app
     .disable("x-powered-by")
     .use(morgan("dev"))
@@ -17,6 +21,8 @@ export const createServer = (): Express => {
     .get("/status", (_, res) => {
       return res.json({ ok: true });
     });
+
+  app.ws("/ws", createMiddleware(lsRouter));
 
   return app;
 };
