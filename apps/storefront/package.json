@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@repo/live-state": "workspace:*",
+    "@repo/ls-impl": "workspace:*",
     "@repo/logger": "workspace:*",
     "@repo/ui": "workspace:*",
     "nanoid": "^5.0.9",

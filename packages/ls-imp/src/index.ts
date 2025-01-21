@@ -1,11 +1,10 @@
 import { number } from "@repo/live-state";
-import { createLiveStateRouter } from "@repo/live-state/server";
+import { createRouter, route } from "@repo/live-state/server";
 
-const shapes = { counter: number };
+export const counter = number();
 
-export const lsRouter = createLiveStateRouter<keyof typeof shapes>((query) => ({
-  shapes,
-  procedures: {
-    getCounter: query("counter"),
-  },
-}));
+export const router = createRouter({
+  counter: route(counter),
+});
+
+export type Router = typeof router;

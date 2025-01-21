@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "tsup --watch --onSuccess \"node dist/index.js\"",
+    "dev": "tsup --watch --onSuccess \"node dist/index.mjs\"",
     "build": "tsup",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
@@ -15,6 +15,7 @@
     "@repo/live-state": "workspace:*",
     "@repo/logger": "workspace:*",
     "@repo/ls-impl": "workspace:*",
+    "@trpc/server": "^10.45.2",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "express": "^4.18.3",

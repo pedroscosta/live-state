@@ -1,64 +1,24 @@
 "use client";
 
-import type { ClientMessage, number } from "@repo/live-state";
-import { log } from "@repo/logger";
+import { createClient } from "@repo/live-state/client";
+import { Router } from "@repo/ls-impl";
 import { CounterButton } from "@repo/ui/counter-button";
 import { Link } from "@repo/ui/link";
-import { nanoid } from "nanoid";
-import { useEffect, useRef, useState } from "react";
-import { z } from "zod";
+
+const client = createClient<Router>({
+  url: "ws://localhost:5001/ws",
+});
+
+const counterStore = client.counter.createStore({
+  value: 0,
+  _metadata: { timestamp: new Date().toISOString() },
+});
+
+console.log("Running");
 
 export default function Store(): JSX.Element {
-  const [count, _setCount] = useState<z.infer<typeof number>>({
-    value: 0,
-    _metadata: { timestamp: new Date().toISOString() },
-  });
-  const socket = useRef<WebSocket | null>(null);
-
-  useEffect(() => {
-    if (socket.current) return;
-
-    socket.current = new WebSocket("ws://localhost:5001/ws");
-
-    socket.current.addEventListener("message", (event) => {
-      log("Message received from the server:", event.data);
-
-      const eventData = JSON.parse(event.data);
-
-      if (eventData.type === "MUTATE") {
-        const { shape, mutations } = eventData;
-
-        console.log("Mutations received", mutations);
-
-        if (shape === "counter") {
-          _setCount(mutations[0]);
-        }
-      }
-    });
-
-    socket.current.addEventListener("open", (event) => {
-      log("WebSocket connection opened");
-      socket.current?.send(
-        JSON.stringify({
-          _id: nanoid(),
-          type: "SUBSCRIBE",
-          shape: "counter",
-        } satisfies ClientMessage)
-      );
-    });
-  }, []);
-
-  const setCount: typeof _setCount = (value) => {
-    const computedValue = typeof value === "function" ? value(count) : value;
-    socket.current?.send(
-      JSON.stringify({
-        _id: nanoid(),
-        type: "MUTATE",
-        shape: "counter",
-        mutations: [computedValue],
-      } satisfies ClientMessage)
-    );
-    _setCount(computedValue);
+  const onClick = () => {
+    console.log(counterStore.get());
   };
 
   return (
@@ -67,7 +27,8 @@ export default function Store(): JSX.Element {
         Store <br />
         <span>Kitchen Sink</span>
       </h1>
-      {count.value}
+      <button onClick={onClick}>Log store state</button>
+      {/* {count.value}
       <button
         onClick={() =>
           setCount((s) => ({
@@ -87,7 +48,7 @@ export default function Store(): JSX.Element {
         }
       >
         Decrease
-      </button>
+      </button> */}
       {/* <button onClick={() => setCount((s) => s - 1)}>Decrease</button> */}
       <CounterButton />
       <p className="description">

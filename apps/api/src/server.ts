@@ -1,6 +1,5 @@
-import { createMiddleware } from "@repo/live-state/server";
-import { lsRouter } from "@repo/ls-impl";
-import { json, urlencoded } from "body-parser";
+import { createWSServer } from "@repo/live-state/server";
+import { router } from "@repo/ls-impl";
 import cors from "cors";
 import express from "express";
 import expressWs from "express-ws";
@@ -12,8 +11,8 @@ export const createServer = (): ReturnType<typeof expressWs>["app"] => {
   app
     .disable("x-powered-by")
     .use(morgan("dev"))
-    .use(urlencoded({ extended: true }))
-    .use(json())
+    .use(express.urlencoded({ extended: true }))
+    .use(express.json())
     .use(cors())
     .get("/message/:name", (req, res) => {
       return res.json({ message: `hello ${req.params.name}` });
@@ -22,7 +21,7 @@ export const createServer = (): ReturnType<typeof expressWs>["app"] => {
       return res.json({ ok: true });
     });
 
-  app.ws("/ws", createMiddleware(lsRouter));
+  app.ws("/ws", createWSServer(router));
 
   return app;
 };

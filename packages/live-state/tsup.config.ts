@@ -6,9 +6,8 @@ export default defineConfig((options: Options) => [
       index: "./src/index.ts",
       server: "./src/server/index.ts",
     },
-    clean: true,
     dts: true,
-    format: ["cjs"],
+    format: ["cjs", "esm"],
     ...options,
   },
   {
@@ -17,9 +16,8 @@ export default defineConfig((options: Options) => [
     },
     platform: "browser",
     tsconfig: "./src/client/tsconfig.json",
-    clean: true,
     dts: true,
-    format: ["cjs"],
+    format: ["esm"],
     ...options,
   },
 ]);
