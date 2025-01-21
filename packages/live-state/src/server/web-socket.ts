@@ -1,12 +1,14 @@
-// import { WebsocketRequestHandler } from "express-ws";
-// import { AnyRouter } from ".";
+import { WebsocketRequestHandler } from "express-ws";
+import { AnyRouter } from ".";
 
-// // export const createMiddleware: <T extends AnyRouter>(
-// //   router: T
-// // ) => WebsocketRequestHandler = (ls) => {
-// //   return (ws) => {
-// //     ls.addConnection(ws);
-// //   };
-// // };
+export const createWSServer: <T extends AnyRouter>(
+  router: T
+) => WebsocketRequestHandler = (router) => {
+  // TODO: Server implementation
 
-export const _keep = true;
+  return (ws) => {
+    ws.on("message", (message) => {
+      console.log("Message received from the client:", message);
+    });
+  };
+};

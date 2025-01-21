@@ -1,14 +1,16 @@
 import { z, ZodType, ZodTypeAny } from "zod";
 
-export type Shape<T extends ZodType = ZodTypeAny> = T;
+export type Shape<T extends ZodType> = T;
 
-export type ShapeRecord = Record<string, Shape>;
+export type AnyShape = Shape<ZodTypeAny>;
+
+export type ShapeRecord = Record<string, AnyShape>;
 
 export type ShapeNamesFromRecord<T extends ShapeRecord> = keyof T extends string
   ? keyof T
   : never;
 
-export type InferShape<T extends Shape> = z.infer<T>;
+export type InferShape<T extends AnyShape> = z.infer<T>;
 
 export const number = () =>
   z.object({
