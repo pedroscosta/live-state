@@ -15,7 +15,6 @@ export type Subscription = {
 export const createWSServer: <T extends AnyRouter>(
   router: T
 ) => WebsocketRequestHandler = (router) => {
-  // TODO: Server implementation
   const connections: Record<string, WebSocket> = {};
   const subscriptions: Record<string, Record<string, Subscription>> = {};
 

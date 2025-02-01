@@ -16,7 +16,7 @@ const router = createRouter({
     add: insert(),
     update: update(),
     remove: remove(),
-    markAsDone: update()
+    markAsDone: mutation()
       .input(z.object({id: z.nanoId()}))
       .set(({ shape }) => {
         return {
@@ -28,3 +28,9 @@ const router = createRouter({
   }),
 });
 ```
+
+## TODO
+
+- Merge mutations from the client properly
+- Add mutations
+- Add filters
