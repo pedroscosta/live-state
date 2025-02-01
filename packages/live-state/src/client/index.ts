@@ -4,14 +4,18 @@ import { ClientMessage, serverMessageSchema } from "../core/internals";
 import { AnyRoute, AnyRouter } from "../server";
 import { createObservable } from "./observable";
 
+export * from "./react";
+
 export class LiveStore<TRoute extends AnyRoute> {
   private readonly shapeName: string;
   private readonly _route!: TRoute;
   private state: z.infer<TRoute["shape"]>;
   private ws: WebSocket;
+  private listeners: Set<(state: z.infer<TRoute["shape"]>) => void>;
 
   private _set(newState: z.infer<TRoute["shape"]>) {
     this.state = newState;
+    this.listeners.forEach((listener) => listener(newState));
   }
 
   constructor(
@@ -22,6 +26,7 @@ export class LiveStore<TRoute extends AnyRoute> {
     this.shapeName = shapeName;
     this.ws = ws;
     this.state = defaultState;
+    this.listeners = new Set();
 
     this.ws.addEventListener("message", (event) => {
       try {
@@ -58,7 +63,19 @@ export class LiveStore<TRoute extends AnyRoute> {
   public get() {
     return this.state;
   }
+
+  public subscribe(listener: (state: z.infer<TRoute["shape"]>) => void) {
+    this.listeners.add(listener);
+
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
 }
+
+export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
+  TStore["get"]
+>;
 
 export type Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
