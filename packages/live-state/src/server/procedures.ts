@@ -1,5 +1,11 @@
-import { z, ZodType, ZodTypeAny } from "zod";
-import { AnyShape, ShapeNamesFromRecord, ShapeRecord } from "../shape";
+import { ZodType } from "zod";
+import {
+  AnyShape,
+  InferOutput,
+  InferShape,
+  ShapeNamesFromRecord,
+  ShapeRecord,
+} from "../shape";
 
 export class Query<T extends string, I extends ZodType | never, O extends any> {
   _type: "query" = "query";
@@ -27,19 +33,19 @@ export const queryFactory = <
 >(
   shapeName: ShapeName
 ) => {
-  return Query.create<ShapeName, z.output<Shapes[ShapeName]>>(shapeName);
+  return Query.create<ShapeName, InferOutput<Shapes[ShapeName]>>(shapeName);
 };
 
 export type QueryFactory<
   Shapes extends ShapeRecord,
   ShapeName extends ShapeNamesFromRecord<Shapes>,
-> = <O extends Query<ShapeName, never, z.output<Shapes[ShapeName]>>>(
+> = <O extends Query<ShapeName, never, InferOutput<Shapes[ShapeName]>>>(
   shapeName: ShapeName
 ) => O;
 
 export type MutationType = "update" | "insert" | "remove";
 export abstract class Mutation<
-  I extends ZodType | never,
+  I extends AnyShape | never,
   O extends any,
   TMutType extends MutationType,
 > {
@@ -53,28 +59,28 @@ export abstract class Mutation<
     this._mutationType = mutationType;
   }
 
-  public input<NewInput extends ZodType>(newInput: NewInput) {
+  public input<NewInput extends AnyShape>(newInput: NewInput) {
     this._input = newInput as any;
     return this as any as Mutation<NewInput, O, TMutType>;
   }
 
   // To-do: mutate should be a reducer (take the current state and the mutation and return the new state)
-  public abstract mutate(input: z.infer<I>): void;
+  public abstract mutate(input: InferShape<I>): void;
 }
 
-export type AnyMutation = Mutation<ZodTypeAny, any, any>;
+export type AnyMutation = Mutation<AnyShape, any, any>;
 
 export type MutationRecord = Record<string, AnyMutation>;
 
 export class UpdateMutation<
-  I extends ZodType | never,
+  I extends AnyShape | never,
   O extends any,
 > extends Mutation<I, O, "update"> {
   public constructor(input?: I) {
     super("update", input ?? (null as never));
   }
 
-  public mutate(input: z.input<I>) {
+  public mutate(input: InferShape<I>) {
     console.log("Updating", input);
   }
 
@@ -91,8 +97,8 @@ export type InjectedMutation<
 > =
   TMutation extends Mutation<infer I, any, infer MType>
     ? [I] extends [never]
-      ? Mutation<TShape, z.output<TShape>, MType>
-      : Mutation<I, z.output<TShape>, MType>
+      ? Mutation<TShape, InferOutput<TShape>, MType>
+      : Mutation<I, InferOutput<TShape>, MType>
     : never;
 
 export type InjectedMutationRecord<

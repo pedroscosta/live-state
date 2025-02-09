@@ -10,8 +10,3 @@ export const router = createRouter({
 });
 
 export type Router = typeof router;
-
-const test = router.routes.counter.mutations.set.mutate({
-  value: 10,
-  _metadata: { timestamp: new Date().toISOString() },
-});

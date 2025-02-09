@@ -1,8 +1,44 @@
-import { z, ZodType, ZodTypeAny } from "zod";
+type LiveTypeMeta = {};
 
-export type Shape<T extends ZodType> = T;
+abstract class LiveType<
+  Input = any,
+  Meta extends LiveTypeMeta = LiveTypeMeta,
+  Output = Input,
+> {
+  readonly _type!: Output;
+  readonly _meta!: Meta;
+  readonly _input!: Input;
 
-export type AnyShape = Shape<ZodTypeAny>;
+  abstract encode(name: string, input: Input, timestamp: string): string;
+}
+
+type LiveAtomicTypeMeta = {
+  timestamp: string;
+} & LiveTypeMeta;
+
+abstract class LiveAtomicType<
+  Input = any,
+  Meta extends LiveAtomicTypeMeta = LiveAtomicTypeMeta,
+  Output = Input,
+> extends LiveType<Input, Meta, Output> {}
+
+export class LiveNumber extends LiveAtomicType<number> {
+  encode(name: string, input: number, timestamp: string) {
+    return `${name};${input};${timestamp}`;
+  }
+
+  static create() {
+    return new LiveNumber();
+  }
+}
+
+export const number = LiveNumber.create;
+
+export type LiveTypeAny = LiveType<any>;
+
+export type Shape<T extends LiveTypeAny> = T;
+
+export type AnyShape = Shape<LiveTypeAny>;
 
 export type ShapeRecord = Record<string, AnyShape>;
 
@@ -10,73 +46,6 @@ export type ShapeNamesFromRecord<T extends ShapeRecord> = keyof T extends string
   ? keyof T
   : never;
 
-export type InferShape<T extends AnyShape> = z.infer<T>;
+export type InferShape<T extends AnyShape> = T["_input"];
 
-export const number = () =>
-  z.object({
-    value: z.number(),
-    _metadata: z.object({
-      timestamp: z.string(),
-    }),
-  });
-
-export type LiveNumber = z.infer<ReturnType<typeof number>>;
-
-export const string = () =>
-  z.object({
-    value: z.string(),
-    _metadata: z.object({
-      timestamp: z.string(),
-    }),
-  });
-
-export type LiveString = z.infer<ReturnType<typeof string>>;
-
-export const boolean = () =>
-  z.object({
-    value: z.boolean(),
-    _metadata: z.object({
-      timestamp: z.string(),
-    }),
-  });
-
-export type LiveBoolean = z.infer<ReturnType<typeof boolean>>;
-
-export type AtomicType =
-  | ReturnType<typeof boolean>
-  | ReturnType<typeof number>
-  | ReturnType<typeof string>;
-
-export const object = (obj: Record<string, AtomicType>) => z.object(obj);
-
-export type LiveObject<T extends Record<string, AtomicType>> = z.infer<
-  ReturnType<typeof object>
->;
-
-export const array = <T extends ZodTypeAny>(arr: T) => z.array(arr);
-
-// type LiveTypeDef = {};
-
-// abstract class LiveType<
-//   Input = any,
-//   Def extends LiveTypeDef = LiveTypeDef,
-//   Output = Input,
-// > {
-//   readonly _type!: Output;
-//   readonly _def: Def;
-//   readonly _input!: Input;
-
-//   abstract _materialize(input: Input): Output;
-
-//   constructor(def: Def) {
-//     this._def = def;
-//   }
-// }
-
-// type LiveNumberDef = LiveTypeDef & {};
-
-// class LiveNumber extends LiveType<number, LiveNumberDef, number> {
-//   _materialize(input: number) {
-//     return input;
-//   }
-// }
+export type InferOutput<T extends AnyShape> = T["_type"];

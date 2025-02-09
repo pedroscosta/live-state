@@ -1,11 +1,10 @@
 import { WebsocketRequestHandler } from "express-ws";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
-import { z } from "zod";
 import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
 import { clientMessageSchema } from "../core/internals";
-import { AnyShape } from "../shape";
+import { AnyShape, InferShape } from "../shape";
 
 let counter = 0;
 
@@ -23,7 +22,7 @@ export const createWSServer: <T extends AnyRouter>(
 ) => WebsocketRequestHandler = (router) => {
   const connections: Record<ClientId, WebSocket> = {};
   const subscriptions: Record<ShapeId, Record<ClientId, Subscription>> = {};
-  const states: Record<ShapeId, z.infer<AnyShape>> = {};
+  const states: Record<ShapeId, InferShape<AnyShape>> = {};
 
   const propagateMutations = (
     shape: string,
@@ -52,6 +51,7 @@ export const createWSServer: <T extends AnyRouter>(
     connections[clientId] = ws;
 
     ws.on("message", (message) => {
+      console.log("Message received from the client:", message);
       try {
         const parsedMessage = clientMessageSchema.parse(
           JSON.parse(message.toString())

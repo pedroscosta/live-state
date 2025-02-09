@@ -1,8 +1,7 @@
 import { nanoid } from "nanoid";
-import { z } from "zod";
 import { ClientMessage, serverMessageSchema } from "../core/internals";
-import { AnyRoute, AnyRouter, createRouter, route } from "../server";
-import { number } from "../shape";
+import { AnyRoute, AnyRouter, createRouter, route, update } from "../server";
+import { InferShape, number } from "../shape";
 import { createObservable } from "./observable";
 
 export * from "./react";
@@ -13,25 +12,27 @@ export type MutableLiveStore<TRoute extends AnyRoute> = LiveStore<TRoute> & {
 
 export class LiveStore<TRoute extends AnyRoute> {
   private readonly shapeName: string;
-  private readonly _route!: TRoute;
-  private state: z.infer<TRoute["shape"]>;
+  private readonly _route: TRoute;
+  private state: InferShape<TRoute["shape"]>;
   private ws: WebSocket;
-  private listeners: Set<(state: z.infer<TRoute["shape"]>) => void>;
+  private listeners: Set<(state: InferShape<TRoute["shape"]>) => void>;
 
-  private _set(newState: z.infer<TRoute["shape"]>) {
+  private _set(newState: InferShape<TRoute["shape"]>) {
     this.state = newState;
     this.listeners.forEach((listener) => listener(newState));
   }
 
   constructor(
+    route: TRoute,
     shapeName: string,
     ws: WebSocket,
-    defaultState: z.infer<TRoute["shape"]>
+    defaultState: InferShape<TRoute["shape"]>
   ) {
     this.shapeName = shapeName;
     this.ws = ws;
     this.state = defaultState;
     this.listeners = new Set();
+    this._route = route;
 
     this.ws.addEventListener("message", (event) => {
       try {
@@ -69,12 +70,25 @@ export class LiveStore<TRoute extends AnyRoute> {
     return this.state;
   }
 
-  public subscribe(listener: (state: z.infer<TRoute["shape"]>) => void) {
+  public subscribe(listener: (state: InferShape<TRoute["shape"]>) => void) {
     this.listeners.add(listener);
 
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  public mutate<TMutName extends keyof TRoute["mutations"]>(
+    mutation: TMutName,
+    input: InferShape<TRoute["mutations"][TMutName]["_input"]>
+  ) {
+    this.ws.send(
+      this._route.shape.encode(
+        mutation as string,
+        input,
+        new Date().toISOString()
+      )
+    );
   }
 }
 
@@ -85,7 +99,7 @@ export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
 export type Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
     createStore: (
-      defaultState: z.infer<TRouter["routes"][K]["shape"]>
+      defaultState: InferShape<TRouter["routes"][K]["shape"]>
     ) => LiveStore<TRouter["routes"][K]>;
   };
 };
@@ -101,6 +115,7 @@ const createUntypedClient = (opts: ClientOptions) => {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
+  router: TRouter,
   opts: ClientOptions
 ): Client<TRouter> => {
   const ogClient = createUntypedClient(opts);
@@ -117,8 +132,15 @@ export const createClient = <TRouter extends AnyRouter>(
 
       const id = _id as keyof TRouter["routes"];
 
-      return (defaultState: z.infer<TRouter["routes"][typeof id]["shape"]>) => {
-        return new LiveStore(id as string, ogClient.ws, defaultState);
+      return (
+        defaultState: InferShape<TRouter["routes"][typeof id]["shape"]>
+      ) => {
+        return new LiveStore(
+          router.routes[id as string],
+          id as string,
+          ogClient.ws,
+          defaultState
+        );
       };
     },
   }) as Client<TRouter>;
@@ -127,17 +149,19 @@ export const createClient = <TRouter extends AnyRouter>(
 const testCounter = number();
 
 const test = createRouter({
-  counter: route(testCounter).withMutations({}),
+  counter: route(testCounter).withMutations({
+    set: update(),
+  }),
 });
 
 type TestRouter = typeof test;
 
 type Route = TestRouter["routes"]["counter"];
 
-const testClient = createClient<TestRouter>({
+const testClient = createClient(test, {
   url: "ws://localhost:5001/ws",
 });
 
 type mut = MutableLiveStore<Route>;
 
-type a = mut["set"];
+const store = testClient.counter.createStore(0);
