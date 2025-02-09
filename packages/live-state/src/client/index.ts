@@ -1,10 +1,15 @@
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { ClientMessage, serverMessageSchema } from "../core/internals";
-import { AnyRoute, AnyRouter } from "../server";
+import { AnyRoute, AnyRouter, createRouter, route } from "../server";
+import { number } from "../shape";
 import { createObservable } from "./observable";
 
 export * from "./react";
+
+export type MutableLiveStore<TRoute extends AnyRoute> = LiveStore<TRoute> & {
+  set: TRoute["mutations"];
+};
 
 export class LiveStore<TRoute extends AnyRoute> {
   private readonly shapeName: string;
@@ -118,3 +123,21 @@ export const createClient = <TRouter extends AnyRouter>(
     },
   }) as Client<TRouter>;
 };
+
+const testCounter = number();
+
+const test = createRouter({
+  counter: route(testCounter).withMutations({}),
+});
+
+type TestRouter = typeof test;
+
+type Route = TestRouter["routes"]["counter"];
+
+const testClient = createClient<TestRouter>({
+  url: "ws://localhost:5001/ws",
+});
+
+type mut = MutableLiveStore<Route>;
+
+type a = mut["set"];

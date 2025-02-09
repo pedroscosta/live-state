@@ -1,9 +1,11 @@
 import { WebsocketRequestHandler } from "express-ws";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
+import { z } from "zod";
 import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
 import { clientMessageSchema } from "../core/internals";
+import { AnyShape } from "../shape";
 
 let counter = 0;
 
@@ -12,11 +14,16 @@ export type Subscription = {
   filters?: Record<string, any>;
 };
 
+// Types just for better readability
+type ShapeId = string;
+type ClientId = string;
+
 export const createWSServer: <T extends AnyRouter>(
   router: T
 ) => WebsocketRequestHandler = (router) => {
-  const connections: Record<string, WebSocket> = {};
-  const subscriptions: Record<string, Record<string, Subscription>> = {};
+  const connections: Record<ClientId, WebSocket> = {};
+  const subscriptions: Record<ShapeId, Record<ClientId, Subscription>> = {};
+  const states: Record<ShapeId, z.infer<AnyShape>> = {};
 
   const propagateMutations = (
     shape: string,
@@ -38,18 +45,6 @@ export const createWSServer: <T extends AnyRouter>(
       );
     });
   };
-
-  setInterval(() => {
-    console.log("Updating counter");
-    counter++;
-
-    propagateMutations("counter", [
-      {
-        value: counter,
-        _metadata: { timestamp: new Date().toISOString() },
-      },
-    ]);
-  }, 1000);
 
   return (ws) => {
     const clientId = nanoid();

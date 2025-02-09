@@ -1,8 +1,18 @@
 import { AnyShape, number } from "../shape";
+import {
+  AnyMutation,
+  InjectedMutationRecord,
+  MutationRecord,
+  update,
+} from "./procedures";
 
+export * from "./procedures";
 export * from "./web-socket";
 
-export type RouteRecord = Record<string, Route<AnyShape, AnyMutation>>;
+export type RouteRecord = Record<
+  string,
+  Route<AnyShape, InjectedMutationRecord<MutationRecord, AnyShape>>
+>;
 
 export type RouterDef<TRoutes extends RouteRecord> = {
   routes: TRoutes;
@@ -18,12 +28,6 @@ export const createRouter = <TRoutes extends RouteRecord>(
 
 export type AnyRouter = RouterDef<RouteRecord>;
 
-export type Mutation<T> = T;
-
-export type AnyMutation = Mutation<any>;
-
-export type MutationRecord = Record<string, AnyMutation>;
-
 export class Route<TShape extends AnyShape, TMutations extends MutationRecord> {
   readonly shape: TShape;
   readonly mutations: TMutations;
@@ -36,7 +40,18 @@ export class Route<TShape extends AnyShape, TMutations extends MutationRecord> {
   public withMutations<TMutations extends MutationRecord>(
     mutations: TMutations
   ) {
-    const newRoute = new Route<TShape, TMutations>(this.shape, mutations);
+    const injectedMutations = Object.entries(mutations).reduce(
+      (acc, [key, mutation]) => {
+        acc[key] = mutation._input ? mutation : mutation.input(this.shape);
+        return acc;
+      },
+      {} as Record<string, AnyMutation>
+    ) as InjectedMutationRecord<TMutations, TShape>;
+
+    const newRoute = new Route<
+      TShape,
+      InjectedMutationRecord<TMutations, TShape>
+    >(this.shape, injectedMutations);
     return newRoute;
   }
 
@@ -47,7 +62,7 @@ export class Route<TShape extends AnyShape, TMutations extends MutationRecord> {
 
 export const route = Route.fromShape;
 
-export type AnyRoute = Route<AnyShape, AnyMutation>;
+export type AnyRoute = Route<AnyShape, MutationRecord>;
 
 /**
  * ##########################################################################
@@ -58,8 +73,7 @@ export type AnyRoute = Route<AnyShape, AnyMutation>;
 const counter = number();
 
 const test = createRouter({
-  counter: route(counter),
+  counter: route(counter).withMutations({
+    set: update(),
+  }),
 });
-
-type counter = (typeof test.routes)["counter"];
-type counterMutations = counter["mutations"];

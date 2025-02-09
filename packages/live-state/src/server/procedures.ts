@@ -1,5 +1,5 @@
-import { z, ZodType } from "zod";
-import { ShapeNamesFromRecord, ShapeRecord } from "../shape";
+import { z, ZodType, ZodTypeAny } from "zod";
+import { AnyShape, ShapeNamesFromRecord, ShapeRecord } from "../shape";
 
 export class Query<T extends string, I extends ZodType | never, O extends any> {
   _type: "query" = "query";
@@ -36,3 +36,68 @@ export type QueryFactory<
 > = <O extends Query<ShapeName, never, z.output<Shapes[ShapeName]>>>(
   shapeName: ShapeName
 ) => O;
+
+export type MutationType = "update" | "insert" | "remove";
+export abstract class Mutation<
+  I extends ZodType | never,
+  O extends any,
+  TMutType extends MutationType,
+> {
+  _type: "mutation" = "mutation";
+  _mutationType: TMutType;
+  _input: I;
+  _output!: O;
+
+  constructor(mutationType: TMutType, input: I) {
+    this._input = input;
+    this._mutationType = mutationType;
+  }
+
+  public input<NewInput extends ZodType>(newInput: NewInput) {
+    this._input = newInput as any;
+    return this as any as Mutation<NewInput, O, TMutType>;
+  }
+
+  // To-do: mutate should be a reducer (take the current state and the mutation and return the new state)
+  public abstract mutate(input: z.infer<I>): void;
+}
+
+export type AnyMutation = Mutation<ZodTypeAny, any, any>;
+
+export type MutationRecord = Record<string, AnyMutation>;
+
+export class UpdateMutation<
+  I extends ZodType | never,
+  O extends any,
+> extends Mutation<I, O, "update"> {
+  public constructor(input?: I) {
+    super("update", input ?? (null as never));
+  }
+
+  public mutate(input: z.input<I>) {
+    console.log("Updating", input);
+  }
+
+  public static createUpdate() {
+    return new UpdateMutation<never, any>();
+  }
+}
+
+export const update = UpdateMutation.createUpdate;
+
+export type InjectedMutation<
+  TMutation extends Mutation<any, any, any>,
+  TShape extends AnyShape,
+> =
+  TMutation extends Mutation<infer I, any, infer MType>
+    ? [I] extends [never]
+      ? Mutation<TShape, z.output<TShape>, MType>
+      : Mutation<I, z.output<TShape>, MType>
+    : never;
+
+export type InjectedMutationRecord<
+  TRecord extends MutationRecord,
+  TShape extends AnyShape,
+> = {
+  [K in keyof TRecord]: InjectedMutation<TRecord[K], TShape>;
+};
