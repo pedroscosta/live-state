@@ -4,7 +4,7 @@ import WebSocket from "ws";
 import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
 import { clientMessageSchema } from "../core/internals";
-import { AnyShape, InferShape } from "../shape";
+import { AnyShape, MaterializedShape } from "../shape";
 
 let counter = 0;
 
@@ -14,15 +14,15 @@ export type Subscription = {
 };
 
 // Types just for better readability
-type ShapeId = string;
+type RouteId = string;
 type ClientId = string;
 
 export const createWSServer: <T extends AnyRouter>(
   router: T
 ) => WebsocketRequestHandler = (router) => {
   const connections: Record<ClientId, WebSocket> = {};
-  const subscriptions: Record<ShapeId, Record<ClientId, Subscription>> = {};
-  const states: Record<ShapeId, InferShape<AnyShape>> = {};
+  const subscriptions: Record<RouteId, Record<ClientId, Subscription>> = {};
+  const states: Record<RouteId, MaterializedShape<AnyShape>> = {};
 
   const propagateMutations = (
     shape: string,
@@ -67,6 +67,31 @@ export const createWSServer: <T extends AnyRouter>(
           };
 
           console.log("Subscribing to", subscriptions);
+        } else if (parsedMessage.type === "MUTATE") {
+          // TODO Handle error responses
+          const { route, mutations } = parsedMessage;
+
+          if (!router.routes[route]) return;
+          if (!mutations.length) return;
+
+          // TODO Handle batch mutations
+          // TODO Make the encoding better (; in the parts would break this)
+
+          const [mutationName] = mutations[0].split(";");
+
+          if (!mutationName || !router.routes[route].mutations[mutationName])
+            return;
+
+          const materializedShape = router.routes[route].shape.decode(
+            mutations[0],
+            states[route]
+          );
+
+          console.log("Mutating", materializedShape);
+
+          states[route] = materializedShape;
+
+          // TODO: Broadcast mutations to all subscribers
         }
       } catch (e) {
         console.error("Error parsing message from the client:", e);

@@ -11,7 +11,7 @@ export type MutableLiveStore<TRoute extends AnyRoute> = LiveStore<TRoute> & {
 };
 
 export class LiveStore<TRoute extends AnyRoute> {
-  private readonly shapeName: string;
+  private readonly routeName: string;
   private readonly _route: TRoute;
   private state: InferShape<TRoute["shape"]>;
   private ws: WebSocket;
@@ -24,11 +24,11 @@ export class LiveStore<TRoute extends AnyRoute> {
 
   constructor(
     route: TRoute,
-    shapeName: string,
+    routeName: string,
     ws: WebSocket,
     defaultState: InferShape<TRoute["shape"]>
   ) {
-    this.shapeName = shapeName;
+    this.routeName = routeName;
     this.ws = ws;
     this.state = defaultState;
     this.listeners = new Set();
@@ -41,7 +41,7 @@ export class LiveStore<TRoute extends AnyRoute> {
         if (parsedMessage.type === "MUTATE") {
           const { shape, mutations } = parsedMessage;
 
-          if (shape === this.shapeName) {
+          if (shape === this.routeName) {
             // TODO: Merge mutations into state
             this._set(mutations[0]);
           }
@@ -60,7 +60,7 @@ export class LiveStore<TRoute extends AnyRoute> {
         JSON.stringify({
           _id: nanoid(),
           type: "SUBSCRIBE",
-          shape: this.shapeName,
+          shape: this.routeName,
         } satisfies ClientMessage)
       );
     });
@@ -82,12 +82,20 @@ export class LiveStore<TRoute extends AnyRoute> {
     mutation: TMutName,
     input: InferShape<TRoute["mutations"][TMutName]["_input"]>
   ) {
+    // TODO: Add optimistic updates
     this.ws.send(
-      this._route.shape.encode(
-        mutation as string,
-        input,
-        new Date().toISOString()
-      )
+      JSON.stringify({
+        type: "MUTATE",
+        _id: nanoid(),
+        route: this.routeName,
+        mutations: [
+          this._route.shape.encode(
+            mutation as string,
+            input,
+            new Date().toISOString()
+          ),
+        ],
+      } satisfies ClientMessage)
     );
   }
 }

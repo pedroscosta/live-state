@@ -9,12 +9,12 @@ const clSubscribeMsgSchema = z.object({
 });
 
 // TODO: Add mutation schema
-const mutation = z.any();
+const mutation = z.string();
 
 const clMutationsMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("MUTATE"),
-  shape: z.string(),
+  route: z.string(),
   mutations: z.array(mutation),
 });
 

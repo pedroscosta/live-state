@@ -9,7 +9,12 @@ abstract class LiveType<
   readonly _meta!: Meta;
   readonly _input!: Input;
 
-  abstract encode(name: string, input: Input, timestamp: string): string;
+  abstract encode(mutation: string, input: Input, timestamp: string): string;
+
+  abstract decode(
+    encodedMutation: string,
+    materializedShape?: MaterializedShape<LiveType<Input, Meta, Output>>
+  ): MaterializedShape<LiveType<Input, Meta, Output>>;
 }
 
 type LiveAtomicTypeMeta = {
@@ -23,8 +28,28 @@ abstract class LiveAtomicType<
 > extends LiveType<Input, Meta, Output> {}
 
 export class LiveNumber extends LiveAtomicType<number> {
-  encode(name: string, input: number, timestamp: string) {
-    return `${name};${input};${timestamp}`;
+  encode(mutationName: string, input: number, timestamp: string) {
+    return `${mutationName};${input};${timestamp}`;
+  }
+
+  decode(
+    encodedMutation: string,
+    materializedShape?: MaterializedShape<LiveNumber>
+  ): MaterializedShape<LiveNumber> {
+    const [_route, value_, timestamp_] = encodedMutation.split(";");
+
+    if (
+      materializedShape &&
+      materializedShape._meta.timestamp.localeCompare(timestamp_) >= 0
+    )
+      return materializedShape;
+
+    return {
+      value: Number(value_),
+      _meta: {
+        timestamp: timestamp_,
+      },
+    };
   }
 
   static create() {
@@ -49,3 +74,8 @@ export type ShapeNamesFromRecord<T extends ShapeRecord> = keyof T extends string
 export type InferShape<T extends AnyShape> = T["_input"];
 
 export type InferOutput<T extends AnyShape> = T["_type"];
+
+export type MaterializedShape<T extends AnyShape> = {
+  value: T["_type"];
+  _meta: T["_meta"];
+};
