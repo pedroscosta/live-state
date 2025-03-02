@@ -1,5 +1,5 @@
 import { createWSServer } from "@repo/live-state/server";
-import { router } from "@repo/ls-impl";
+import { routerImpl } from "@repo/ls-impl";
 import cors from "cors";
 import express from "express";
 import expressWs from "express-ws";
@@ -21,7 +21,7 @@ export const createServer = (): ReturnType<typeof expressWs>["app"] => {
       return res.json({ ok: true });
     });
 
-  app.ws("/ws", createWSServer(router));
+  app.ws("/ws", createWSServer(routerImpl));
 
   return app;
 };

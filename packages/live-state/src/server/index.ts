@@ -1,68 +1,37 @@
-import { AnyShape, number } from "../shape";
-import {
-  AnyMutation,
-  InjectedMutationRecord,
-  MutationRecord,
-  update,
-} from "./procedures";
+import { AnyShape, number, table } from "../schema";
 
 export * from "./procedures";
 export * from "./web-socket";
 
-export type RouteRecord = Record<
-  string,
-  Route<AnyShape, InjectedMutationRecord<MutationRecord, AnyShape>>
->;
+export type RouteRecord = Record<string, Route<AnyShape>>;
 
 export type RouterDef<TRoutes extends RouteRecord> = {
   routes: TRoutes;
 };
 
-export const createRouter = <TRoutes extends RouteRecord>(
-  routes: TRoutes
-): RouterDef<TRoutes> => {
-  return {
-    routes,
-  };
+export const router = <TRoutes extends RouteRecord>(opts: {
+  routes: TRoutes;
+}): RouterDef<TRoutes> => {
+  {
+    return opts;
+  }
 };
 
 export type AnyRouter = RouterDef<RouteRecord>;
 
-export class Route<TShape extends AnyShape, TMutations extends MutationRecord> {
+export class Route<TShape extends AnyShape> {
   readonly shape: TShape;
-  readonly mutations: TMutations;
 
-  private constructor(shape: TShape, mutations?: TMutations) {
+  public constructor(shape: TShape) {
     this.shape = shape;
-    this.mutations = mutations ?? ({} as TMutations);
-  }
-
-  public withMutations<TMutations extends MutationRecord>(
-    mutations: TMutations
-  ) {
-    const injectedMutations = Object.entries(mutations).reduce(
-      (acc, [key, mutation]) => {
-        acc[key] = mutation._input ? mutation : mutation.input(this.shape);
-        return acc;
-      },
-      {} as Record<string, AnyMutation>
-    ) as InjectedMutationRecord<TMutations, TShape>;
-
-    const newRoute = new Route<
-      TShape,
-      InjectedMutationRecord<TMutations, TShape>
-    >(this.shape, injectedMutations);
-    return newRoute;
-  }
-
-  static fromShape<TShape extends AnyShape>(shape: TShape) {
-    return new Route(shape);
   }
 }
 
-export const route = Route.fromShape;
+export const routeFactory = () => {
+  return <T extends AnyShape>(shape: T) => new Route<T>(shape);
+};
 
-export type AnyRoute = Route<AnyShape, MutationRecord>;
+export type AnyRoute = Route<AnyShape>;
 
 /**
  * ##########################################################################
@@ -70,10 +39,14 @@ export type AnyRoute = Route<AnyShape, MutationRecord>;
  * ##########################################################################
  */
 
-const counter = number();
+const counters = table({
+  counter: number(),
+});
 
-const test = createRouter({
-  counter: route(counter).withMutations({
-    set: update(),
-  }),
+const publicRoute = routeFactory();
+
+const _router = router({
+  routes: {
+    counters: publicRoute(counters),
+  },
 });

@@ -1,19 +1,15 @@
 import { nanoid } from "nanoid";
 import { ClientMessage, serverMessageSchema } from "../core/internals";
-import { AnyRoute, AnyRouter, createRouter, route, update } from "../server";
-import { InferShape, number } from "../shape";
+import { InferShape, LiveTable, number, table } from "../schema";
+import { AnyRoute, AnyRouter, routeFactory, router } from "../server";
 import { createObservable } from "./observable";
 
 export * from "./react";
 
-export type MutableLiveStore<TRoute extends AnyRoute> = LiveStore<TRoute> & {
-  set: TRoute["mutations"];
-};
-
 export class LiveStore<TRoute extends AnyRoute> {
   private readonly routeName: string;
-  private readonly _route: TRoute;
-  private state: InferShape<TRoute["shape"]>;
+  private readonly _route!: TRoute;
+  private state?: InferShape<TRoute["shape"]>;
   private ws: WebSocket;
   private listeners: Set<(state: InferShape<TRoute["shape"]>) => void>;
 
@@ -22,17 +18,10 @@ export class LiveStore<TRoute extends AnyRoute> {
     this.listeners.forEach((listener) => listener(newState));
   }
 
-  constructor(
-    route: TRoute,
-    routeName: string,
-    ws: WebSocket,
-    defaultState: InferShape<TRoute["shape"]>
-  ) {
+  constructor(routeName: string, ws: WebSocket) {
     this.routeName = routeName;
     this.ws = ws;
-    this.state = defaultState;
     this.listeners = new Set();
-    this._route = route;
 
     this.ws.addEventListener("message", (event) => {
       try {
@@ -78,26 +67,26 @@ export class LiveStore<TRoute extends AnyRoute> {
     };
   }
 
-  public mutate<TMutName extends keyof TRoute["mutations"]>(
-    mutation: TMutName,
-    input: InferShape<TRoute["mutations"][TMutName]["_input"]>
-  ) {
-    // TODO: Add optimistic updates
-    this.ws.send(
-      JSON.stringify({
-        type: "MUTATE",
-        _id: nanoid(),
-        route: this.routeName,
-        mutations: [
-          this._route.shape.encode(
-            mutation as string,
-            input,
-            new Date().toISOString()
-          ),
-        ],
-      } satisfies ClientMessage)
-    );
-  }
+  // public mutate<TMutName extends keyof TRoute["mutations"]>(
+  //   mutation: TMutName,
+  //   input: InferShape<TRoute["mutations"][TMutName]["_input"]>
+  // ) {
+  //   // TODO: Add optimistic updates
+  //   this.ws.send(
+  //     JSON.stringify({
+  //       type: "MUTATE",
+  //       _id: nanoid(),
+  //       route: this.routeName,
+  //       mutations: [
+  //         this._route.shape.encode(
+  //           mutation as string,
+  //           input,
+  //           new Date().toISOString()
+  //         ),
+  //       ],
+  //     } satisfies ClientMessage)
+  //   );
+  // }
 }
 
 export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
@@ -106,14 +95,13 @@ export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
 
 export type Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
-    createStore: (
-      defaultState: InferShape<TRouter["routes"][K]["shape"]>
-    ) => LiveStore<TRouter["routes"][K]>;
+    createStore: () => LiveStore<TRouter["routes"][K]>;
   };
 };
 
 export type ClientOptions = {
   url: string;
+  schema: Record<string, LiveTable<any>>;
 };
 
 const createUntypedClient = (opts: ClientOptions) => {
@@ -123,7 +111,6 @@ const createUntypedClient = (opts: ClientOptions) => {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
-  router: TRouter,
   opts: ClientOptions
 ): Client<TRouter> => {
   const ogClient = createUntypedClient(opts);
@@ -140,36 +127,39 @@ export const createClient = <TRouter extends AnyRouter>(
 
       const id = _id as keyof TRouter["routes"];
 
-      return (
-        defaultState: InferShape<TRouter["routes"][typeof id]["shape"]>
-      ) => {
-        return new LiveStore(
-          router.routes[id as string],
+      return () => {
+        return new LiveStore<TRouter["routes"][typeof id]>(
           id as string,
-          ogClient.ws,
-          defaultState
+          ogClient.ws
         );
       };
     },
   }) as Client<TRouter>;
 };
 
-const testCounter = number();
+////////////////////////////////////////////////////////////////////////////////
+// TESTING AREA
+////////////////////////////////////////////////////////////////////////////////
 
-const test = createRouter({
-  counter: route(testCounter).withMutations({
-    set: update(),
-  }),
+const counters = table({
+  counter: number(),
+});
+
+const publicRoute = routeFactory();
+
+const test = router({
+  routes: {
+    counters: publicRoute(counters),
+  },
 });
 
 type TestRouter = typeof test;
 
-type Route = TestRouter["routes"]["counter"];
-
-const testClient = createClient(test, {
+const testClient = createClient<TestRouter>({
   url: "ws://localhost:5001/ws",
+  schema: {
+    counters,
+  },
 });
 
-type mut = MutableLiveStore<Route>;
-
-const store = testClient.counter.createStore(0);
+const store = testClient.counters.createStore();

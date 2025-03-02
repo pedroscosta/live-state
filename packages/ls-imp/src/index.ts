@@ -1,12 +1,20 @@
-import { number } from "@repo/live-state";
-import { createRouter, route, update } from "@repo/live-state/server";
+import { number, table } from "@repo/live-state";
+import { routeFactory, router } from "@repo/live-state/server";
 
-export const counter = number();
-
-export const router = createRouter({
-  counter: route(counter).withMutations({
-    set: update(),
-  }),
+export const counters = table({
+  counter: number(),
 });
 
-export type Router = typeof router;
+const publicRoute = routeFactory();
+
+export const routerImpl = router({
+  routes: {
+    counters: publicRoute(counters),
+  },
+});
+
+export type Router = typeof routerImpl;
+
+export const schema = {
+  counters,
+};

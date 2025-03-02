@@ -1,15 +1,16 @@
 "use client";
 
 import { createClient, useStore } from "@repo/live-state/client";
-import { router } from "@repo/ls-impl";
+import { schema, type Router } from "@repo/ls-impl";
 import { CounterButton } from "@repo/ui/counter-button";
 import { Link } from "@repo/ui/link";
 
-const client = createClient(router, {
+const client = createClient<Router>({
   url: "ws://localhost:5001/ws",
+  schema,
 });
 
-const counterStore = client.counter.createStore(0);
+const counterStore = client.counters.createStore();
 
 console.log("Running");
 
@@ -26,10 +27,10 @@ export default function Store(): JSX.Element {
         Store <br />
         <span>Kitchen Sink</span>
       </h1>
-      Value: {value} <br />
+      Value: {value as any} <br />
       {/* Metadata: {JSON.stringify(_metadata)} */}
       <button onClick={onClick}>Log store state</button>
-      <button onClick={() => counterStore.mutate("set", 10)}>Set to 10</button>
+      {/* <button onClick={() => counterStore.mutate("set", 10)}>Set to 10</button> */}
       {/* {count.value}
       <button
         onClick={() =>

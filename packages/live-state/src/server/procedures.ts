@@ -5,7 +5,7 @@ import {
   InferShape,
   ShapeNamesFromRecord,
   ShapeRecord,
-} from "../shape";
+} from "../schema";
 
 export class Query<T extends string, I extends ZodType | never, O extends any> {
   _type: "query" = "query";

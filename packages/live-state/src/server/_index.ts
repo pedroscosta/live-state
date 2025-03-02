@@ -1,6 +1,6 @@
 import ws from "ws";
 import { z, ZodType } from "zod";
-import { ShapeNamesFromRecord, ShapeRecord } from "../shape";
+import { ShapeNamesFromRecord, ShapeRecord } from "../schema";
 import { Query, queryFactory, QueryFactory } from "./procedures";
 
 // export * from "./procedures";

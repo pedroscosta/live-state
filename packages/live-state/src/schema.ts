@@ -1,5 +1,7 @@
 type LiveTypeMeta = {};
 
+export type MutationType = "insert" | "update" | "delete";
+
 abstract class LiveType<
   Input = any,
   Meta extends LiveTypeMeta = LiveTypeMeta,
@@ -9,7 +11,11 @@ abstract class LiveType<
   readonly _meta!: Meta;
   readonly _input!: Input;
 
-  abstract encode(mutation: string, input: Input, timestamp: string): string;
+  abstract encode(
+    mutationType: MutationType,
+    input: Input,
+    timestamp: string
+  ): string;
 
   abstract decode(
     encodedMutation: string,
@@ -58,6 +64,33 @@ export class LiveNumber extends LiveAtomicType<number> {
 }
 
 export const number = LiveNumber.create;
+
+export class LiveTable<
+  TSchema extends Record<string, LiveTypeAny>,
+> extends LiveType<TSchema> {
+  encode(
+    mutationType: MutationType,
+    input: TSchema,
+    timestamp: string
+  ): string {
+    throw new Error("Method not implemented.");
+  }
+
+  decode(
+    encodedMutation: string,
+    materializedShape?:
+      | MaterializedShape<LiveType<TSchema, LiveTypeMeta, TSchema>>
+      | undefined
+  ): MaterializedShape<LiveType<TSchema, LiveTypeMeta, TSchema>> {
+    throw new Error("Method not implemented.");
+  }
+
+  static create<TSchema extends Record<string, LiveTypeAny>>(schema: TSchema) {
+    return new LiveTable<TSchema>();
+  }
+}
+
+export const table = LiveTable.create;
 
 export type LiveTypeAny = LiveType<any>;
 
