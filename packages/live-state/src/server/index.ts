@@ -1,6 +1,5 @@
-import { AnyShape, number, table } from "../schema";
+import { AnyShape } from "../schema";
 
-export * from "./procedures";
 export * from "./web-socket";
 
 export type RouteRecord = Record<string, Route<AnyShape>>;
@@ -32,21 +31,3 @@ export const routeFactory = () => {
 };
 
 export type AnyRoute = Route<AnyShape>;
-
-/**
- * ##########################################################################
- * TESTING AREA
- * ##########################################################################
- */
-
-const counters = table({
-  counter: number(),
-});
-
-const publicRoute = routeFactory();
-
-const _router = router({
-  routes: {
-    counters: publicRoute(counters),
-  },
-});

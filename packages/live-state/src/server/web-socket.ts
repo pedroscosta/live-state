@@ -4,7 +4,7 @@ import WebSocket from "ws";
 import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
 import { clientMessageSchema } from "../core/internals";
-import { AnyShape, MaterializedShape } from "../schema";
+import { AnyShape, MaterializedLiveType } from "../schema";
 
 let counter = 0;
 
@@ -22,7 +22,7 @@ export const createWSServer: <T extends AnyRouter>(
 ) => WebsocketRequestHandler = (router) => {
   const connections: Record<ClientId, WebSocket> = {};
   const subscriptions: Record<RouteId, Record<ClientId, Subscription>> = {};
-  const states: Record<RouteId, MaterializedShape<AnyShape>> = {};
+  const states: Record<RouteId, MaterializedLiveType<AnyShape>> = {};
 
   const propagateMutations = (
     shape: string,
@@ -83,14 +83,14 @@ export const createWSServer: <T extends AnyRouter>(
         //   if (!mutationName || !router.routes[route].mutations[mutationName])
         //     return;
 
-        //   const materializedShape = router.routes[route].shape.decode(
+        //   const MaterializedLiveType = router.routes[route].shape.decode(
         //     mutations[0],
         //     states[route]
         //   );
 
-        //   console.log("Mutating", materializedShape);
+        //   console.log("Mutating", MaterializedLiveType);
 
-        //   states[route] = materializedShape;
+        //   states[route] = MaterializedLiveType;
 
         //   // TODO: Broadcast mutations to all subscribers
         // }

@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { ClientMessage, serverMessageSchema } from "../core/internals";
-import { InferShape, LiveTable, number, table } from "../schema";
+import { InferLiveType, LiveObject, number, table } from "../schema";
 import { AnyRoute, AnyRouter, routeFactory, router } from "../server";
 import { createObservable } from "./observable";
 
@@ -9,11 +9,11 @@ export * from "./react";
 export class LiveStore<TRoute extends AnyRoute> {
   private readonly routeName: string;
   private readonly _route!: TRoute;
-  private state?: InferShape<TRoute["shape"]>;
+  private state?: InferLiveType<TRoute["shape"]>;
   private ws: WebSocket;
-  private listeners: Set<(state: InferShape<TRoute["shape"]>) => void>;
+  private listeners: Set<(state: InferLiveType<TRoute["shape"]>) => void>;
 
-  private _set(newState: InferShape<TRoute["shape"]>) {
+  private _set(newState: InferLiveType<TRoute["shape"]>) {
     this.state = newState;
     this.listeners.forEach((listener) => listener(newState));
   }
@@ -32,7 +32,8 @@ export class LiveStore<TRoute extends AnyRoute> {
 
           if (shape === this.routeName) {
             // TODO: Merge mutations into state
-            this._set(mutations[0]);
+            // TODO: Decode mutations
+            // this._set(mutations[0]);
           }
         }
 
@@ -59,7 +60,7 @@ export class LiveStore<TRoute extends AnyRoute> {
     return this.state;
   }
 
-  public subscribe(listener: (state: InferShape<TRoute["shape"]>) => void) {
+  public subscribe(listener: (state: InferLiveType<TRoute["shape"]>) => void) {
     this.listeners.add(listener);
 
     return () => {
@@ -101,7 +102,7 @@ export type Client<TRouter extends AnyRouter> = {
 
 export type ClientOptions = {
   url: string;
-  schema: Record<string, LiveTable<any>>;
+  schema: Record<string, LiveObject<any>>;
 };
 
 const createUntypedClient = (opts: ClientOptions) => {
@@ -118,21 +119,41 @@ export const createClient = <TRouter extends AnyRouter>(
   return createObservable(ogClient, {
     get: (obj, path) => {
       if (path.length < 2) return;
-      if (path.length > 2 || path[1] !== "createStore")
+      if (path.length > 2)
         throw new SyntaxError(
           "Trying to access a property on the client that does't exist"
         );
 
       const [_id, op] = path;
-
       const id = _id as keyof TRouter["routes"];
 
-      return () => {
-        return new LiveStore<TRouter["routes"][typeof id]>(
-          id as string,
-          ogClient.ws
-        );
-      };
+      if (op === "createStore") {
+        return () => {
+          return new LiveStore<TRouter["routes"][typeof id]>(
+            id as string,
+            ogClient.ws
+          );
+        };
+      } else if (op === "set") {
+        return (
+          value: InferLiveType<TRouter["routes"][typeof id]["shape"]>
+        ) => {
+          ogClient.ws.send(
+            JSON.stringify({
+              _id: nanoid(),
+              type: "MUTATE",
+              route: id as string,
+              mutations: [
+                ogClient.schema[id as string].encode(
+                  "set",
+                  value,
+                  new Date().toISOString()
+                ),
+              ],
+            } satisfies ClientMessage)
+          );
+        };
+      }
     },
   }) as Client<TRouter>;
 };

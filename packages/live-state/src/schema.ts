@@ -1,26 +1,67 @@
 type LiveTypeMeta = {};
 
-export type MutationType = "insert" | "update" | "delete";
+export type MutationType = "set"; // | "insert" | "update" | "delete"
 
 abstract class LiveType<
-  Input = any,
+  Value = any,
   Meta extends LiveTypeMeta = LiveTypeMeta,
-  Output = Input,
+  EncodeInput = Partial<Value> | Value,
 > {
-  readonly _type!: Output;
+  readonly _value!: Value;
   readonly _meta!: Meta;
-  readonly _input!: Input;
+
+  constructor() {
+    this.optional = this.optional.bind(this);
+  }
 
   abstract encode(
     mutationType: MutationType,
-    input: Input,
+    input: EncodeInput,
     timestamp: string
   ): string;
 
   abstract decode(
     encodedMutation: string,
-    materializedShape?: MaterializedShape<LiveType<Input, Meta, Output>>
-  ): MaterializedShape<LiveType<Input, Meta, Output>>;
+    materializedShape?: MaterializedLiveType<LiveType<Value, Meta>>
+  ): MaterializedLiveType<LiveType<Value, Meta>>;
+
+  optional(): OptionalLiveType<this> {
+    return new OptionalLiveType<this>();
+  }
+}
+
+class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
+  T["_value"] | undefined,
+  T["_meta"],
+  T["_value"] | undefined
+> {
+  encode(
+    mutationType: MutationType,
+    input: T["_value"] | undefined,
+    timestamp: string
+  ): string {
+    throw new Error("Method not implemented.");
+  }
+  decode(
+    encodedMutation: string,
+    materializedShape?:
+      | MaterializedLiveType<
+          LiveType<
+            T["_value"] | undefined,
+            T["_meta"],
+            T["_value"] | Partial<T["_value"] | undefined>
+          >
+        >
+      | undefined
+  ): MaterializedLiveType<
+    LiveType<
+      T["_value"] | undefined,
+      T["_meta"],
+      T["_value"] | Partial<T["_value"] | undefined>
+    >
+  > {
+    throw new Error("Method not implemented.");
+  }
 }
 
 type LiveAtomicTypeMeta = {
@@ -28,20 +69,20 @@ type LiveAtomicTypeMeta = {
 } & LiveTypeMeta;
 
 abstract class LiveAtomicType<
-  Input = any,
+  Value = any,
   Meta extends LiveAtomicTypeMeta = LiveAtomicTypeMeta,
-  Output = Input,
-> extends LiveType<Input, Meta, Output> {}
+  EncodeInput = Partial<Value> | Value,
+> extends LiveType<Value, Meta, EncodeInput> {}
 
 export class LiveNumber extends LiveAtomicType<number> {
-  encode(mutationName: string, input: number, timestamp: string) {
+  encode(mutationName: string, input: Partial<number>, timestamp: string) {
     return `${mutationName};${input};${timestamp}`;
   }
 
   decode(
     encodedMutation: string,
-    materializedShape?: MaterializedShape<LiveNumber>
-  ): MaterializedShape<LiveNumber> {
+    materializedShape?: MaterializedLiveType<LiveNumber>
+  ): MaterializedLiveType<LiveNumber> {
     const [_route, value_, timestamp_] = encodedMutation.split(";");
 
     if (
@@ -65,50 +106,84 @@ export class LiveNumber extends LiveAtomicType<number> {
 
 export const number = LiveNumber.create;
 
-export class LiveTable<
+export type InferLiveObject<T extends Record<string, LiveTypeAny>> = {
+  [K in keyof T]: InferLiveType<T[K]>;
+};
+
+export class LiveObject<
   TSchema extends Record<string, LiveTypeAny>,
-> extends LiveType<TSchema> {
+> extends LiveType<TSchema, LiveTypeMeta, InferLiveObject<TSchema>> {
   encode(
     mutationType: MutationType,
-    input: TSchema,
+    input: Partial<InferLiveObject<TSchema>>,
     timestamp: string
   ): string {
-    throw new Error("Method not implemented.");
+    if (mutationType !== "set") throw new Error("Method not implemented.");
+
+    return `${mutationType};${JSON.stringify(input)};${timestamp}`;
   }
 
   decode(
     encodedMutation: string,
     materializedShape?:
-      | MaterializedShape<LiveType<TSchema, LiveTypeMeta, TSchema>>
+      | MaterializedLiveType<LiveType<TSchema, LiveTypeMeta>>
       | undefined
-  ): MaterializedShape<LiveType<TSchema, LiveTypeMeta, TSchema>> {
+  ): MaterializedLiveType<LiveType<TSchema, LiveTypeMeta>> {
     throw new Error("Method not implemented.");
   }
 
   static create<TSchema extends Record<string, LiveTypeAny>>(schema: TSchema) {
-    return new LiveTable<TSchema>();
+    return new LiveObject<TSchema>();
   }
 }
 
-export const table = LiveTable.create;
+export const table = LiveObject.create;
 
 export type LiveTypeAny = LiveType<any>;
 
+/**
+ * @deprecated
+ */
 export type Shape<T extends LiveTypeAny> = T;
 
+/**
+ * @deprecated
+ */
 export type AnyShape = Shape<LiveTypeAny>;
 
+/**
+ * @deprecated
+ */
 export type ShapeRecord = Record<string, AnyShape>;
 
+/**
+ * @deprecated
+ */
 export type ShapeNamesFromRecord<T extends ShapeRecord> = keyof T extends string
   ? keyof T
   : never;
 
-export type InferShape<T extends AnyShape> = T["_input"];
+export type InferLiveType<T extends LiveTypeAny> =
+  T["_value"] extends Record<string, LiveTypeAny>
+    ? {
+        [K in keyof T["_value"]]: InferLiveType<T["_value"][K]>;
+      }
+    : T["_value"];
 
-export type InferOutput<T extends AnyShape> = T["_type"];
-
-export type MaterializedShape<T extends AnyShape> = {
-  value: T["_type"];
-  _meta: T["_meta"];
-};
+export type MaterializedLiveType<T extends AnyShape> =
+  keyof T["_meta"] extends never
+    ? {
+        value: T["_value"] extends Record<string, LiveTypeAny>
+          ? {
+              [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+            }
+          : T["_value"];
+      }
+    : {
+        value: T["_value"] extends Record<string, LiveTypeAny>
+          ? {
+              [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+            }
+          : T["_value"];
+        _meta: T["_meta"];
+      };
