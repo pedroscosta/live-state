@@ -36,23 +36,23 @@
   "exports": {
     ".": {
       "require": "./dist/index.js",
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "import": "./dist/index.js"
     },
     "./server": {
-      "types": "./dist/server.d.ts",
+      "types": "./src/server/index.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.js"
     },
     "./client": {
-      "types": "./dist/client.d.ts",
+      "types": "./src/client/index.ts",
       "import": "./dist/client.js",
       "require": "./dist/client.js"
     }
   },
   "peerDependencies": {
-    "react": ">=18.0.0",
-    "@types/react": ">=18.0.0"
+    "@types/react": ">=18.0.0",
+    "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
     "react": {
