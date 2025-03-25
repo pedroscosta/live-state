@@ -1,7 +1,7 @@
-import { number, table } from "@repo/live-state";
+import { number, object } from "@repo/live-state";
 import { routeFactory, router } from "@repo/live-state/server";
 
-export const counters = table({
+export const counters = object({
   counter: number(),
 });
 

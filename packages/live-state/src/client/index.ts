@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { ClientMessage, serverMessageSchema } from "../core/internals";
-import { InferLiveType, LiveObject, number, table } from "../schema";
-import { AnyRoute, AnyRouter, routeFactory, router } from "../server";
+import { InferLiveType, LiveObject } from "../schema";
+import { AnyRoute, AnyRouter } from "../server";
 import { createObservable } from "./observable";
 
 export * from "./react";
@@ -97,6 +97,7 @@ export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
 export type Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
     createStore: () => LiveStore<TRouter["routes"][K]>;
+    set: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
   };
 };
 
@@ -157,30 +158,3 @@ export const createClient = <TRouter extends AnyRouter>(
     },
   }) as Client<TRouter>;
 };
-
-////////////////////////////////////////////////////////////////////////////////
-// TESTING AREA
-////////////////////////////////////////////////////////////////////////////////
-
-const counters = table({
-  counter: number(),
-});
-
-const publicRoute = routeFactory();
-
-const test = router({
-  routes: {
-    counters: publicRoute(counters),
-  },
-});
-
-type TestRouter = typeof test;
-
-const testClient = createClient<TestRouter>({
-  url: "ws://localhost:5001/ws",
-  schema: {
-    counters,
-  },
-});
-
-const store = testClient.counters.createStore();

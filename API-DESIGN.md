@@ -1,16 +1,15 @@
 ```typescript
 // schema.ts
 
-const issues = table({
+// id is a special field that is automatically generated and cannot be overridden
+const issues = object({
   name: string(),
   description: string(),
-  id: number(),
   done: boolean(),
   owner: string(),
 });
 
-// tableless schema
-const localState = object({
+const publicRoute = object({
   bears: number(),
   honeyPots: number().optional(),
 });
@@ -40,7 +39,7 @@ const protectedRoute = routeFactory({
 const router = router({
   routes: {
     // Using an pure schema creates a route without any validations
-    localState,
+    publicRoute,
     // This is how you can create a route with validations
     issues: protectedRoute(issues),
   },
@@ -56,7 +55,7 @@ const client = createClient<Router>({
   schema,
 });
 
-client.localState.set({
+client.publicRoute.set(id, {
   bears: 10, // This is valid because honeyPots is optional
 }); 
 ```

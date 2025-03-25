@@ -137,7 +137,7 @@ export class LiveObject<
   }
 }
 
-export const table = LiveObject.create;
+export const object = LiveObject.create;
 
 export type LiveTypeAny = LiveType<any>;
 
