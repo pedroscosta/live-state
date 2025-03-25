@@ -8,14 +8,24 @@ const clSubscribeMsgSchema = z.object({
   shape: z.string(),
 });
 
-// TODO: Add mutation schema
-const mutation = z.string();
+export const objectMutationSchema = z.object({
+  type: z.string(),
+  values: z.record(
+    z.object({
+      value: z.any(),
+      _meta: z.record(z.any()).optional(),
+    })
+  ),
+  where: z.record(z.any()).optional(),
+});
+
+export type ObjectMutation = z.infer<typeof objectMutationSchema>;
 
 const clMutationsMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("MUTATE"),
   route: z.string(),
-  mutations: z.array(mutation),
+  mutations: z.array(z.string()),
 });
 
 type ZodTypeWithMessageId = ZodType<{ _id: z.infer<typeof clMsgId> }>;
@@ -36,7 +46,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 const svMutationsMsgSchema = z.object({
   type: z.literal("MUTATE"),
   shape: z.string(),
-  mutations: z.array(mutation),
+  mutations: z.array(z.string()),
 });
 
 export const serverMessageSchema = svMutationsMsgSchema;

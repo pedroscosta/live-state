@@ -9,7 +9,7 @@ export const createObservable = <T extends object>(
 ) => {
   return new Proxy(obj, {
     get: (target, segment) => {
-      if (segment === "__isProp__") return true;
+      if (segment === "__isProxy__") return true;
 
       const handlerResult = handler.get?.(target, [
         ...parentPath,

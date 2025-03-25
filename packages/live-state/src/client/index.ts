@@ -97,7 +97,7 @@ export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
 export type Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
     createStore: () => LiveStore<TRouter["routes"][K]>;
-    set: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
+    insert: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
   };
 };
 
@@ -126,28 +126,30 @@ export const createClient = <TRouter extends AnyRouter>(
         );
 
       const [_id, op] = path;
-      const id = _id as keyof TRouter["routes"];
+      const routeId = _id as keyof TRouter["routes"];
 
       if (op === "createStore") {
         return () => {
-          return new LiveStore<TRouter["routes"][typeof id]>(
-            id as string,
+          return new LiveStore<TRouter["routes"][typeof routeId]>(
+            routeId as string,
             ogClient.ws
           );
         };
-      } else if (op === "set") {
+      } else if (op === "insert") {
         return (
-          value: InferLiveType<TRouter["routes"][typeof id]["shape"]>
+          value: InferLiveType<TRouter["routes"][typeof routeId]["shape"]>
         ) => {
           ogClient.ws.send(
             JSON.stringify({
               _id: nanoid(),
               type: "MUTATE",
-              route: id as string,
+              route: routeId as string,
               mutations: [
-                ogClient.schema[id as string].encode(
-                  "set",
-                  value,
+                ogClient.schema[routeId as string].encode(
+                  "insert",
+                  {
+                    value,
+                  },
                   new Date().toISOString()
                 ),
               ],

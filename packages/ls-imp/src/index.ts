@@ -2,6 +2,7 @@ import { number, object } from "@repo/live-state";
 import { routeFactory, router } from "@repo/live-state/server";
 
 export const counters = object({
+  id: number(),
   counter: number(),
 });
 

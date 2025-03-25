@@ -1,6 +1,6 @@
 type LiveTypeMeta = {};
 
-export type MutationType = "set"; // | "insert" | "update" | "delete"
+export type MutationType = "set" | "insert"; // | "update" | "delete"
 
 abstract class LiveType<
   Value = any,
@@ -75,26 +75,33 @@ abstract class LiveAtomicType<
 > extends LiveType<Value, Meta, EncodeInput> {}
 
 export class LiveNumber extends LiveAtomicType<number> {
-  encode(mutationName: string, input: Partial<number>, timestamp: string) {
-    return `${mutationName};${input};${timestamp}`;
+  encode(
+    mutationType: MutationType,
+    input: Partial<number>,
+    timestamp: string
+  ) {
+    if (mutationType !== "set")
+      throw new Error("Mutation type not implemented.");
+
+    return `${input};${timestamp}`;
   }
 
   decode(
     encodedMutation: string,
     materializedShape?: MaterializedLiveType<LiveNumber>
   ): MaterializedLiveType<LiveNumber> {
-    const [_route, value_, timestamp_] = encodedMutation.split(";");
+    const [value, ts] = encodedMutation.split(";");
 
     if (
       materializedShape &&
-      materializedShape._meta.timestamp.localeCompare(timestamp_) >= 0
+      materializedShape._meta.timestamp.localeCompare(ts) >= 0
     )
       return materializedShape;
 
     return {
-      value: Number(value_),
+      value: Number(value),
       _meta: {
-        timestamp: timestamp_,
+        timestamp: ts,
       },
     };
   }
@@ -110,17 +117,38 @@ export type InferLiveObject<T extends Record<string, LiveTypeAny>> = {
   [K in keyof T]: InferLiveType<T[K]>;
 };
 
+export type LiveObjectMutation<TSchema extends Record<string, LiveTypeAny>> = {
+  value: Partial<InferLiveObject<TSchema>>;
+  where?: Record<string, any>; // TODO Infer indexable types
+};
+
 export class LiveObject<
   TSchema extends Record<string, LiveTypeAny>,
-> extends LiveType<TSchema, LiveTypeMeta, InferLiveObject<TSchema>> {
+> extends LiveType<TSchema, LiveTypeMeta, LiveObjectMutation<TSchema>> {
+  public readonly fields: TSchema;
+
+  constructor(fields: TSchema) {
+    super();
+    this.fields = fields;
+  }
+
   encode(
     mutationType: MutationType,
-    input: Partial<InferLiveObject<TSchema>>,
+    input: LiveObjectMutation<TSchema>,
     timestamp: string
   ): string {
-    if (mutationType !== "set") throw new Error("Method not implemented.");
+    if (mutationType === "set") throw new Error("Method not implemented.");
 
-    return `${mutationType};${JSON.stringify(input)};${timestamp}`;
+    return JSON.stringify({
+      type: mutationType,
+      value: Object.fromEntries(
+        Object.entries(input.value).map(([key, value]) => [
+          key,
+          this.fields[key].encode("set", value, timestamp),
+        ])
+      ),
+      where: input.where,
+    });
   }
 
   decode(
@@ -133,7 +161,7 @@ export class LiveObject<
   }
 
   static create<TSchema extends Record<string, LiveTypeAny>>(schema: TSchema) {
-    return new LiveObject<TSchema>();
+    return new LiveObject<TSchema>(schema);
   }
 }
 
