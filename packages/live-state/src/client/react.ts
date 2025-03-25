@@ -7,10 +7,12 @@ export const identity = <T>(arg: T): T => arg;
 export function useStore<TStore extends LiveStore<AnyRoute>>(
   store: TStore
 ): StoreState<TStore>;
+
 export function useStore<TStore extends LiveStore<AnyRoute>, StateSlice>(
   store: TStore,
   selector: (state: StoreState<TStore>) => StateSlice
 ): StateSlice;
+
 export function useStore<TStore extends LiveStore<AnyRoute>, StateSlice>(
   store: TStore,
   selector: (state: StoreState<TStore>) => StateSlice = identity as any
