@@ -6,8 +6,6 @@ import { ServerMessage } from "../core";
 import { clientMessageSchema } from "../core/internals";
 import { AnyShape, MaterializedLiveType } from "../schema";
 
-let counter = 0;
-
 export type Subscription = {
   __subscribed: true;
   filters?: Record<string, any>;
@@ -47,6 +45,7 @@ export const createWSServer: <T extends AnyRouter>(
 
   return (ws) => {
     const clientId = nanoid();
+    console.log("Client connected:", clientId);
 
     connections[clientId] = ws;
 
@@ -103,6 +102,10 @@ export const createWSServer: <T extends AnyRouter>(
       console.log("Connection closed", clientId);
       connections[clientId]?.close();
       delete connections[clientId];
+
+      Object.entries(subscriptions).forEach(([shape, clients]) => {
+        delete clients[clientId];
+      });
     });
   };
 };

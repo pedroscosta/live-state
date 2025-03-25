@@ -20,7 +20,7 @@ export default function Store(): JSX.Element {
 
   useEffect(() => {
     // console.log(client.counters.insert);
-    client.counters.insert({ id: 0, counter: 0 });
+    // client.counters.insert({ id: 0, counter: 0 });
   }, []);
 
   const onClick = () => {
