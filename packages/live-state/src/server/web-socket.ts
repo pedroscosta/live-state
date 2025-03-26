@@ -22,9 +22,9 @@ export const createWSServer: <T extends AnyRouter>(
   const subscriptions: Record<RouteId, Record<ClientId, Subscription>> = {};
   const states: Record<RouteId, MaterializedLiveType<AnyShape>> = {};
 
-  const propagateMutations = (
+  const propagateMutation = (
     shape: string,
-    mutations: any,
+    mutation: string,
     ignore?: string
   ) => {
     if (!subscriptions[shape]) return;
@@ -37,7 +37,7 @@ export const createWSServer: <T extends AnyRouter>(
         JSON.stringify({
           type: "MUTATE",
           shape,
-          mutations,
+          mutation,
         } satisfies ServerMessage)
       );
     });
@@ -66,33 +66,29 @@ export const createWSServer: <T extends AnyRouter>(
           };
 
           console.log("Subscribing to", subscriptions);
+        } else if (parsedMessage.type === "MUTATE") {
+          // TODO Handle error responses
+          const { route, mutations } = parsedMessage;
+
+          if (!router.routes[route]) return;
+          if (!mutations.length) return;
+
+          for (const strMutation of mutations) {
+            try {
+              console.log(`Applying mutation on ${route}`);
+              const materializedMutation = router.routes[route].shape.decode(
+                strMutation,
+                states[route]
+              );
+
+              states[route] = materializedMutation;
+
+              propagateMutation(route, strMutation);
+            } catch (e) {
+              console.error("Error parsing mutation from the client:", e);
+            }
+          }
         }
-        // else if (parsedMessage.type === "MUTATE") {
-        //   // TODO Handle error responses
-        //   const { route, mutations } = parsedMessage;
-
-        //   if (!router.routes[route]) return;
-        //   if (!mutations.length) return;
-
-        //   // TODO Handle batch mutations
-        //   // TODO Make the encoding better (; in the parts would break this)
-
-        //   const [mutationName] = mutations[0].split(";");
-
-        //   if (!mutationName || !router.routes[route].mutations[mutationName])
-        //     return;
-
-        //   const MaterializedLiveType = router.routes[route].shape.decode(
-        //     mutations[0],
-        //     states[route]
-        //   );
-
-        //   console.log("Mutating", MaterializedLiveType);
-
-        //   states[route] = MaterializedLiveType;
-
-        //   // TODO: Broadcast mutations to all subscribers
-        // }
       } catch (e) {
         console.error("Error parsing message from the client:", e);
       }

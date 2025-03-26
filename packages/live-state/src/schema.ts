@@ -1,3 +1,5 @@
+import { ObjectMutation, objectMutationSchema } from "./core/internals";
+
 type LiveTypeMeta = {};
 
 export type MutationType = "set" | "insert"; // | "update" | "delete"
@@ -141,23 +143,44 @@ export class LiveObject<
 
     return JSON.stringify({
       type: mutationType,
-      value: Object.fromEntries(
+      values: Object.fromEntries(
         Object.entries(input.value).map(([key, value]) => [
           key,
           this.fields[key].encode("set", value, timestamp),
         ])
       ),
       where: input.where,
-    });
+    } satisfies ObjectMutation);
   }
 
   decode(
     encodedMutation: string,
-    materializedShape?:
-      | MaterializedLiveType<LiveType<TSchema, LiveTypeMeta>>
-      | undefined
-  ): MaterializedLiveType<LiveType<TSchema, LiveTypeMeta>> {
-    throw new Error("Method not implemented.");
+    materializedShape?: MaterializedLiveType<this> | undefined
+  ): MaterializedLiveType<this> {
+    console.log(JSON.parse(encodedMutation));
+    const { success, data } = objectMutationSchema.safeParse(
+      JSON.parse(encodedMutation)
+    );
+
+    if (!success) throw new Error("Invalid mutation");
+
+    const { type, values, where } = data;
+
+    if (type === "insert") {
+      // TODO Enable this again
+      // if (materializedShape) throw new Error("Insert conflict");
+
+      return {
+        value: Object.fromEntries(
+          Object.entries(values).map(([key, value]) => [
+            key,
+            this.fields[key].decode(value),
+          ])
+        ),
+      } as MaterializedLiveType<this>;
+    }
+
+    throw new Error("Mutation type not implemented.");
   }
 
   static create<TSchema extends Record<string, LiveTypeAny>>(schema: TSchema) {
@@ -198,7 +221,7 @@ export type InferLiveType<T extends LiveTypeAny> =
       }
     : T["_value"];
 
-export type MaterializedLiveType<T extends AnyShape> =
+export type MaterializedLiveType<T extends LiveTypeAny> =
   keyof T["_meta"] extends never
     ? {
         value: T["_value"] extends Record<string, LiveTypeAny>
@@ -215,3 +238,16 @@ export type MaterializedLiveType<T extends AnyShape> =
           : T["_value"];
         _meta: T["_meta"];
       };
+
+export const inferValue = <T extends LiveTypeAny>(
+  type: MaterializedLiveType<T>
+): InferLiveType<T> => {
+  if (typeof type.value !== "object") return type.value;
+
+  return Object.fromEntries(
+    Object.entries(type.value).map(([key, value]) => [
+      key,
+      inferValue(value as any),
+    ])
+  ) as InferLiveType<T>;
+};

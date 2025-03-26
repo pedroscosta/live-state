@@ -10,12 +10,7 @@ const clSubscribeMsgSchema = z.object({
 
 export const objectMutationSchema = z.object({
   type: z.string(),
-  values: z.record(
-    z.object({
-      value: z.any(),
-      _meta: z.record(z.any()).optional(),
-    })
-  ),
+  values: z.record(z.string()),
   where: z.record(z.any()).optional(),
 });
 
@@ -46,7 +41,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 const svMutationsMsgSchema = z.object({
   type: z.literal("MUTATE"),
   shape: z.string(),
-  mutations: z.array(z.string()),
+  mutation: z.string(),
 });
 
 export const serverMessageSchema = svMutationsMsgSchema;
