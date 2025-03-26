@@ -4,12 +4,19 @@ import { createClient, useStore } from "@repo/live-state/client";
 import { type Router, schema } from "@repo/ls-impl";
 import { CounterButton } from "@repo/ui/counter-button";
 import { Link } from "@repo/ui/link";
-import { useEffect } from "react";
 
 const client = createClient<Router>({
   url: "ws://localhost:5001/ws",
   schema,
 });
+
+client.ws.addEventListener(
+  "open",
+  () => {
+    client.counters.insert({ id: 0, counter: 0 });
+  },
+  { once: true }
+);
 
 const counterStore = client.counters.createStore();
 
@@ -17,11 +24,6 @@ console.log("Running");
 
 export default function Store(): JSX.Element {
   const value = useStore(counterStore);
-
-  useEffect(() => {
-    // console.log(client.counters.insert);
-    // client.counters.insert({ id: 0, counter: 0 });
-  }, []);
 
   const onClick = () => {
     console.log(counterStore.get());

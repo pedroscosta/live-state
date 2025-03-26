@@ -95,6 +95,8 @@ export type StoreState<TStore extends LiveStore<AnyRoute>> = ReturnType<
 >;
 
 export type Client<TRouter extends AnyRouter> = {
+  ws: WebSocket;
+} & {
   [K in keyof TRouter["routes"]]: {
     createStore: () => LiveStore<TRouter["routes"][K]>;
     insert: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
@@ -118,8 +120,12 @@ export const createClient = <TRouter extends AnyRouter>(
   const ogClient = createUntypedClient(opts);
 
   return createObservable(ogClient, {
-    get: (obj, path) => {
-      if (path.length < 2) return;
+    get: (_, path) => {
+      if (path.length < 2) {
+        if (path[0] === "ws") return ogClient.ws;
+
+        return;
+      }
       if (path.length > 2)
         throw new SyntaxError(
           "Trying to access a property on the client that does't exist"
