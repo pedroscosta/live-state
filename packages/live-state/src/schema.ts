@@ -1,4 +1,4 @@
-import { ObjectMutation, objectMutationSchema } from "./core/internals";
+import { ObjectMutation } from "./core/internals";
 
 type LiveTypeMeta = {};
 
@@ -8,9 +8,12 @@ abstract class LiveType<
   Value = any,
   Meta extends LiveTypeMeta = LiveTypeMeta,
   EncodeInput = Partial<Value> | Value,
+  DecodeInput = string,
 > {
   readonly _value!: Value;
   readonly _meta!: Meta;
+  readonly _encodeInput!: EncodeInput;
+  readonly _decodeInput!: DecodeInput;
 
   constructor() {
     this.optional = this.optional.bind(this);
@@ -23,7 +26,8 @@ abstract class LiveType<
   ): string;
 
   abstract decode(
-    encodedMutation: string,
+    mutationType: MutationType,
+    encodedMutation: DecodeInput,
     materializedShape?: MaterializedLiveType<LiveType<Value, Meta>>
   ): MaterializedLiveType<LiveType<Value, Meta>>;
 
@@ -35,7 +39,8 @@ abstract class LiveType<
 class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
   T["_value"] | undefined,
   T["_meta"],
-  T["_value"] | undefined
+  T["_encodeInput"],
+  T["_decodeInput"]
 > {
   encode(
     mutationType: MutationType,
@@ -45,13 +50,15 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
     throw new Error("Method not implemented.");
   }
   decode(
-    encodedMutation: string,
+    mutationType: MutationType,
+    encodedMutation: T["_decodeInput"],
     materializedShape?:
       | MaterializedLiveType<
           LiveType<
             T["_value"] | undefined,
             T["_meta"],
-            T["_value"] | Partial<T["_value"] | undefined>
+            T["_value"] | Partial<T["_value"] | undefined>,
+            T["_decodeInput"]
           >
         >
       | undefined
@@ -59,7 +66,8 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
     LiveType<
       T["_value"] | undefined,
       T["_meta"],
-      T["_value"] | Partial<T["_value"] | undefined>
+      T["_value"] | Partial<T["_value"] | undefined>,
+      T["_decodeInput"]
     >
   > {
     throw new Error("Method not implemented.");
@@ -89,6 +97,7 @@ export class LiveNumber extends LiveAtomicType<number> {
   }
 
   decode(
+    mutationType: MutationType,
     encodedMutation: string,
     materializedShape?: MaterializedLiveType<LiveNumber>
   ): MaterializedLiveType<LiveNumber> {
@@ -126,7 +135,12 @@ export type LiveObjectMutation<TSchema extends Record<string, LiveTypeAny>> = {
 
 export class LiveObject<
   TSchema extends Record<string, LiveTypeAny>,
-> extends LiveType<TSchema, LiveTypeMeta, LiveObjectMutation<TSchema>> {
+> extends LiveType<
+  TSchema,
+  LiveTypeMeta,
+  LiveObjectMutation<TSchema>,
+  Record<string, any>
+> {
   public readonly fields: TSchema;
 
   constructor(fields: TSchema) {
@@ -154,27 +168,19 @@ export class LiveObject<
   }
 
   decode(
-    encodedMutation: string,
+    mutationType: MutationType,
+    encodedMutations: Record<string, any>,
     materializedShape?: MaterializedLiveType<this> | undefined
   ): MaterializedLiveType<this> {
-    console.log(JSON.parse(encodedMutation));
-    const { success, data } = objectMutationSchema.safeParse(
-      JSON.parse(encodedMutation)
-    );
-
-    if (!success) throw new Error("Invalid mutation");
-
-    const { type, values, where } = data;
-
-    if (type === "insert") {
+    if (mutationType === "insert") {
       // TODO Enable this again
       // if (materializedShape) throw new Error("Insert conflict");
 
       return {
         value: Object.fromEntries(
-          Object.entries(values).map(([key, value]) => [
+          Object.entries(encodedMutations).map(([key, value]) => [
             key,
-            this.fields[key].decode(value),
+            this.fields[key].decode(mutationType, value),
           ])
         ),
       } as MaterializedLiveType<this>;
@@ -190,7 +196,7 @@ export class LiveObject<
 
 export const object = LiveObject.create;
 
-export type LiveTypeAny = LiveType<any>;
+export type LiveTypeAny = LiveType<any, LiveTypeMeta, any, any>;
 
 /**
  * @deprecated
@@ -251,3 +257,6 @@ export const inferValue = <T extends LiveTypeAny>(
     ])
   ) as InferLiveType<T>;
 };
+
+// TODO use proper index type
+export type LiveObjectIndex = number;

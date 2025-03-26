@@ -1,10 +1,16 @@
 import { nanoid } from "nanoid";
-import { ClientMessage, serverMessageSchema } from "../core/internals";
+import {
+  ClientMessage,
+  objectMutationSchema,
+  serverMessageSchema,
+} from "../core/internals";
 import {
   InferLiveType,
   inferValue,
   LiveObject,
+  LiveObjectIndex,
   MaterializedLiveType,
+  MutationType,
 } from "../schema";
 import { AnyRoute, AnyRouter } from "../server";
 import { createObservable } from "./observable";
@@ -15,14 +21,17 @@ export class LiveStore<TRoute extends AnyRoute> {
   public _route!: TRoute;
   private readonly routeName: string;
   private readonly schema: TRoute["shape"];
-  private state?: MaterializedLiveType<TRoute["shape"]>;
-  private inferredState?: InferLiveType<TRoute["shape"]>;
+  private state: Record<
+    LiveObjectIndex,
+    MaterializedLiveType<TRoute["shape"]>
+  > = {};
+  private inferredState: InferLiveType<TRoute["shape"]>[] = [];
   private ws: WebSocket;
-  private listeners: Set<(state: InferLiveType<TRoute["shape"]>) => void>;
+  private listeners: Set<(state: typeof this.state) => void>;
 
-  private _set(newState: MaterializedLiveType<TRoute["shape"]>) {
+  private _set(newState: typeof this.state) {
     this.state = newState;
-    this.inferredState = inferValue(newState);
+    this.inferredState = Object.values(newState).map(inferValue);
     this.listeners.forEach((listener) => listener(newState));
   }
 
@@ -40,11 +49,25 @@ export class LiveStore<TRoute extends AnyRoute> {
           const { shape, mutation } = parsedMessage;
 
           if (shape === this.routeName) {
-            this._set(
-              this.schema.decode(mutation, this.state) as MaterializedLiveType<
-                TRoute["shape"]
-              >
-            );
+            try {
+              const { type, values } = objectMutationSchema.parse(
+                JSON.parse(mutation)
+              );
+
+              if (type === "insert") {
+                const newRecord = this.schema.decode(
+                  type as MutationType,
+                  values
+                ) as MaterializedLiveType<TRoute["shape"]>;
+
+                this._set({
+                  ...this.state,
+                  [(newRecord.value as any).id.value]: newRecord,
+                });
+              }
+            } catch (e) {
+              console.error("Error parsing mutation from the server:", e);
+            }
           }
         }
 
@@ -67,15 +90,15 @@ export class LiveStore<TRoute extends AnyRoute> {
     });
   }
 
-  public getRaw(): MaterializedLiveType<TRoute["shape"]> | undefined {
+  public getRaw() {
     return this.state;
   }
 
-  public get(): InferLiveType<TRoute["shape"]> | undefined {
+  public get() {
     return this.inferredState;
   }
 
-  public subscribe(listener: (state: InferLiveType<TRoute["shape"]>) => void) {
+  public subscribe(listener: (state: typeof this.state) => void) {
     this.listeners.add(listener);
 
     return () => {
@@ -105,9 +128,9 @@ export class LiveStore<TRoute extends AnyRoute> {
   // }
 }
 
-export type StoreState<TStore extends LiveStore<AnyRoute>> =
-  | InferLiveType<TStore["_route"]["shape"]>
-  | undefined;
+export type StoreState<TStore extends LiveStore<AnyRoute>> = InferLiveType<
+  TStore["_route"]["shape"]
+>[];
 
 export type Client<TRouter extends AnyRouter> = {
   ws: WebSocket;

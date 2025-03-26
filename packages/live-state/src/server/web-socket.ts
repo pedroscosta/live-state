@@ -3,8 +3,13 @@ import { nanoid } from "nanoid";
 import WebSocket from "ws";
 import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
-import { clientMessageSchema } from "../core/internals";
-import { AnyShape, MaterializedLiveType } from "../schema";
+import { clientMessageSchema, objectMutationSchema } from "../core/internals";
+import {
+  AnyShape,
+  LiveObjectIndex,
+  MaterializedLiveType,
+  MutationType,
+} from "../schema";
 
 export type Subscription = {
   __subscribed: true;
@@ -20,7 +25,10 @@ export const createWSServer: <T extends AnyRouter>(
 ) => WebsocketRequestHandler = (router) => {
   const connections: Record<ClientId, WebSocket> = {};
   const subscriptions: Record<RouteId, Record<ClientId, Subscription>> = {};
-  const states: Record<RouteId, MaterializedLiveType<AnyShape>> = {};
+  const states: Record<
+    RouteId,
+    Record<LiveObjectIndex, MaterializedLiveType<AnyShape>>
+  > = {};
 
   const propagateMutation = (
     shape: string,
@@ -76,12 +84,23 @@ export const createWSServer: <T extends AnyRouter>(
           for (const strMutation of mutations) {
             try {
               console.log(`Applying mutation on ${route}`);
-              const materializedMutation = router.routes[route].shape.decode(
-                strMutation,
-                states[route]
+              const { type: _type, values } = objectMutationSchema.parse(
+                JSON.parse(strMutation)
               );
 
-              states[route] = materializedMutation;
+              const type = _type as MutationType;
+
+              if (type === "insert") {
+                const materializedMutation = router.routes[route].shape.decode(
+                  type,
+                  values
+                );
+
+                if (!states[route]) states[route] = {};
+
+                states[route][(materializedMutation.value as any).id.value] =
+                  materializedMutation;
+              }
 
               propagateMutation(route, strMutation);
             } catch (e) {
