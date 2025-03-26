@@ -4,14 +4,21 @@ import { AnyRoute } from "../server";
 
 export const identity = <T>(arg: T): T => arg;
 
+type Simplify<T> =
+  T extends Record<string, any>
+    ? {
+        [K in keyof T]: Simplify<T[K]>;
+      }
+    : T;
+
 export function useStore<TStore extends LiveStore<AnyRoute>>(
   store: TStore
-): StoreState<TStore>;
+): Simplify<StoreState<TStore>>;
 
 export function useStore<TStore extends LiveStore<AnyRoute>, StateSlice>(
   store: TStore,
   selector: (state: StoreState<TStore>) => StateSlice
-): StateSlice;
+): Simplify<StateSlice>;
 
 export function useStore<TStore extends LiveStore<AnyRoute>, StateSlice>(
   store: TStore,
