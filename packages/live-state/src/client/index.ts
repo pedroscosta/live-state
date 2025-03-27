@@ -5,10 +5,11 @@ import {
   serverMessageSchema,
 } from "../core/internals";
 import {
+  InferIndex,
   InferLiveType,
   inferValue,
+  InferWhereClause,
   LiveObject,
-  LiveObjectIndex,
   MaterializedLiveType,
   MutationType,
 } from "../schema";
@@ -22,7 +23,7 @@ export class LiveStore<TRoute extends AnyRoute> {
   private readonly routeName: string;
   private readonly schema: TRoute["shape"];
   private state: Record<
-    LiveObjectIndex,
+    InferIndex<TRoute["shape"]>,
     MaterializedLiveType<TRoute["shape"]>
   > = {};
   private inferredState: InferLiveType<TRoute["shape"]>[] = [];
@@ -50,7 +51,7 @@ export class LiveStore<TRoute extends AnyRoute> {
 
           if (shape === this.routeName) {
             try {
-              const { type, values } = objectMutationSchema.parse(
+              const { type, values, where } = objectMutationSchema.parse(
                 JSON.parse(mutation)
               );
 
@@ -63,6 +64,21 @@ export class LiveStore<TRoute extends AnyRoute> {
                 this._set({
                   ...this.state,
                   [(newRecord.value as any).id.value]: newRecord,
+                });
+              } else if (type === "update") {
+                const record = this.state[where?.id];
+
+                if (!record) return;
+
+                const updatedRecord = this.schema.decode(
+                  type as MutationType,
+                  values,
+                  record
+                ) as MaterializedLiveType<TRoute["shape"]>;
+
+                this._set({
+                  ...this.state,
+                  [(updatedRecord.value as any).id.value]: updatedRecord,
                 });
               }
             } catch (e) {
@@ -138,6 +154,10 @@ export type Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
     createStore: () => LiveStore<TRouter["routes"][K]>;
     insert: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
+    update: (opts: {
+      value: Partial<InferLiveType<TRouter["routes"][K]["shape"]>>;
+      where: InferWhereClause<TRouter["routes"][K]["shape"]>;
+    }) => void;
   };
 };
 
@@ -195,6 +215,26 @@ export const createClient = <TRouter extends AnyRouter>(
                   {
                     value,
                   },
+                  new Date().toISOString()
+                ),
+              ],
+            } satisfies ClientMessage)
+          );
+        };
+      } else if (op === "update") {
+        return (opts: {
+          value: InferLiveType<TRouter["routes"][typeof routeId]["shape"]>;
+          where: InferWhereClause<TRouter["routes"][typeof routeId]["shape"]>;
+        }) => {
+          ogClient.ws.send(
+            JSON.stringify({
+              _id: nanoid(),
+              type: "MUTATE",
+              route: routeId as string,
+              mutations: [
+                ogClient.schema[routeId as string].encode(
+                  "update",
+                  opts,
                   new Date().toISOString()
                 ),
               ],

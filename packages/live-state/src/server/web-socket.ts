@@ -5,8 +5,8 @@ import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
 import { clientMessageSchema, objectMutationSchema } from "../core/internals";
 import {
-  AnyShape,
-  LiveObjectIndex,
+  InferIndex,
+  LiveTypeAny,
   MaterializedLiveType,
   MutationType,
 } from "../schema";
@@ -27,7 +27,7 @@ export const createWSServer: <T extends AnyRouter>(
   const subscriptions: Record<RouteId, Record<ClientId, Subscription>> = {};
   const states: Record<
     RouteId,
-    Record<LiveObjectIndex, MaterializedLiveType<AnyShape>>
+    Record<InferIndex<LiveTypeAny>, MaterializedLiveType<LiveTypeAny>>
   > = {};
 
   const propagateMutation = (
@@ -84,9 +84,11 @@ export const createWSServer: <T extends AnyRouter>(
           for (const strMutation of mutations) {
             try {
               console.log(`Applying mutation on ${route}`);
-              const { type: _type, values } = objectMutationSchema.parse(
-                JSON.parse(strMutation)
-              );
+              const {
+                type: _type,
+                values,
+                where,
+              } = objectMutationSchema.parse(JSON.parse(strMutation));
 
               const type = _type as MutationType;
 
@@ -97,6 +99,18 @@ export const createWSServer: <T extends AnyRouter>(
                 );
 
                 if (!states[route]) states[route] = {};
+
+                states[route][(materializedMutation.value as any).id.value] =
+                  materializedMutation;
+              } else if (type === "update") {
+                if (!states[route] || !where || !states[route][where["id"]])
+                  return;
+
+                const materializedMutation = router.routes[route].shape.decode(
+                  type,
+                  values,
+                  states[route][where["id"]] // TODO Do a proper query for this
+                );
 
                 states[route][(materializedMutation.value as any).id.value] =
                   materializedMutation;

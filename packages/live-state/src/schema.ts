@@ -2,7 +2,7 @@ import { ObjectMutation } from "./core/internals";
 
 type LiveTypeMeta = {};
 
-export type MutationType = "set" | "insert"; // | "update" | "delete"
+export type MutationType = "set" | "insert" | "update"; // | "delete"
 
 abstract class LiveType<
   Value = any,
@@ -184,6 +184,26 @@ export class LiveObject<
           ])
         ),
       } as MaterializedLiveType<this>;
+    } else if (mutationType === "update") {
+      if (!materializedShape) throw new Error("Missing previous value");
+
+      return {
+        value: {
+          ...materializedShape.value,
+          ...Object.fromEntries(
+            Object.entries(encodedMutations).map(([key, value]) => [
+              key,
+              this.fields[key].decode(
+                mutationType,
+                value,
+                materializedShape.value[
+                  key
+                ] as MaterializedLiveType<LiveTypeAny>
+              ),
+            ])
+          ),
+        },
+      } as MaterializedLiveType<this>;
     }
 
     throw new Error("Mutation type not implemented.");
@@ -259,4 +279,5 @@ export const inferValue = <T extends LiveTypeAny>(
 };
 
 // TODO use proper index type
-export type LiveObjectIndex = number;
+export type InferIndex<T extends LiveTypeAny> = number;
+export type InferWhereClause<T extends LiveTypeAny> = Record<string, any>;
