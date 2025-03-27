@@ -1,7 +1,7 @@
 # TODO:
 
-[ ] Add live object (table-less shapes)
-[ ] Add mutations (insert, update, delete)
+[ ] Add upsert mutation
+[ ] Add remote state message
 [ ] Add optimistic updates
 [ ] Add client storage
 [ ] Add server storage
