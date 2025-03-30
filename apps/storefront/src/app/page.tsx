@@ -1,15 +1,32 @@
 "use client";
 
 import { Switch } from "@/components/ui/switch";
+import { useSyncExternalStore } from "react";
 import { LiveComponent } from "./component";
+import { client } from "./live-client";
 
 export default function Store(): JSX.Element {
+  const isConnected = useSyncExternalStore(
+    (cb) => {
+      client.ws.addEventListener("connectionChange", cb);
+      return () => {
+        client.ws.removeEventListener("connectionChange", cb);
+      };
+    },
+    () => client.ws.connected()
+  );
+
   return (
     <>
       <header className="w-full h-16 flex items-center justify-end gap-2 p-2 border-b">
         <div className="flex items-center gap-2">
           Connected
-          <Switch />
+          <Switch
+            checked={isConnected}
+            onCheckedChange={(v) =>
+              v ? client.ws.connect() : client.ws.disconnect()
+            }
+          />
         </div>
       </header>
       <LiveComponent />

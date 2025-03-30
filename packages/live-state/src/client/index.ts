@@ -15,6 +15,7 @@ import {
 } from "../schema";
 import { AnyRoute, AnyRouter } from "../server";
 import { createObservable } from "./observable";
+import { WebSocketClient } from "./web-socket";
 
 export * from "./react";
 
@@ -27,7 +28,7 @@ export class LiveStore<TRoute extends AnyRoute> {
     MaterializedLiveType<TRoute["shape"]>
   > = {};
   private inferredState: InferLiveType<TRoute["shape"]>[] = [];
-  private ws: WebSocket;
+  private ws: WebSocketClient;
   private listeners: Set<(state: typeof this.state) => void>;
 
   private _set(newState: typeof this.state) {
@@ -36,7 +37,7 @@ export class LiveStore<TRoute extends AnyRoute> {
     this.listeners.forEach((listener) => listener(newState));
   }
 
-  constructor(routeName: string, schema: TRoute["shape"], ws: WebSocket) {
+  constructor(routeName: string, schema: TRoute["shape"], ws: WebSocketClient) {
     this.routeName = routeName;
     this.schema = schema;
     this.ws = ws;
@@ -155,7 +156,7 @@ export type StoreState<TStore extends LiveStore<AnyRoute>> = InferLiveType<
 >[];
 
 export type Client<TRouter extends AnyRouter> = {
-  ws: WebSocket;
+  ws: WebSocketClient;
 } & {
   [K in keyof TRouter["routes"]]: {
     createStore: () => LiveStore<TRouter["routes"][K]>;
@@ -173,7 +174,12 @@ export type ClientOptions = {
 };
 
 const createUntypedClient = (opts: ClientOptions) => {
-  const ws = new WebSocket(opts.url);
+  const ws = new WebSocketClient({
+    url: opts.url,
+    autoConnect: true,
+    autoReconnect: true,
+    reconnectTimeout: 5000,
+  });
 
   return { ...opts, ws };
 };
@@ -249,5 +255,5 @@ export const createClient = <TRouter extends AnyRouter>(
         };
       }
     },
-  }) as Client<TRouter>;
+  }) as unknown as Client<TRouter>;
 };
