@@ -3,7 +3,11 @@ import { nanoid } from "nanoid";
 import WebSocket from "ws";
 import { AnyRouter } from ".";
 import { ServerMessage } from "../core";
-import { clientMessageSchema, objectMutationSchema } from "../core/internals";
+import {
+  clientMessageSchema,
+  objectMutationSchema,
+  ServerBootstrapMessage,
+} from "../core/internals";
 import {
   InferIndex,
   LiveTypeAny,
@@ -74,6 +78,14 @@ export const createWSServer: <T extends AnyRouter>(
           };
 
           console.log("Subscribing to", subscriptions);
+
+          ws.send(
+            JSON.stringify({
+              type: "BOOTSTRAP",
+              objectName: shape,
+              data: Object.values(states[shape] ?? {}),
+            } satisfies ServerBootstrapMessage)
+          );
         } else if (parsedMessage.type === "MUTATE") {
           // TODO Handle error responses
           const { route, mutations } = parsedMessage;
@@ -121,6 +133,18 @@ export const createWSServer: <T extends AnyRouter>(
               console.error("Error parsing mutation from the client:", e);
             }
           }
+        } else if (parsedMessage.type === "BOOTSTRAP") {
+          const { objectName } = parsedMessage;
+
+          if (!router.routes[objectName]) return;
+
+          ws.send(
+            JSON.stringify({
+              type: "BOOTSTRAP",
+              objectName,
+              data: Object.values(states[objectName] ?? {}),
+            } satisfies ServerBootstrapMessage)
+          );
         }
       } catch (e) {
         console.error("Error parsing message from the client:", e);

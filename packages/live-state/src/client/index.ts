@@ -85,6 +85,12 @@ export class LiveStore<TRoute extends AnyRoute> {
               console.error("Error parsing mutation from the server:", e);
             }
           }
+        } else if (parsedMessage.type === "BOOTSTRAP") {
+          const { objectName, data } = parsedMessage;
+
+          if (objectName === this.routeName) {
+            this._set(data);
+          }
         }
 
         console.log("Message received from the server:", parsedMessage);
