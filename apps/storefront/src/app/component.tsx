@@ -1,28 +1,60 @@
+import { Button } from "@/components/ui/button";
+import ReactJsonView from "@microlink/react-json-view";
 import { useStore } from "@repo/live-state/client";
+import { useSyncExternalStore } from "react";
 import { client, counterStore } from "./live-client";
 
 export function LiveComponent(): JSX.Element {
   const counters = useStore(counterStore);
 
-  return (
-    <>
-      <div>value: {JSON.stringify(counters)}</div>{" "}
-      <button
-        onClick={() => {
-          if (!counters[0]) {
-            client.counters.insert({ id: 0, counter: 1 });
-            return;
-          }
+  const raw = useSyncExternalStore(
+    counterStore.subscribe.bind(counterStore),
+    () => counterStore.getRaw()
+  );
 
-          client.counters.update({
-            value: { counter: counters[0].counter + 1 },
-            where: { id: 0 },
-          });
-        }}
-        type="button"
-      >
-        Add 1
-      </button>
-    </>
+  return (
+    <div className="p-2 grid grid-cols-2">
+      <div className="flex items-center flex-col gap-4">
+        <span>
+          Value:{" "}
+          <span className="whitespace-pre-wrap border rounded-md p-1 bg-muted">
+            {counters[0]?.counter ?? 0}
+          </span>
+        </span>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              if (!counters[0]) {
+                client.counters.insert({ id: 0, counter: 1 });
+                return;
+              }
+              client.counters.update({
+                value: { counter: counters[0].counter - 1 },
+                where: { id: 0 },
+              });
+            }}
+            type="button"
+          >
+            -1
+          </Button>
+          <Button
+            onClick={() => {
+              if (!counters[0]) {
+                client.counters.insert({ id: 0, counter: -1 });
+                return;
+              }
+              client.counters.update({
+                value: { counter: counters[0].counter + 1 },
+                where: { id: 0 },
+              });
+            }}
+            type="button"
+          >
+            +1
+          </Button>
+        </div>
+      </div>
+      <ReactJsonView src={raw} />
+    </div>
   );
 }

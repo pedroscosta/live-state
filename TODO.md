@@ -1,10 +1,11 @@
 # TODO:
 
-[ ] Add upsert mutation
+[ ] Add connect/disconnect controls on client
 [ ] Add optimistic updates
 [ ] Add client storage
 [ ] Add server storage
 [ ] Add filters
+[ ] Add upsert mutation
 
 [X] Add remote state message (Bootstraping)
 

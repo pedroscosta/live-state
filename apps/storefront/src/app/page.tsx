@@ -1,24 +1,18 @@
 "use client";
 
-import { CounterButton } from "@repo/ui/counter-button";
-import { Link } from "@repo/ui/link";
+import { Switch } from "@/components/ui/switch";
 import { LiveComponent } from "./component";
 
 export default function Store(): JSX.Element {
   return (
-    <div className="container">
+    <>
+      <header className="w-full h-16 flex items-center justify-end gap-2 p-2 border-b">
+        <div className="flex items-center gap-2">
+          Connected
+          <Switch />
+        </div>
+      </header>
       <LiveComponent />
-      <CounterButton />
-      <p className="description">
-        Built With{" "}
-        <Link href="https://turbo.build/repo" newTab>
-          Turborepo
-        </Link>
-        {" & "}
-        <Link href="https://nextjs.org/" newTab>
-          Next.js
-        </Link>
-      </p>
-    </div>
+    </>
   );
 }
