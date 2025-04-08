@@ -49,6 +49,8 @@ class InnerClient<TRouter extends AnyRouter> {
   inferredState: ClientState<TRouter> = {} as ClientState<TRouter>;
 
   private listeners: Set<(state: typeof this.state) => void> = new Set();
+  // This is subscriptions count for each route
+  private routeSubscriptions: Record<string, number> = {};
 
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
@@ -62,6 +64,22 @@ class InnerClient<TRouter extends AnyRouter> {
 
     this.ws.addEventListener("message", (e) => {
       this.handleServerMessage(e.data);
+    });
+
+    this.ws.addEventListener("connectionChange", (e) => {
+      if (e.open) {
+        Object.entries(this.routeSubscriptions).forEach(
+          ([routeName, count]) => {
+            if (count > 0) {
+              this.sendWsMessage({
+                _id: nanoid(),
+                type: "SUBSCRIBE",
+                shape: routeName,
+              });
+            }
+          }
+        );
+      }
     });
   }
 
@@ -148,16 +166,21 @@ class InnerClient<TRouter extends AnyRouter> {
   }
 
   public subscribeToRoute(routeName: string) {
-    this.ws.send(
-      JSON.stringify({
-        _id: nanoid(),
-        type: "SUBSCRIBE",
-        shape: routeName,
-      } satisfies ClientMessage)
-    );
+    this.routeSubscriptions[routeName] =
+      (this.routeSubscriptions[routeName] ?? 0) + 1;
+
+    this.sendWsMessage({
+      _id: nanoid(),
+      type: "SUBSCRIBE",
+      shape: routeName,
+    });
 
     return () => {
-      // TODO add unsubscription
+      this.routeSubscriptions[routeName] -= 1;
+
+      if (this.routeSubscriptions[routeName] === 0) {
+        // TODO add unsubscribe message
+      }
     };
   }
 
@@ -167,6 +190,10 @@ class InnerClient<TRouter extends AnyRouter> {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  private sendWsMessage(message: ClientMessage) {
+    if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
   }
 }
 
@@ -221,6 +248,8 @@ export const createClient = <TRouter extends AnyRouter>(
         );
 
       const routeName = _routeName as keyof TRouter["routes"];
+
+      // TODO move mutations to the original client
 
       if (op === "insert") {
         return (
