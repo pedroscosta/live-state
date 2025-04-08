@@ -1,15 +1,14 @@
 import { Button } from "@/components/ui/button";
 import ReactJsonView from "@microlink/react-json-view";
-import { useStore } from "@repo/live-state/client";
 import { useSyncExternalStore } from "react";
-import { client, counterStore } from "./live-client";
+import { client, useLiveData, useSubscribe } from "./live-client";
 
 export function LiveComponent(): JSX.Element {
-  const counters = useStore(counterStore);
+  useSubscribe("counters");
+  const counters = useLiveData((s) => s.counters);
 
-  const raw = useSyncExternalStore(
-    counterStore.subscribe.bind(counterStore),
-    () => counterStore.getRaw()
+  const raw = useSyncExternalStore(client.subscribeToState.bind(client), () =>
+    client.getRaw()
   );
 
   return (
@@ -18,18 +17,18 @@ export function LiveComponent(): JSX.Element {
         <span>
           Value:{" "}
           <span className="whitespace-pre-wrap border rounded-md p-1 bg-muted">
-            {counters[0]?.counter ?? 0}
+            {counters?.[0]?.counter ?? 0}
           </span>
         </span>
         <div className="flex gap-2">
           <Button
             onClick={() => {
-              if (!counters[0]) {
-                client.counters.insert({ id: 0, counter: 1 });
+              if (!counters?.[0]) {
+                client.routes.counters.insert({ id: 0, counter: 1 });
                 return;
               }
-              client.counters.update({
-                value: { counter: counters[0].counter - 1 },
+              client.routes.counters.update({
+                value: { counter: counters?.[0].counter - 1 },
                 where: { id: 0 },
               });
             }}
@@ -39,12 +38,12 @@ export function LiveComponent(): JSX.Element {
           </Button>
           <Button
             onClick={() => {
-              if (!counters[0]) {
-                client.counters.insert({ id: 0, counter: -1 });
+              if (!counters?.[0]) {
+                client.routes.counters.insert({ id: 0, counter: -1 });
                 return;
               }
-              client.counters.update({
-                value: { counter: counters[0].counter + 1 },
+              client.routes.counters.update({
+                value: { counter: counters?.[0].counter + 1 },
                 where: { id: 0 },
               });
             }}
@@ -54,7 +53,7 @@ export function LiveComponent(): JSX.Element {
           </Button>
         </div>
       </div>
-      <ReactJsonView src={raw} />
+      <ReactJsonView key={JSON.stringify(raw)} src={raw} />
     </div>
   );
 }

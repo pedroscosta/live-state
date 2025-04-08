@@ -13,158 +13,183 @@ import {
   MaterializedLiveType,
   MutationType,
 } from "../schema";
-import { AnyRoute, AnyRouter } from "../server";
+import { AnyRouter } from "../server";
+import { Simplify } from "../utils";
 import { createObservable } from "./observable";
 import { WebSocketClient } from "./web-socket";
 
 export * from "./react";
 
-export class LiveStore<TRoute extends AnyRoute> {
-  public _route!: TRoute;
-  private readonly routeName: string;
-  private readonly schema: TRoute["shape"];
-  private state: Record<
-    InferIndex<TRoute["shape"]>,
-    MaterializedLiveType<TRoute["shape"]>
-  > = {};
-  private inferredState: InferLiveType<TRoute["shape"]>[] = [];
-  private ws: WebSocketClient;
-  private listeners: Set<(state: typeof this.state) => void>;
+export type ClientRawState<TRouter extends AnyRouter> = Record<
+  keyof TRouter["routes"],
+  | Record<
+      string,
+      MaterializedLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
+    >
+  | undefined
+>;
 
-  private _set(newState: typeof this.state) {
-    this.state = newState;
-    this.inferredState = Object.values(newState).map(inferValue);
-    this.listeners.forEach((listener) => listener(newState));
-  }
+export type ClientState<TRouter extends AnyRouter> = Record<
+  keyof TRouter["routes"],
+  | Record<
+      string,
+      InferLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
+    >
+  | undefined
+>;
 
-  constructor(routeName: string, schema: TRoute["shape"], ws: WebSocketClient) {
-    this.routeName = routeName;
-    this.schema = schema;
-    this.ws = ws;
-    this.listeners = new Set();
+class InnerClient<TRouter extends AnyRouter> {
+  public readonly _router!: TRouter;
 
-    this.ws.addEventListener("message", (event) => {
-      try {
-        const parsedMessage = serverMessageSchema.parse(JSON.parse(event.data));
+  public readonly url: string;
+  public readonly ws: WebSocketClient;
+  public readonly schema: Record<string, LiveObject<any>>;
 
-        if (parsedMessage.type === "MUTATE") {
-          const { shape, mutation } = parsedMessage;
+  state: ClientRawState<TRouter> = {} as ClientRawState<TRouter>;
+  inferredState: ClientState<TRouter> = {} as ClientState<TRouter>;
 
-          if (shape === this.routeName) {
-            try {
-              const { type, values, where } = objectMutationSchema.parse(
-                JSON.parse(mutation)
-              );
+  private listeners: Set<(state: typeof this.state) => void> = new Set();
 
-              if (type === "insert") {
-                const newRecord = this.schema.decode(
-                  type as MutationType,
-                  values
-                ) as MaterializedLiveType<TRoute["shape"]>;
-
-                this._set({
-                  ...this.state,
-                  [(newRecord.value as any).id.value]: newRecord,
-                });
-              } else if (type === "update") {
-                const record = this.state[where?.id];
-
-                if (!record) return;
-
-                const updatedRecord = this.schema.decode(
-                  type as MutationType,
-                  values,
-                  record
-                ) as MaterializedLiveType<TRoute["shape"]>;
-
-                this._set({
-                  ...this.state,
-                  [(updatedRecord.value as any).id.value]: updatedRecord,
-                });
-              }
-            } catch (e) {
-              console.error("Error parsing mutation from the server:", e);
-            }
-          }
-        } else if (parsedMessage.type === "BOOTSTRAP") {
-          const { objectName, data } = parsedMessage;
-
-          if (objectName === this.routeName) {
-            this._set(data);
-          }
-        }
-
-        console.log("Message received from the server:", parsedMessage);
-      } catch (e) {
-        console.error("Error parsing message from the server:", e);
-      }
+  public constructor(opts: ClientOptions) {
+    this.url = opts.url;
+    this.schema = opts.schema;
+    this.ws = new WebSocketClient({
+      url: opts.url,
+      autoConnect: true,
+      autoReconnect: true,
+      reconnectTimeout: 5000,
     });
 
-    this.ws.addEventListener("open", (event) => {
-      console.log("WebSocket connection opened");
-
-      this.ws.send(
-        JSON.stringify({
-          _id: nanoid(),
-          type: "SUBSCRIBE",
-          shape: this.routeName,
-        } satisfies ClientMessage)
-      );
+    this.ws.addEventListener("message", (e) => {
+      this.handleServerMessage(e.data);
     });
-  }
-
-  public getRaw() {
-    return this.state;
   }
 
   public get() {
     return this.inferredState;
   }
 
-  public subscribe(listener: (state: typeof this.state) => void) {
+  public getRaw() {
+    return this.state;
+  }
+
+  private _set(
+    objectName: keyof TRouter["routes"],
+    state: Record<
+      InferIndex<TRouter["routes"][keyof TRouter["routes"]]["shape"]>,
+      MaterializedLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
+    >
+  ) {
+    this.state[objectName] = state;
+    this.inferredState[objectName] = Object.fromEntries(
+      Object.entries(state).map(([key, value]) => [key, inferValue(value)])
+    );
+    this.listeners.forEach((listener) => listener(this.state));
+  }
+
+  public handleServerMessage(message: MessageEvent["data"]) {
+    try {
+      const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
+      console.log("Message received from the server:", parsedMessage);
+
+      if (parsedMessage.type === "MUTATE") {
+        const { shape: routeName, mutation } = parsedMessage;
+
+        try {
+          // TODO Remove this unnecessary encoding/decoding
+          const { type, values, where } = objectMutationSchema.parse(
+            JSON.parse(mutation)
+          );
+
+          if (type === "insert") {
+            const newRecord = this.schema[routeName].decode(
+              type as MutationType,
+              values
+            ) as MaterializedLiveType<
+              TRouter["routes"][typeof routeName]["shape"]
+            >;
+
+            this._set(routeName, {
+              ...this.state[routeName],
+              [(newRecord.value as any).id.value]: newRecord,
+            });
+          } else if (type === "update") {
+            const record = this.state[routeName]?.[where?.id];
+
+            if (!record) return;
+
+            const updatedRecord = this.schema[routeName].decode(
+              type as MutationType,
+              values,
+              record
+            ) as MaterializedLiveType<
+              TRouter["routes"][typeof routeName]["shape"]
+            >;
+
+            this._set(routeName, {
+              ...this.state[routeName],
+              [(updatedRecord.value as any).id.value]: updatedRecord,
+            });
+          }
+        } catch (e) {
+          console.error("Error parsing mutation from the server:", e);
+        }
+      } else if (parsedMessage.type === "BOOTSTRAP") {
+        const { objectName: routeName, data } = parsedMessage;
+
+        this._set(
+          routeName,
+          Object.fromEntries(data.map((d) => [d.value?.id?.value, d]))
+        );
+      }
+    } catch (e) {
+      console.error("Error parsing message from the server:", e);
+    }
+  }
+
+  public subscribeToRoute(routeName: string) {
+    this.ws.send(
+      JSON.stringify({
+        _id: nanoid(),
+        type: "SUBSCRIBE",
+        shape: routeName,
+      } satisfies ClientMessage)
+    );
+
+    return () => {
+      // TODO add unsubscription
+    };
+  }
+
+  public subscribeToState(listener: (state: typeof this.state) => void) {
     this.listeners.add(listener);
 
     return () => {
       this.listeners.delete(listener);
     };
   }
-
-  // public mutate<TMutName extends keyof TRoute["mutations"]>(
-  //   mutation: TMutName,
-  //   input: InferShape<TRoute["mutations"][TMutName]["_input"]>
-  // ) {
-  //   // TODO: Add optimistic updates
-  //   this.ws.send(
-  //     JSON.stringify({
-  //       type: "MUTATE",
-  //       _id: nanoid(),
-  //       route: this.routeName,
-  //       mutations: [
-  //         this._route.shape.encode(
-  //           mutation as string,
-  //           input,
-  //           new Date().toISOString()
-  //         ),
-  //       ],
-  //     } satisfies ClientMessage)
-  //   );
-  // }
 }
 
-export type StoreState<TStore extends LiveStore<AnyRoute>> = InferLiveType<
-  TStore["_route"]["shape"]
->[];
-
 export type Client<TRouter extends AnyRouter> = {
+  /**
+   * @internal
+   */
+  _router: TRouter;
   ws: WebSocketClient;
-} & {
-  [K in keyof TRouter["routes"]]: {
-    createStore: () => LiveStore<TRouter["routes"][K]>;
-    insert: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
-    update: (opts: {
-      value: Partial<InferLiveType<TRouter["routes"][K]["shape"]>>;
-      where: InferWhereClause<TRouter["routes"][K]["shape"]>;
-    }) => void;
+  get: () => Simplify<ClientState<TRouter>>;
+  getRaw: () => ClientRawState<TRouter>;
+  subscribeToRoute: (routeName: string) => () => void;
+  subscribeToState: (
+    listener: (state: ClientState<TRouter>) => void
+  ) => () => void;
+  routes: {
+    [K in keyof TRouter["routes"]]: {
+      insert: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
+      update: (opts: {
+        value: Partial<InferLiveType<TRouter["routes"][K]["shape"]>>;
+        where: InferWhereClause<TRouter["routes"][K]["shape"]>;
+      }) => void;
+    };
   };
 };
 
@@ -173,56 +198,41 @@ export type ClientOptions = {
   schema: Record<string, LiveObject<any>>;
 };
 
-const createUntypedClient = (opts: ClientOptions) => {
-  const ws = new WebSocketClient({
-    url: opts.url,
-    autoConnect: true,
-    autoReconnect: true,
-    reconnectTimeout: 5000,
-  });
-
-  return { ...opts, ws };
-};
-
 export const createClient = <TRouter extends AnyRouter>(
   opts: ClientOptions
 ): Client<TRouter> => {
-  const ogClient = createUntypedClient(opts);
+  const ogClient = new InnerClient<TRouter>(opts);
 
   return createObservable(ogClient, {
     get: (_, path) => {
-      if (path.length < 2) {
-        if (path[0] === "ws") return ogClient.ws;
+      const [base, _routeName, op] = path;
 
-        return;
-      }
-      if (path.length > 2)
+      if (base === "ws") return ogClient.ws;
+      if (base === "get") return ogClient.get.bind(ogClient);
+      if (base === "getRaw") return ogClient.getRaw.bind(ogClient);
+      if (base === "subscribeToState")
+        return ogClient.subscribeToState.bind(ogClient);
+      if (base === "subscribeToRoute")
+        return ogClient.subscribeToRoute.bind(ogClient);
+
+      if (path.length > 3 || base !== "routes")
         throw new SyntaxError(
-          "Trying to access a property on the client that does't exist"
+          `Trying to access a property on the client that does't exist ${path.join(".")}`
         );
 
-      const [_id, op] = path;
-      const routeId = _id as keyof TRouter["routes"];
+      const routeName = _routeName as keyof TRouter["routes"];
 
-      if (op === "createStore") {
-        return () => {
-          return new LiveStore<TRouter["routes"][typeof routeId]>(
-            routeId as string,
-            ogClient.schema[routeId as string],
-            ogClient.ws
-          );
-        };
-      } else if (op === "insert") {
+      if (op === "insert") {
         return (
-          value: InferLiveType<TRouter["routes"][typeof routeId]["shape"]>
+          value: InferLiveType<TRouter["routes"][typeof routeName]["shape"]>
         ) => {
           ogClient.ws.send(
             JSON.stringify({
               _id: nanoid(),
               type: "MUTATE",
-              route: routeId as string,
+              route: routeName as string,
               mutations: [
-                ogClient.schema[routeId as string].encode(
+                ogClient.schema[routeName as string].encode(
                   "insert",
                   {
                     value,
@@ -235,16 +245,16 @@ export const createClient = <TRouter extends AnyRouter>(
         };
       } else if (op === "update") {
         return (opts: {
-          value: InferLiveType<TRouter["routes"][typeof routeId]["shape"]>;
-          where: InferWhereClause<TRouter["routes"][typeof routeId]["shape"]>;
+          value: InferLiveType<TRouter["routes"][typeof routeName]["shape"]>;
+          where: InferWhereClause<TRouter["routes"][typeof routeName]["shape"]>;
         }) => {
           ogClient.ws.send(
             JSON.stringify({
               _id: nanoid(),
               type: "MUTATE",
-              route: routeId as string,
+              route: routeName as string,
               mutations: [
-                ogClient.schema[routeId as string].encode(
+                ogClient.schema[routeName as string].encode(
                   "update",
                   opts,
                   new Date().toISOString()

@@ -15,6 +15,8 @@ export class WebSocketClient {
   private eventListeners: Map<string, Set<Function>> = new Map();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private intentionallyDisconnected: boolean = false;
+  private messageQueue: (string | ArrayBufferLike | Blob | ArrayBufferView)[] =
+    [];
 
   constructor(options: {
     url: string;
@@ -63,7 +65,7 @@ export class WebSocketClient {
     }
 
     this.intentionallyDisconnected = true;
-    
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -93,12 +95,20 @@ export class WebSocketClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(data);
     } else {
-      throw new Error("WebSocket is not connected");
+      this.messageQueue.push(data);
     }
   }
 
   private handleOpen(event: Event): void {
     this.reconnectAttempts = 0;
+
+    if (this.messageQueue.length > 0) {
+      this.messageQueue.forEach((message) => {
+        this.send(message);
+      });
+      this.messageQueue = [];
+    }
+
     this.dispatchEvent("open", event);
     this.dispatchEvent("connectionChange", { open: true });
   }

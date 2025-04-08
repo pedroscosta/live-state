@@ -58,4 +58,96 @@ const client = createClient<Router>({
 client.publicRoute.set(id, {
   bears: 10, // This is valid because honeyPots is optional
 }); 
+
+const useLiveState = createStore(client);
+
+const Component = () => {
+  //// V1
+
+  // Returns all the issues in the client store
+  const { data, isFetchingRemote, isLoading, error } = useLiveState("issues");
+
+  // Returns issues with filtering, sorting and pagination
+  const { data, isFetchingRemote, isLoading, error } = useLiveState("issues", {
+    where: {
+      owner: "1",
+    },
+    orderBy: {
+      name: "asc",
+    },
+    limit: 10,
+    offset: 0
+  });
+
+  // Returns a specific issue
+  const { data, isFetchingRemote, isLoading, error } = useLiveState("issues", {
+    where: {
+      id: "1",
+    },
+  });
+
+  // Returns a specific issue with specific fields
+  const { data, isFetchingRemote, isLoading, error } = useLiveState("issues", {
+    where: {
+      id: "1",
+    },
+    include: {
+      name: true,
+      done: true,
+    },
+  });
+
+  //// V1
+
+  // Creates the hooks
+  const { useLive, useSubscription } = reactiveClient(client);
+
+  // Gets all the issues
+  const data = useLive((s) => s.issues)
+
+  // Filters the issues
+  const filteredData = useLive((s) => Object.values(s.issues).filter((i) => i.done === true));
+
+  // Returns a specific issue
+  const issue = useLive((s) => s.issues['1']);
+
+  // Returns a specific issue with specific fields
+  const issue = useLive((s) => {
+    const issue = s.issues['1'];
+    return {
+      name: issue.name,
+      done: issue.done
+    };
+  });
+
+  // Subscriptions are explicit
+
+  // Subscribe to all the issues
+  useSubscription("issues");
+
+  // Subscribe to issues with filtering
+  useSubscription("issues", {
+    where: {
+      owner: "1",
+    },
+  });
+
+  // Subscribe to a specific issue
+  useSubscription("issues", {
+    where: {
+      id: "1",
+    },
+  });
+
+  // Subscribe to a specific issue with specific fields
+  useSubscription("issues", {
+    where: {
+      id: "1",
+    },
+    include: {
+      name: true,
+      done: true,
+    },
+  });
+};
 ```

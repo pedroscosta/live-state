@@ -1,8 +1,8 @@
-import { AnyShape } from "../schema";
+import { LiveTypeAny } from "../schema";
 
 export * from "./web-socket";
 
-export type RouteRecord = Record<string, Route<AnyShape>>;
+export type RouteRecord = Record<string, Route<LiveTypeAny>>;
 
 export type RouterDef<TRoutes extends RouteRecord> = {
   routes: TRoutes;
@@ -18,7 +18,7 @@ export const router = <TRoutes extends RouteRecord>(opts: {
 
 export type AnyRouter = RouterDef<RouteRecord>;
 
-export class Route<TShape extends AnyShape> {
+export class Route<TShape extends LiveTypeAny> {
   readonly shape: TShape;
 
   public constructor(shape: TShape) {
@@ -27,7 +27,7 @@ export class Route<TShape extends AnyShape> {
 }
 
 export const routeFactory = () => {
-  return <T extends AnyShape>(shape: T) => new Route<T>(shape);
+  return <T extends LiveTypeAny>(shape: T) => new Route<T>(shape);
 };
 
-export type AnyRoute = Route<AnyShape>;
+export type AnyRoute = Route<LiveTypeAny>;

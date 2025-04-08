@@ -1,4 +1,4 @@
-import { createClient } from "@repo/live-state/client";
+import { createClient, reactiveClient } from "@repo/live-state/client";
 import { type Router, schema } from "@repo/ls-impl";
 
 export const client = createClient<Router>({
@@ -6,4 +6,4 @@ export const client = createClient<Router>({
   schema,
 });
 
-export const counterStore = client.counters.createStore();
+export const { useLiveData, useSubscribe } = reactiveClient(client);

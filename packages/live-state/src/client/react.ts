@@ -1,32 +1,78 @@
-import React from "react";
-import { LiveStore, StoreState } from ".";
-import { AnyRoute } from "../server";
+import React, { useDebugValue, useEffect, useSyncExternalStore } from "react";
+import { Client, ClientState } from ".";
+import { AnyRouter } from "../server";
+import { Simplify } from "../utils";
 
-export const identity = <T>(arg: T): T => arg;
+const identity = <T>(arg: T): T => arg;
 
-type Simplify<T> =
-  T extends Record<string, any>
-    ? {
-        [K in keyof T]: Simplify<T[K]>;
-      }
-    : T;
+function useLiveData<TClient extends Client<AnyRouter>>(
+  store: TClient
+): Simplify<ClientState<TClient["_router"]>>;
 
-export function useStore<TStore extends LiveStore<AnyRoute>>(
-  store: TStore
-): Simplify<StoreState<TStore>>;
-
-export function useStore<TStore extends LiveStore<AnyRoute>, StateSlice>(
-  store: TStore,
-  selector: (state: StoreState<TStore>) => StateSlice
+function useLiveData<TClient extends Client<AnyRouter>, StateSlice>(
+  store: TClient,
+  selector: (state: ClientState<TClient["_router"]>) => StateSlice
 ): Simplify<StateSlice>;
 
-export function useStore<TStore extends LiveStore<AnyRoute>, StateSlice>(
-  store: TStore,
-  selector: (state: StoreState<TStore>) => StateSlice = identity as any
+function useLiveData<TClient extends Client<AnyRouter>, StateSlice>(
+  store: TClient,
+  selector: (
+    state: ClientState<TClient["_router"]>
+  ) => StateSlice = identity as any
 ) {
-  const slice = React.useSyncExternalStore(store.subscribe.bind(store), () =>
-    selector(store.get())
+  const slice = React.useSyncExternalStore(store.subscribeToState, () =>
+    selector(store.get() as ClientState<TClient["_router"]>)
   );
   React.useDebugValue(slice);
   return slice;
+}
+
+function createUseLiveData<TClient extends Client<AnyRouter>>(
+  store: TClient
+): <StateSlice = ClientState<TClient["_router"]>>(
+  selector?: (state: ClientState<TClient["_router"]>) => StateSlice
+) => Simplify<StateSlice> {
+  return function useData<StateSlice = ClientState<TClient["_router"]>>(
+    selector?: (state: ClientState<TClient["_router"]>) => StateSlice
+  ) {
+    const getSnapshot = React.useCallback(
+      () =>
+        selector
+          ? selector(store.get() as ClientState<TClient["_router"]>)
+          : store.get(),
+      [selector]
+    );
+
+    const slice = useSyncExternalStore(
+      store.subscribeToState.bind(store),
+      getSnapshot
+    );
+
+    useDebugValue(slice);
+    return slice as Simplify<StateSlice>;
+  };
+}
+
+function createUseSubscribe<TClient extends Client<AnyRouter>>(
+  client: TClient
+) {
+  return function useSubscribe(route: keyof TClient["_router"]["routes"]) {
+    useEffect(() => {
+      const unsubscribe = client.subscribeToRoute(route as string);
+
+      return () => {
+        unsubscribe();
+      };
+    }, [route]);
+  };
+}
+
+export function reactiveClient<
+  TRouter extends AnyRouter,
+  TClient extends Client<TRouter>,
+>(client: TClient) {
+  return {
+    useLiveData: createUseLiveData(client),
+    useSubscribe: createUseSubscribe(client),
+  };
 }

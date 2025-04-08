@@ -1,5 +1,6 @@
 # TODO:
 
+[ ] Redo the reading part of the client
 [ ] Add optimistic updates
 [ ] Add client storage
 [ ] Add server storage
