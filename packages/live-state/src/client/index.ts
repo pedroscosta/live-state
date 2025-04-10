@@ -1,9 +1,5 @@
 import { nanoid } from "nanoid";
-import {
-  ClientMessage,
-  objectMutationSchema,
-  serverMessageSchema,
-} from "../core/internals";
+import { ClientMessage, serverMessageSchema } from "../core/internals";
 import {
   InferIndex,
   InferLiveType,
@@ -117,18 +113,18 @@ class InnerClient<TRouter extends AnyRouter> {
       console.log("Message received from the server:", parsedMessage);
 
       if (parsedMessage.type === "MUTATE") {
-        const { shape: routeName, mutation } = parsedMessage;
+        const {
+          route: routeName,
+          payload,
+          where,
+          mutationType,
+        } = parsedMessage;
 
         try {
-          // TODO Remove this unnecessary encoding/decoding
-          const { type, values, where } = objectMutationSchema.parse(
-            JSON.parse(mutation)
-          );
-
-          if (type === "insert") {
+          if (mutationType === "insert") {
             const newRecord = this.schema[routeName].decode(
-              type as MutationType,
-              values
+              mutationType as MutationType,
+              payload
             ) as MaterializedLiveType<
               TRouter["routes"][typeof routeName]["shape"]
             >;
@@ -137,14 +133,14 @@ class InnerClient<TRouter extends AnyRouter> {
               ...this.state[routeName],
               [(newRecord.value as any).id.value]: newRecord,
             });
-          } else if (type === "update") {
+          } else if (mutationType === "update") {
             const record = this.state[routeName]?.[where?.id];
 
             if (!record) return;
 
             const updatedRecord = this.schema[routeName].decode(
-              type as MutationType,
-              values,
+              mutationType as MutationType,
+              payload,
               record
             ) as MaterializedLiveType<
               TRouter["routes"][typeof routeName]["shape"]
@@ -207,13 +203,13 @@ class InnerClient<TRouter extends AnyRouter> {
       _id: nanoid(),
       type: "MUTATE",
       route: routeName as string,
-      mutations: [
-        this.schema[routeName as string].encode(
-          mutationType,
-          input,
-          new Date().toISOString()
-        ),
-      ],
+      mutationType,
+      payload: this.schema[routeName as string].encode(
+        mutationType,
+        input,
+        new Date().toISOString()
+      ),
+      where: (input as LiveObjectUpdateMutation<any>).where,
     });
   }
 

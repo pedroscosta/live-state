@@ -14,26 +14,22 @@ const clBootstrapMsgSchema = z.object({
   objectName: z.string(),
 });
 
-export const objectMutationSchema = z.object({
-  type: z.string(),
-  values: z.record(z.string()),
-  where: z.record(z.any()).optional(),
-});
-
-export type ObjectMutation = z.infer<typeof objectMutationSchema>;
-
-const clMutationsMsgSchema = z.object({
+const mutationsMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("MUTATE"),
   route: z.string(),
-  mutations: z.array(z.string()),
+  mutationType: z.enum(["insert", "update"]),
+  payload: z.record(z.any()),
+  where: z.record(z.any()).optional(),
 });
+
+export type MutationMessage = z.infer<typeof mutationsMsgSchema>;
 
 type ZodTypeWithMessageId = ZodType<{ _id: z.infer<typeof clMsgId> }>;
 
 export const clientMessageSchema = z.union([
   clSubscribeMsgSchema,
-  clMutationsMsgSchema,
+  mutationsMsgSchema,
   clBootstrapMsgSchema,
 ]) satisfies ZodUnion<
   readonly [
@@ -45,12 +41,6 @@ export const clientMessageSchema = z.union([
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
-const svMutationsMsgSchema = z.object({
-  type: z.literal("MUTATE"),
-  shape: z.string(),
-  mutation: z.string(),
-});
-
 const svBootstrapMsgSchema = z.object({
   type: z.literal("BOOTSTRAP"),
   objectName: z.string(),
@@ -60,7 +50,7 @@ const svBootstrapMsgSchema = z.object({
 export type ServerBootstrapMessage = z.infer<typeof svBootstrapMsgSchema>;
 
 export const serverMessageSchema = z.union([
-  svMutationsMsgSchema,
+  mutationsMsgSchema,
   svBootstrapMsgSchema,
 ]);
 

@@ -2,10 +2,9 @@ import { WebsocketRequestHandler } from "express-ws";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
 import { AnyRouter } from ".";
-import { ServerMessage } from "../core";
 import {
   clientMessageSchema,
-  objectMutationSchema,
+  MutationMessage,
   ServerBootstrapMessage,
 } from "../core/internals";
 import {
@@ -36,7 +35,7 @@ export const createWSServer: <T extends AnyRouter>(
 
   const propagateMutation = (
     shape: string,
-    mutation: string,
+    mutation: MutationMessage,
     ignore?: string
   ) => {
     if (!subscriptions[shape]) return;
@@ -45,13 +44,7 @@ export const createWSServer: <T extends AnyRouter>(
       if (ignore && id === ignore) return;
       console.log(id, sub);
 
-      connections[id]?.send(
-        JSON.stringify({
-          type: "MUTATE",
-          shape,
-          mutation,
-        } satisfies ServerMessage)
-      );
+      connections[id]?.send(JSON.stringify(mutation));
     });
   };
 
@@ -88,50 +81,42 @@ export const createWSServer: <T extends AnyRouter>(
           );
         } else if (parsedMessage.type === "MUTATE") {
           // TODO Handle error responses
-          const { route, mutations } = parsedMessage;
+          const { route, mutationType, payload, where } = parsedMessage;
 
           if (!router.routes[route]) return;
-          if (!mutations.length) return;
 
-          for (const strMutation of mutations) {
-            try {
-              console.log(`Applying mutation on ${route}`);
-              const {
-                type: _type,
-                values,
-                where,
-              } = objectMutationSchema.parse(JSON.parse(strMutation));
+          try {
+            console.log(`Applying mutation on ${route}`);
 
-              const type = _type as MutationType;
+            const type = mutationType as MutationType;
 
-              if (type === "insert") {
-                const materializedMutation = router.routes[route].shape.decode(
-                  type,
-                  values
-                );
+            if (type === "insert") {
+              const materializedMutation = router.routes[route].shape.decode(
+                type,
+                payload
+              );
 
-                if (!states[route]) states[route] = {};
+              if (!states[route]) states[route] = {};
 
-                states[route][(materializedMutation.value as any).id.value] =
-                  materializedMutation;
-              } else if (type === "update") {
-                if (!states[route] || !where || !states[route][where["id"]])
-                  return;
+              states[route][(materializedMutation.value as any).id.value] =
+                materializedMutation;
+            } else if (type === "update") {
+              if (!states[route] || !where || !states[route][where["id"]])
+                return;
 
-                const materializedMutation = router.routes[route].shape.decode(
-                  type,
-                  values,
-                  states[route][where["id"]] // TODO Do a proper query for this
-                );
+              const materializedMutation = router.routes[route].shape.decode(
+                type,
+                payload,
+                states[route][where["id"]] // TODO Do a proper query for this
+              );
 
-                states[route][(materializedMutation.value as any).id.value] =
-                  materializedMutation;
-              }
-
-              propagateMutation(route, strMutation);
-            } catch (e) {
-              console.error("Error parsing mutation from the client:", e);
+              states[route][(materializedMutation.value as any).id.value] =
+                materializedMutation;
             }
+
+            propagateMutation(route, parsedMessage);
+          } catch (e) {
+            console.error("Error parsing mutation from the client:", e);
           }
         } else if (parsedMessage.type === "BOOTSTRAP") {
           const { objectName } = parsedMessage;

@@ -1,5 +1,3 @@
-import { ObjectMutation } from "./core/internals";
-
 type LiveTypeMeta = {};
 
 export type MutationType = "set" | "insert" | "update"; // | "delete"
@@ -23,7 +21,7 @@ abstract class LiveType<
     mutationType: MutationType,
     input: EncodeInput,
     timestamp: string
-  ): string;
+  ): DecodeInput;
 
   abstract decode(
     mutationType: MutationType,
@@ -165,19 +163,15 @@ export class LiveObject<
     mutationType: MutationType,
     input: MutationUnion<this>,
     timestamp: string
-  ): string {
+  ): Record<string, any> {
     if (mutationType === "set") throw new Error("Method not implemented.");
 
-    return JSON.stringify({
-      type: mutationType,
-      values: Object.fromEntries(
-        Object.entries(input.value).map(([key, value]) => [
-          key,
-          this.fields[key].encode("set", value, timestamp),
-        ])
-      ),
-      where: (input as LiveObjectUpdateMutation<this>).where,
-    } satisfies ObjectMutation);
+    return Object.fromEntries(
+      Object.entries(input.value).map(([key, value]) => [
+        key,
+        this.fields[key].encode("set", value, timestamp),
+      ])
+    );
   }
 
   decode(
