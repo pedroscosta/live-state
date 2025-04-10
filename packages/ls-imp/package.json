@@ -27,7 +27,6 @@
     "typescript": "5.5.4"
   },
   "dependencies": {
-    "@repo/logger": "workspace:*",
     "@repo/live-state": "workspace:*",
     "express-ws": "^5.0.2",
     "ws": "^8.18.0",
