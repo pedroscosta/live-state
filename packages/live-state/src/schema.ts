@@ -133,12 +133,25 @@ export type LiveObjectMutation<TSchema extends Record<string, LiveTypeAny>> = {
   where?: Record<string, any>; // TODO Infer indexable types
 };
 
+export type LiveObjectInsertMutation<TObject extends LiveObject<any>> = {
+  value: InferLiveObject<TObject["_value"]>;
+};
+
+export type LiveObjectUpdateMutation<TObject extends LiveObject<any>> = {
+  value: Partial<InferLiveObject<TObject["_value"]>>;
+  where?: InferWhereClause<TObject["_value"]>;
+};
+
+type MutationUnion<TObject extends LiveObject<any>> =
+  | LiveObjectInsertMutation<TObject>
+  | LiveObjectUpdateMutation<TObject>;
+
 export class LiveObject<
   TSchema extends Record<string, LiveTypeAny>,
 > extends LiveType<
   TSchema,
   LiveTypeMeta,
-  LiveObjectMutation<TSchema>,
+  MutationUnion<LiveObject<TSchema>>,
   Record<string, any>
 > {
   public readonly fields: TSchema;
@@ -150,7 +163,7 @@ export class LiveObject<
 
   encode(
     mutationType: MutationType,
-    input: LiveObjectMutation<TSchema>,
+    input: MutationUnion<this>,
     timestamp: string
   ): string {
     if (mutationType === "set") throw new Error("Method not implemented.");
@@ -163,7 +176,7 @@ export class LiveObject<
           this.fields[key].encode("set", value, timestamp),
         ])
       ),
-      where: input.where,
+      where: (input as LiveObjectUpdateMutation<this>).where,
     } satisfies ObjectMutation);
   }
 

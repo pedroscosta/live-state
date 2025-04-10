@@ -8,8 +8,9 @@ import {
   InferIndex,
   InferLiveType,
   inferValue,
-  InferWhereClause,
   LiveObject,
+  LiveObjectInsertMutation,
+  LiveObjectUpdateMutation,
   MaterializedLiveType,
   MutationType,
 } from "../schema";
@@ -37,6 +38,11 @@ export type ClientState<TRouter extends AnyRouter> = Record<
     >
   | undefined
 >;
+
+type MutationInputMap = {
+  insert: LiveObjectInsertMutation<LiveObject<any>>;
+  update: LiveObjectUpdateMutation<LiveObject<any>>;
+};
 
 class InnerClient<TRouter extends AnyRouter> {
   public readonly _router!: TRouter;
@@ -192,6 +198,25 @@ class InnerClient<TRouter extends AnyRouter> {
     };
   }
 
+  public mutate<TMutation extends keyof MutationInputMap>(
+    mutationType: TMutation,
+    routeName: keyof TRouter["routes"],
+    input: MutationInputMap[TMutation]
+  ) {
+    this.sendWsMessage({
+      _id: nanoid(),
+      type: "MUTATE",
+      route: routeName as string,
+      mutations: [
+        this.schema[routeName as string].encode(
+          mutationType,
+          input,
+          new Date().toISOString()
+        ),
+      ],
+    });
+  }
+
   private sendWsMessage(message: ClientMessage) {
     if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
   }
@@ -211,11 +236,12 @@ export type Client<TRouter extends AnyRouter> = {
   ) => () => void;
   routes: {
     [K in keyof TRouter["routes"]]: {
-      insert: (state: InferLiveType<TRouter["routes"][K]["shape"]>) => void;
-      update: (opts: {
-        value: Partial<InferLiveType<TRouter["routes"][K]["shape"]>>;
-        where: InferWhereClause<TRouter["routes"][K]["shape"]>;
-      }) => void;
+      insert: (
+        state: LiveObjectInsertMutation<TRouter["routes"][K]["shape"]>["value"]
+      ) => void;
+      update: (
+        opts: LiveObjectUpdateMutation<TRouter["routes"][K]["shape"]>
+      ) => void;
     };
   };
 };
@@ -232,7 +258,7 @@ export const createClient = <TRouter extends AnyRouter>(
 
   return createObservable(ogClient, {
     get: (_, path) => {
-      const [base, _routeName, op] = path;
+      const [base, routeName, op] = path;
 
       if (base === "ws") return ogClient.ws;
       if (base === "get") return ogClient.get.bind(ogClient);
@@ -247,52 +273,23 @@ export const createClient = <TRouter extends AnyRouter>(
           `Trying to access a property on the client that does't exist ${path.join(".")}`
         );
 
-      const routeName = _routeName as keyof TRouter["routes"];
-
-      // TODO move mutations to the original client
-
-      if (op === "insert") {
+      if (op === "insert")
         return (
-          value: InferLiveType<TRouter["routes"][typeof routeName]["shape"]>
+          value: LiveObjectInsertMutation<
+            TRouter["routes"][string]["shape"]
+          >["value"]
         ) => {
-          ogClient.ws.send(
-            JSON.stringify({
-              _id: nanoid(),
-              type: "MUTATE",
-              route: routeName as string,
-              mutations: [
-                ogClient.schema[routeName as string].encode(
-                  "insert",
-                  {
-                    value,
-                  },
-                  new Date().toISOString()
-                ),
-              ],
-            } satisfies ClientMessage)
-          );
+          ogClient.mutate("insert", routeName, {
+            value,
+          });
         };
-      } else if (op === "update") {
-        return (opts: {
-          value: InferLiveType<TRouter["routes"][typeof routeName]["shape"]>;
-          where: InferWhereClause<TRouter["routes"][typeof routeName]["shape"]>;
-        }) => {
-          ogClient.ws.send(
-            JSON.stringify({
-              _id: nanoid(),
-              type: "MUTATE",
-              route: routeName as string,
-              mutations: [
-                ogClient.schema[routeName as string].encode(
-                  "update",
-                  opts,
-                  new Date().toISOString()
-                ),
-              ],
-            } satisfies ClientMessage)
-          );
+
+      if (op === "update")
+        return (
+          input: LiveObjectUpdateMutation<TRouter["routes"][string]["shape"]>
+        ) => {
+          ogClient.mutate("update", routeName, input);
         };
-      }
     },
   }) as unknown as Client<TRouter>;
 };

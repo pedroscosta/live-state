@@ -1,8 +1,8 @@
-import { LiveTypeAny } from "../schema";
+import { LiveObject, LiveTypeAny } from "../schema";
 
 export * from "./web-socket";
 
-export type RouteRecord = Record<string, Route<LiveTypeAny>>;
+export type RouteRecord = Record<string, Route<LiveObject<any>>>;
 
 export type RouterDef<TRoutes extends RouteRecord> = {
   routes: TRoutes;
