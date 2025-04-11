@@ -24,12 +24,12 @@ export function LiveComponent(): JSX.Element {
           <Button
             onClick={() => {
               if (!counters?.[0]) {
-                client.routes.counters.insert({ id: 0, counter: 1 });
+                client.routes.counters.insert({ id: "0", counter: 1 });
                 return;
               }
               client.routes.counters.update({
                 value: { counter: counters?.[0].counter - 1 },
-                where: { id: 0 },
+                where: ["0"],
               });
             }}
             type="button"
@@ -39,12 +39,12 @@ export function LiveComponent(): JSX.Element {
           <Button
             onClick={() => {
               if (!counters?.[0]) {
-                client.routes.counters.insert({ id: 0, counter: -1 });
+                client.routes.counters.insert({ id: "0", counter: -1 });
                 return;
               }
               client.routes.counters.update({
                 value: { counter: counters?.[0].counter + 1 },
-                where: { id: 0 },
+                where: ["0"],
               });
             }}
             type="button"

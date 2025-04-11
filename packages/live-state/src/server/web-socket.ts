@@ -2,17 +2,13 @@ import { WebsocketRequestHandler } from "express-ws";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
 import { AnyRouter } from ".";
+import { mergeMutation } from "../core";
 import {
   clientMessageSchema,
   MutationMessage,
   ServerBootstrapMessage,
 } from "../core/internals";
-import {
-  InferIndex,
-  LiveTypeAny,
-  MaterializedLiveType,
-  MutationType,
-} from "../schema";
+import { InferIndex, LiveTypeAny, MaterializedLiveType } from "../schema";
 
 export type Subscription = {
   __subscribed: true;
@@ -81,38 +77,18 @@ export const createWSServer: <T extends AnyRouter>(
           );
         } else if (parsedMessage.type === "MUTATE") {
           // TODO Handle error responses
-          const { route, mutationType, payload, where } = parsedMessage;
+          const { route } = parsedMessage;
 
           if (!router.routes[route]) return;
 
           try {
             console.log(`Applying mutation on ${route}`);
 
-            const type = mutationType as MutationType;
-
-            if (type === "insert") {
-              const materializedMutation = router.routes[route].shape.decode(
-                type,
-                payload
-              );
-
-              if (!states[route]) states[route] = {};
-
-              states[route][(materializedMutation.value as any).id.value] =
-                materializedMutation;
-            } else if (type === "update") {
-              if (!states[route] || !where || !states[route][where["id"]])
-                return;
-
-              const materializedMutation = router.routes[route].shape.decode(
-                type,
-                payload,
-                states[route][where["id"]] // TODO Do a proper query for this
-              );
-
-              states[route][(materializedMutation.value as any).id.value] =
-                materializedMutation;
-            }
+            states[route] = mergeMutation(
+              router.routes[route].shape,
+              states[route] ?? {},
+              parsedMessage
+            );
 
             propagateMutation(route, parsedMessage);
           } catch (e) {

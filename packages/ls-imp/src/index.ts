@@ -1,8 +1,8 @@
-import { number, object } from "@repo/live-state";
+import { number, object, string } from "@repo/live-state";
 import { routeFactory, router } from "@repo/live-state/server";
 
 export const counters = object({
-  id: number(),
+  id: string(),
   counter: number(),
 });
 

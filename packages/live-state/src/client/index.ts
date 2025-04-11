@@ -1,5 +1,10 @@
 import { nanoid } from "nanoid";
-import { ClientMessage, serverMessageSchema } from "../core/internals";
+import {
+  ClientMessage,
+  MutationMessage,
+  serverMessageSchema,
+} from "../core/internals";
+import { mergeMutation, mergeMutationReducer } from "../core/state";
 import {
   InferIndex,
   InferLiveType,
@@ -8,7 +13,6 @@ import {
   LiveObjectInsertMutation,
   LiveObjectUpdateMutation,
   MaterializedLiveType,
-  MutationType,
 } from "../schema";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
@@ -40,15 +44,20 @@ type MutationInputMap = {
   update: LiveObjectUpdateMutation<LiveObject<any>>;
 };
 
-class InnerClient<TRouter extends AnyRouter> {
+class InnerClient<
+  TRouter extends AnyRouter,
+  TSchema extends Record<string, LiveObject<any>>,
+> {
   public readonly _router!: TRouter;
 
   public readonly url: string;
   public readonly ws: WebSocketClient;
-  public readonly schema: Record<string, LiveObject<any>>;
+  public readonly schema: TSchema;
 
   state: ClientRawState<TRouter> = {} as ClientRawState<TRouter>;
-  inferredState: ClientState<TRouter> = {} as ClientState<TRouter>;
+  mutationStack: Record<keyof TRouter["routes"], MutationMessage[]> =
+    {} as Record<keyof TRouter["routes"], MutationMessage[]>;
+  optimisticState: ClientState<TRouter> = {} as ClientState<TRouter>;
 
   private listeners: Set<(state: typeof this.state) => void> = new Set();
   // This is subscriptions count for each route
@@ -56,7 +65,7 @@ class InnerClient<TRouter extends AnyRouter> {
 
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
-    this.schema = opts.schema;
+    this.schema = opts.schema as TSchema;
     this.ws = new WebSocketClient({
       url: opts.url,
       autoConnect: true,
@@ -81,16 +90,65 @@ class InnerClient<TRouter extends AnyRouter> {
             }
           }
         );
+
+        Object.values(this.mutationStack).forEach((mutations) => {
+          mutations.forEach((m) => this.sendWsMessage(m));
+        });
       }
     });
   }
 
   public get() {
-    return this.inferredState;
+    return this.optimisticState;
   }
 
   public getRaw() {
     return this.state;
+  }
+
+  private updateOptimisticState(objectName: keyof TRouter["routes"]) {
+    const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
+      mergeMutationReducer<TSchema[keyof TSchema]>(
+        this.schema[objectName as keyof TSchema]
+      ),
+      this.state[objectName] ?? {}
+    );
+
+    this.optimisticState[objectName] = Object.fromEntries(
+      Object.entries(optimisticState).map(([key, value]) => [
+        key,
+        inferValue(value),
+      ])
+    );
+
+    this.notifyStateSubscribers();
+  }
+
+  private addOptimisticMutation(
+    objectName: keyof TRouter["routes"],
+    mutation: MutationMessage
+  ) {
+    console.log("Adding optimistic mutation:", mutation);
+
+    this.mutationStack[objectName] = [
+      ...(this.mutationStack[objectName] ?? []),
+      mutation,
+    ];
+
+    this.updateOptimisticState(objectName);
+  }
+
+  private removeOptimisticMutation(
+    objectName: keyof TRouter["routes"],
+    mutationId: MutationMessage["_id"]
+  ) {
+    console.log("Removing optimistic mutation:", mutationId);
+
+    this.mutationStack[objectName] = this.mutationStack[objectName]?.filter(
+      (m) => m._id !== mutationId
+    );
+
+    this.updateOptimisticState(objectName);
   }
 
   private _set(
@@ -98,13 +156,16 @@ class InnerClient<TRouter extends AnyRouter> {
     state: Record<
       InferIndex<TRouter["routes"][keyof TRouter["routes"]]["shape"]>,
       MaterializedLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
-    >
+    >,
+    mutationToRemove?: MutationMessage["_id"]
   ) {
     this.state[objectName] = state;
-    this.inferredState[objectName] = Object.fromEntries(
-      Object.entries(state).map(([key, value]) => [key, inferValue(value)])
-    );
-    this.listeners.forEach((listener) => listener(this.state));
+
+    if (mutationToRemove) {
+      this.removeOptimisticMutation(objectName, mutationToRemove);
+    } else {
+      this.updateOptimisticState(objectName);
+    }
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
@@ -113,44 +174,20 @@ class InnerClient<TRouter extends AnyRouter> {
       console.log("Message received from the server:", parsedMessage);
 
       if (parsedMessage.type === "MUTATE") {
-        const {
-          route: routeName,
-          payload,
-          where,
-          mutationType,
-        } = parsedMessage;
+        const { route } = parsedMessage;
+
+        const routeState = this.state[route] ?? {};
 
         try {
-          if (mutationType === "insert") {
-            const newRecord = this.schema[routeName].decode(
-              mutationType as MutationType,
-              payload
-            ) as MaterializedLiveType<
-              TRouter["routes"][typeof routeName]["shape"]
-            >;
-
-            this._set(routeName, {
-              ...this.state[routeName],
-              [(newRecord.value as any).id.value]: newRecord,
-            });
-          } else if (mutationType === "update") {
-            const record = this.state[routeName]?.[where?.id];
-
-            if (!record) return;
-
-            const updatedRecord = this.schema[routeName].decode(
-              mutationType as MutationType,
-              payload,
-              record
-            ) as MaterializedLiveType<
-              TRouter["routes"][typeof routeName]["shape"]
-            >;
-
-            this._set(routeName, {
-              ...this.state[routeName],
-              [(updatedRecord.value as any).id.value]: updatedRecord,
-            });
-          }
+          this._set(
+            route,
+            mergeMutation<TSchema[keyof TSchema]>(
+              this.schema[route as keyof TSchema],
+              routeState,
+              parsedMessage
+            ),
+            parsedMessage._id
+          );
         } catch (e) {
           console.error("Error parsing mutation from the server:", e);
         }
@@ -199,7 +236,7 @@ class InnerClient<TRouter extends AnyRouter> {
     routeName: keyof TRouter["routes"],
     input: MutationInputMap[TMutation]
   ) {
-    this.sendWsMessage({
+    const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
       route: routeName as string,
@@ -210,11 +247,19 @@ class InnerClient<TRouter extends AnyRouter> {
         new Date().toISOString()
       ),
       where: (input as LiveObjectUpdateMutation<any>).where,
-    });
+    };
+
+    this.addOptimisticMutation(routeName, mutationMessage);
+
+    this.sendWsMessage(mutationMessage);
   }
 
   private sendWsMessage(message: ClientMessage) {
     if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
+  }
+
+  private notifyStateSubscribers() {
+    this.listeners.forEach((listener) => listener(this.state));
   }
 }
 
@@ -250,7 +295,9 @@ export type ClientOptions = {
 export const createClient = <TRouter extends AnyRouter>(
   opts: ClientOptions
 ): Client<TRouter> => {
-  const ogClient = new InnerClient<TRouter>(opts);
+  const ogClient = new InnerClient<TRouter, Record<string, LiveObject<any>>>(
+    opts
+  );
 
   return createObservable(ogClient, {
     get: (_, path) => {

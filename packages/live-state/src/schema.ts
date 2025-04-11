@@ -122,6 +122,46 @@ export class LiveNumber extends LiveAtomicType<number> {
 
 export const number = LiveNumber.create;
 
+export class LiveString extends LiveAtomicType<string> {
+  encode(
+    mutationType: MutationType,
+    input: Partial<string>,
+    timestamp: string
+  ) {
+    if (mutationType !== "set")
+      throw new Error("Mutation type not implemented.");
+
+    return `${input};${timestamp}`;
+  }
+
+  decode(
+    mutationType: MutationType,
+    encodedMutation: string,
+    materializedShape?: MaterializedLiveType<LiveString>
+  ): MaterializedLiveType<LiveString> {
+    const [value, ts] = encodedMutation.split(";");
+
+    if (
+      materializedShape &&
+      materializedShape._meta.timestamp.localeCompare(ts) >= 0
+    )
+      return materializedShape;
+
+    return {
+      value: value,
+      _meta: {
+        timestamp: ts,
+      },
+    };
+  }
+
+  static create() {
+    return new LiveString();
+  }
+}
+
+export const string = LiveString.create;
+
 export type InferLiveObject<T extends Record<string, LiveTypeAny>> = {
   [K in keyof T]: InferLiveType<T[K]>;
 };
@@ -286,5 +326,5 @@ export const inferValue = <T extends LiveTypeAny>(
 };
 
 // TODO use proper index type
-export type InferIndex<T extends LiveTypeAny> = number;
-export type InferWhereClause<T extends LiveTypeAny> = Record<string, any>;
+export type InferIndex<T extends LiveTypeAny> = string;
+export type InferWhereClause<T extends LiveTypeAny> = string[];
