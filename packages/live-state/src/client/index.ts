@@ -16,8 +16,9 @@ import {
   Schema,
 } from "../schema";
 import { AnyRouter } from "../server";
-import { Simplify } from "../utils";
-import { createObservable } from "./observable";
+import { createObservable, Observable } from "./observable";
+import { Tree } from "./tree";
+import { index } from "./utils";
 import { WebSocketClient } from "./web-socket";
 
 export * from "./react";
@@ -57,7 +58,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     {} as Record<keyof TRouter["routes"], MutationMessage[]>;
   optimisticState: ClientState<TRouter> = {} as ClientState<TRouter>;
 
-  private listeners: Set<(state: typeof this.state) => void> = new Set();
+  private listeners: Tree<(state: typeof this.state) => void> = new Tree();
   // This is subscriptions count for each route
   private routeSubscriptions: Record<string, number> = {};
 
@@ -119,7 +120,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
       ])
     );
 
-    this.notifyStateSubscribers();
+    this.notifyStateSubscribers([objectName.toString()]);
   }
 
   private addOptimisticMutation(
@@ -221,11 +222,14 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     };
   }
 
-  public subscribeToState(listener: (state: typeof this.state) => void) {
-    this.listeners.add(listener);
+  public subscribeToSlice(
+    path: string[],
+    listener: (state: typeof this.state) => void
+  ) {
+    this.listeners.add(path, listener);
 
     return () => {
-      this.listeners.delete(listener);
+      this.listeners.remove(path, listener);
     };
   }
 
@@ -254,8 +258,10 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
   }
 
-  private notifyStateSubscribers() {
-    this.listeners.forEach((listener) => listener(this.state));
+  private notifyStateSubscribers(path: string[]) {
+    this.listeners
+      .getAllUnder(path)
+      ?.forEach((listener) => listener(this.state));
   }
 }
 
@@ -264,23 +270,10 @@ export type Client<TRouter extends AnyRouter> = {
    * @internal
    */
   _router: TRouter;
-  ws: WebSocketClient;
-  get: () => Simplify<ClientState<TRouter>>;
-  getRaw: () => ClientRawState<TRouter>;
-  subscribeToRoute: (routeName: string) => () => void;
-  subscribeToState: (
-    listener: (state: ClientState<TRouter>) => void
-  ) => () => void;
-  routes: {
-    [K in keyof TRouter["routes"]]: {
-      insert: (
-        state: LiveObjectInsertMutation<TRouter["routes"][K]["shape"]>["value"]
-      ) => void;
-      update: (
-        opts: LiveObjectUpdateMutation<TRouter["routes"][K]["shape"]>
-      ) => void;
-    };
+  client: {
+    ws: WebSocketClient;
   };
+  store: Observable<ClientState<TRouter>>;
 };
 
 export type ClientOptions = {
@@ -293,40 +286,71 @@ export const createClient = <TRouter extends AnyRouter>(
 ): Client<TRouter> => {
   const ogClient = new InnerClient<TRouter, Schema>(opts);
 
-  return createObservable(ogClient, {
-    get: (_, path) => {
-      const [base, routeName, op] = path;
-
-      if (base === "ws") return ogClient.ws;
-      if (base === "get") return ogClient.get.bind(ogClient);
-      if (base === "getRaw") return ogClient.getRaw.bind(ogClient);
-      if (base === "subscribeToState")
-        return ogClient.subscribeToState.bind(ogClient);
-      if (base === "subscribeToRoute")
-        return ogClient.subscribeToRoute.bind(ogClient);
-
-      if (path.length > 3 || base !== "routes")
-        throw new SyntaxError(
-          `Trying to access a property on the client that does't exist ${path.join(".")}`
-        );
-
-      if (op === "insert")
-        return (
-          value: LiveObjectInsertMutation<
-            TRouter["routes"][string]["shape"]
-          >["value"]
-        ) => {
-          ogClient.mutate("insert", routeName, {
-            value,
-          });
-        };
-
-      if (op === "update")
-        return (
-          input: LiveObjectUpdateMutation<TRouter["routes"][string]["shape"]>
-        ) => {
-          ogClient.mutate("update", routeName, input);
-        };
+  return {
+    _router: ogClient._router,
+    client: {
+      ws: ogClient.ws,
     },
-  }) as unknown as Client<TRouter>;
+    store: createObservable(
+      {},
+      {
+        get: (_, path) => {
+          const selector = path.slice(0, -1);
+          const lastSegment = path[path.length - 1];
+
+          if (lastSegment === "get")
+            return () => index(ogClient.get(), selector);
+          if (lastSegment === "subscribe")
+            return (callback: (value: any) => void) => {
+              const remove = ogClient.subscribeToSlice(selector, callback);
+              return remove;
+            };
+
+          // if (base === "ws") return ogClient.ws;
+          // if (base === "get") return ogClient.get.bind(ogClient);
+          // if (base === "getRaw") return ogClient.getRaw.bind(ogClient);
+          // if (base === "subscribeToState")
+          //   return ogClient.subscribeToState.bind(ogClient);
+          // if (base === "subscribeToRoute")
+          //   return ogClient.subscribeToRoute.bind(ogClient);
+
+          // if (path.length > 3 || base !== "routes")
+          //   throw new SyntaxError(
+          //     `Trying to access a property on the client that does't exist ${path.join(".")}`
+          //   );
+
+          // if (op === "insert")
+          //   return (
+          //     value: LiveObjectInsertMutation<
+          //       TRouter["routes"][string]["shape"]
+          //     >["value"]
+          //   ) => {
+          //     ogClient.mutate("insert", routeName, {
+          //       value,
+          //     });
+          //   };
+
+          // if (op === "update")
+          //   return (
+          //     input: LiveObjectUpdateMutation<TRouter["routes"][string]["shape"]>
+          //   ) => {
+          //     ogClient.mutate("update", routeName, input);
+          //   };
+        },
+      }
+    ) as unknown as Client<TRouter>["store"],
+  };
 };
+
+// TODO REMOVE
+
+// const obs = createObservable({} as any, {
+//   get: (target, path) => {
+//     console.log("Target:", target);
+//     console.log("Path:", path);
+//   },
+// });
+
+// console.log("obs.issues", obs.issues);
+// console.log("obs.issues[0]", obs.issues[0]);
+// console.log("obs.issues[0].name", obs.issues[0].name.get());

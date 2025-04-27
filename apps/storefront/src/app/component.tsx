@@ -1,8 +1,11 @@
 // import { client, useLiveData, useSubscribe } from "./live-client";
 
+import { useLiveQuery } from "@repo/live-state/client";
+import { store } from "./live-client";
+
 export function LiveComponent(): JSX.Element {
   // useSubscribe("counters");
-  // const counters = useLiveData((s) => s.counters);
+  const counters = useLiveQuery(store.counters);
 
   // const raw = useSyncExternalStore(client.subscribeToState.bind(client), () =>
   //   client.getRaw()
@@ -10,6 +13,7 @@ export function LiveComponent(): JSX.Element {
 
   return (
     <div className="p-2 grid grid-cols-2">
+      <pre>{counters ? JSON.stringify(counters, null, 2) : "No counters"}</pre>
       {/* <div className="flex items-center flex-col gap-4">
         <span>
           Value:{" "}

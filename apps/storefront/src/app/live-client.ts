@@ -1,7 +1,7 @@
 import { createClient } from "@repo/live-state/client";
 import { type Router, schema } from "@repo/ls-impl";
 
-export const client = createClient<Router>({
+export const { store, client } = createClient<Router>({
   url: "ws://localhost:5001/ws",
   schema,
 });
