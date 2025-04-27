@@ -13,6 +13,7 @@ import {
   LiveObjectInsertMutation,
   LiveObjectUpdateMutation,
   MaterializedLiveType,
+  Schema,
 } from "../schema";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
@@ -44,10 +45,7 @@ type MutationInputMap = {
   update: LiveObjectUpdateMutation<LiveObject<any>>;
 };
 
-class InnerClient<
-  TRouter extends AnyRouter,
-  TSchema extends Record<string, LiveObject<any>>,
-> {
+class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
   public readonly _router!: TRouter;
 
   public readonly url: string;
@@ -85,7 +83,7 @@ class InnerClient<
               this.sendWsMessage({
                 _id: nanoid(),
                 type: "SUBSCRIBE",
-                shape: routeName,
+                resource: routeName,
               });
             }
           }
@@ -108,8 +106,8 @@ class InnerClient<
 
   private updateOptimisticState(objectName: keyof TRouter["routes"]) {
     const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
-      mergeMutationReducer<TSchema[keyof TSchema]>(
-        this.schema[objectName as keyof TSchema]
+      mergeMutationReducer<TSchema["entities"][number]>(
+        this.schema.entities.find((e) => e.name === objectName)!
       ),
       this.state[objectName] ?? {}
     );
@@ -174,15 +172,15 @@ class InnerClient<
       console.log("Message received from the server:", parsedMessage);
 
       if (parsedMessage.type === "MUTATE") {
-        const { route } = parsedMessage;
+        const { resource } = parsedMessage;
 
-        const routeState = this.state[route] ?? {};
+        const routeState = this.state[resource] ?? {};
 
         try {
           this._set(
-            route,
-            mergeMutation<TSchema[keyof TSchema]>(
-              this.schema[route as keyof TSchema],
+            resource,
+            mergeMutation<TSchema["entities"][number]>(
+              this.schema.entities.find((e) => e.name === resource)!,
               routeState,
               parsedMessage
             ),
@@ -192,10 +190,10 @@ class InnerClient<
           console.error("Error parsing mutation from the server:", e);
         }
       } else if (parsedMessage.type === "BOOTSTRAP") {
-        const { objectName: routeName, data } = parsedMessage;
+        const { resource, data } = parsedMessage;
 
         this._set(
-          routeName,
+          resource,
           Object.fromEntries(data.map((d) => [d.value?.id?.value, d]))
         );
       }
@@ -211,7 +209,7 @@ class InnerClient<
     this.sendWsMessage({
       _id: nanoid(),
       type: "SUBSCRIBE",
-      shape: routeName,
+      resource: routeName,
     });
 
     return () => {
@@ -239,13 +237,11 @@ class InnerClient<
     const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
-      route: routeName as string,
+      resource: routeName as string,
       mutationType,
-      payload: this.schema[routeName as string].encode(
-        mutationType,
-        input,
-        new Date().toISOString()
-      ),
+      payload: this.schema.entities
+        .find((e) => e.name === routeName)!
+        .encode(mutationType, input, new Date().toISOString()),
       where: (input as LiveObjectUpdateMutation<any>).where,
     };
 
@@ -289,15 +285,13 @@ export type Client<TRouter extends AnyRouter> = {
 
 export type ClientOptions = {
   url: string;
-  schema: Record<string, LiveObject<any>>;
+  schema: Schema;
 };
 
 export const createClient = <TRouter extends AnyRouter>(
   opts: ClientOptions
 ): Client<TRouter> => {
-  const ogClient = new InnerClient<TRouter, Record<string, LiveObject<any>>>(
-    opts
-  );
+  const ogClient = new InnerClient<TRouter, Schema>(opts);
 
   return createObservable(ogClient, {
     get: (_, path) => {

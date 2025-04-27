@@ -5,19 +5,19 @@ const clMsgId = z.string().nanoid();
 const clSubscribeMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("SUBSCRIBE"),
-  shape: z.string(),
+  resource: z.string(),
 });
 
 const clBootstrapMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("BOOTSTRAP"),
-  objectName: z.string(),
+  resource: z.string(),
 });
 
 const mutationsMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("MUTATE"),
-  route: z.string(),
+  resource: z.string(),
   mutationType: z.enum(["insert", "update"]),
   payload: z.record(z.any()),
   where: z.array(z.string()).optional(),
@@ -43,7 +43,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 const svBootstrapMsgSchema = z.object({
   type: z.literal("BOOTSTRAP"),
-  objectName: z.string(),
+  resource: z.string(),
   data: z.array(z.any()),
 });
 

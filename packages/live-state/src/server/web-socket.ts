@@ -1,7 +1,7 @@
 import { WebsocketRequestHandler } from "express-ws";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
-import { AnyRouter } from ".";
+import { AnyRouter, ClientId, Server } from ".";
 import { mergeMutation } from "../core";
 import {
   clientMessageSchema,
@@ -11,14 +11,14 @@ import {
 import { InferIndex, LiveTypeAny, MaterializedLiveType } from "../schema";
 
 export type Subscription = {
-  __subscribed: true;
   filters?: Record<string, any>;
 };
 
 // Types just for better readability
 type RouteId = string;
-type ClientId = string;
-
+/**
+ * @deprecated
+ */
 export const createWSServer: <T extends AnyRouter>(
   router: T
 ) => WebsocketRequestHandler = (router) => {
@@ -58,26 +58,24 @@ export const createWSServer: <T extends AnyRouter>(
         );
 
         if (parsedMessage.type === "SUBSCRIBE") {
-          const { shape } = parsedMessage;
+          const { resource: shape } = parsedMessage;
 
           if (!subscriptions[shape]) subscriptions[shape] = {};
 
-          subscriptions[shape][clientId] = {
-            __subscribed: true,
-          };
+          subscriptions[shape][clientId] = {};
 
           console.log("Subscribing to", subscriptions);
 
           ws.send(
             JSON.stringify({
               type: "BOOTSTRAP",
-              objectName: shape,
+              resource: shape,
               data: Object.values(states[shape] ?? {}),
             } satisfies ServerBootstrapMessage)
           );
         } else if (parsedMessage.type === "MUTATE") {
           // TODO Handle error responses
-          const { route } = parsedMessage;
+          const { resource: route } = parsedMessage;
 
           if (!router.routes[route]) return;
 
@@ -95,14 +93,14 @@ export const createWSServer: <T extends AnyRouter>(
             console.error("Error parsing mutation from the client:", e);
           }
         } else if (parsedMessage.type === "BOOTSTRAP") {
-          const { objectName } = parsedMessage;
+          const { resource: objectName } = parsedMessage;
 
           if (!router.routes[objectName]) return;
 
           ws.send(
             JSON.stringify({
               type: "BOOTSTRAP",
-              objectName,
+              resource: objectName,
               data: Object.values(states[objectName] ?? {}),
             } satisfies ServerBootstrapMessage)
           );
@@ -120,6 +118,73 @@ export const createWSServer: <T extends AnyRouter>(
       Object.entries(subscriptions).forEach(([shape, clients]) => {
         delete clients[clientId];
       });
+    });
+  };
+};
+
+export const webSocketAdapter = (server: Server<AnyRouter>) => {
+  const connections: Record<ClientId, WebSocket> = {};
+  const subscriptions: Record<string, Record<ClientId, Subscription>> = {};
+
+  server.subscribeToMutations((m) => {
+    console.log("Mutation received from server:", m);
+  });
+
+  return (ws: WebSocket) => {
+    const clientId = nanoid();
+
+    // TODO add middlewares and ability to refuse connection
+
+    connections[clientId] = ws;
+    console.log("Client connected:", clientId);
+
+    ws.on("message", async (message) => {
+      try {
+        console.log("Message received from the client:", message);
+
+        const parsedMessage = clientMessageSchema.parse(
+          JSON.parse(message.toString())
+        );
+
+        if (parsedMessage.type === "SUBSCRIBE") {
+          const { resource: shape } = parsedMessage;
+
+          if (!subscriptions[shape]) subscriptions[shape] = {};
+
+          subscriptions[shape][clientId] = {};
+
+          // TODO send bootstrap
+        } else if (parsedMessage.type === "BOOTSTRAP") {
+          const { resource: objectName } = parsedMessage;
+
+          const result = await server.handleRequest({
+            req: {
+              type: "FIND",
+              resourceId: objectName,
+            },
+          });
+
+          if (!result) {
+            throw new Error("Invalid resource");
+          }
+
+          ws.send(
+            JSON.stringify({
+              type: "BOOTSTRAP",
+              resource: objectName,
+              data: Object.values(result),
+            } satisfies ServerBootstrapMessage)
+          );
+        }
+      } catch (e) {
+        // TODO send error to client
+        console.error("Error handling message from the client:", e);
+      }
+    });
+
+    ws.on("close", () => {
+      console.log("Connection closed", clientId);
+      delete connections[clientId];
     });
   };
 };

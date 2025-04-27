@@ -67,10 +67,9 @@ function createUseSubscribe<TClient extends Client<AnyRouter>>(
   };
 }
 
-export function reactiveClient<
-  TRouter extends AnyRouter,
-  TClient extends Client<TRouter>,
->(client: TClient) {
+export function reactiveClient<TClient extends Client<AnyRouter>>(
+  client: TClient
+) {
   return {
     useLiveData: createUseLiveData(client),
     useSubscribe: createUseSubscribe(client),

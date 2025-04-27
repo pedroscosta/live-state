@@ -1,9 +1,16 @@
-import { createWSServer } from "@repo/live-state/server";
-import { routerImpl } from "@repo/ls-impl";
+import { server, webSocketAdapter } from "@repo/live-state/server";
+import { routerImpl, schema } from "@repo/ls-impl";
 import cors from "cors";
 import express from "express";
 import expressWs from "express-ws";
 import morgan from "morgan";
+import { InMemoryStorage } from "../../../packages/live-state/src/server/storage";
+
+const lsServer = server({
+  router: routerImpl,
+  storage: new InMemoryStorage(),
+  schema,
+});
 
 export const createServer = (): ReturnType<typeof expressWs>["app"] => {
   const { app } = expressWs(express());
@@ -21,7 +28,7 @@ export const createServer = (): ReturnType<typeof expressWs>["app"] => {
       return res.json({ ok: true });
     });
 
-  app.ws("/ws", createWSServer(routerImpl));
+  app.ws("/ws", webSocketAdapter(lsServer));
 
   return app;
 };

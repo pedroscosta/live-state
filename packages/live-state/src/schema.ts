@@ -192,10 +192,12 @@ export class LiveObject<
   MutationUnion<LiveObject<TSchema>>,
   Record<string, any>
 > {
+  public readonly name: string;
   public readonly fields: TSchema;
 
-  constructor(fields: TSchema) {
+  constructor(name: string, fields: TSchema) {
     super();
+    this.name = name;
     this.fields = fields;
   }
 
@@ -256,36 +258,19 @@ export class LiveObject<
     throw new Error("Mutation type not implemented.");
   }
 
-  static create<TSchema extends Record<string, LiveTypeAny>>(schema: TSchema) {
-    return new LiveObject<TSchema>(schema);
+  static create<TSchema extends Record<string, LiveTypeAny>>(
+    name: string,
+    schema: TSchema
+  ) {
+    return new LiveObject<TSchema>(name, schema);
   }
 }
 
 export const object = LiveObject.create;
 
+export type LiveObjectAny = LiveObject<Record<string, LiveTypeAny>>;
+
 export type LiveTypeAny = LiveType<any, LiveTypeMeta, any, any>;
-
-/**
- * @deprecated
- */
-export type Shape<T extends LiveTypeAny> = T;
-
-/**
- * @deprecated
- */
-export type AnyShape = Shape<LiveTypeAny>;
-
-/**
- * @deprecated
- */
-export type ShapeRecord = Record<string, AnyShape>;
-
-/**
- * @deprecated
- */
-export type ShapeNamesFromRecord<T extends ShapeRecord> = keyof T extends string
-  ? keyof T
-  : never;
 
 export type InferLiveType<T extends LiveTypeAny> =
   T["_value"] extends Record<string, LiveTypeAny>
@@ -328,3 +313,7 @@ export const inferValue = <T extends LiveTypeAny>(
 // TODO use proper index type
 export type InferIndex<T extends LiveTypeAny> = string;
 export type InferWhereClause<T extends LiveTypeAny> = string[];
+
+export type Schema = {
+  entities: LiveObjectAny[];
+};
