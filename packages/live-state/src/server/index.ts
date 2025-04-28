@@ -48,10 +48,20 @@ export class Route<TShape extends LiveObjectAny> {
     return opts.db.find<TShape>(opts.req.resourceId, opts.req.where);
   }
 
+  private handleInsert(opts: { req: Request; db: Storage }) {
+    if (!opts.req.payload) throw new Error("Payload is required");
+
+    const newRecord = this.shape.decode("insert", opts.req.payload);
+
+    return opts.db.insert<TShape>(opts.req.resourceId, newRecord);
+  }
+
   public async handleRequest(opts: { req: Request; db: Storage }) {
     switch (opts.req.type) {
       case "FIND":
         return this.handleFind(opts);
+      case "INSERT":
+        return this.handleInsert(opts);
       default:
         throw new Error("Invalid request type");
     }

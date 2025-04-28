@@ -16,6 +16,7 @@ import {
   Schema,
 } from "../schema";
 import { AnyRouter } from "../server";
+import { Simplify } from "../utils";
 import { createObservable, Observable } from "./observable";
 import { Tree } from "./tree";
 import { index } from "./utils";
@@ -273,7 +274,15 @@ export type Client<TRouter extends AnyRouter> = {
   client: {
     ws: WebSocketClient;
   };
-  store: Observable<ClientState<TRouter>>;
+  store: Observable<ClientState<TRouter>> & {
+    [K in keyof TRouter["routes"]]: {
+      insert: (
+        input: Simplify<
+          LiveObjectInsertMutation<TRouter["routes"][K]["shape"]>
+        >["value"]
+      ) => void;
+    };
+  };
 };
 
 export type ClientOptions = {
@@ -306,9 +315,16 @@ export const createClient = <TRouter extends AnyRouter>(
               return remove;
             };
 
-          // if (base === "ws") return ogClient.ws;
-          // if (base === "get") return ogClient.get.bind(ogClient);
-          // if (base === "getRaw") return ogClient.getRaw.bind(ogClient);
+          if (selector.length === 1) {
+            if (lastSegment === "insert")
+              return (
+                input: Simplify<
+                  LiveObjectInsertMutation<TRouter["routes"][string]["shape"]>
+                >["value"]
+              ) => {
+                ogClient.mutate("insert", selector[0], { value: input });
+              };
+          }
           // if (base === "subscribeToState")
           //   return ogClient.subscribeToState.bind(ogClient);
           // if (base === "subscribeToRoute")

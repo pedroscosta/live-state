@@ -1,7 +1,7 @@
 import { WebsocketRequestHandler } from "express-ws";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
-import { AnyRouter, ClientId, Server } from ".";
+import { AnyRouter, ClientId, RequestType, Server } from ".";
 import { mergeMutation } from "../core";
 import {
   clientMessageSchema,
@@ -127,7 +127,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
   const subscriptions: Record<string, Record<ClientId, Subscription>> = {};
 
   server.subscribeToMutations((m) => {
-    console.log("Mutation received from server:", m);
+    console.log("Mutation received from subscription:", m);
   });
 
   return (ws: WebSocket) => {
@@ -175,6 +175,21 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               data: Object.values(result),
             } satisfies ServerBootstrapMessage)
           );
+        } else if (parsedMessage.type === "MUTATE") {
+          const { resource, mutationType } = parsedMessage;
+          try {
+            const result = await server.handleRequest({
+              req: {
+                type: mutationType.toUpperCase() as RequestType,
+                resourceId: resource,
+                payload: parsedMessage.payload,
+              },
+            });
+
+            console.log("Result", result);
+          } catch (e) {
+            console.error("Error parsing mutation from the client:", e);
+          }
         }
       } catch (e) {
         // TODO send error to client

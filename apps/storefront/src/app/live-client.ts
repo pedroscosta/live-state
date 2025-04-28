@@ -6,4 +6,6 @@ export const { store, client } = createClient<Router>({
   schema,
 });
 
+store.counters.insert({ id: "0", counter: 1 });
+
 // export const { useLiveData, useSubscribe } = reactiveClient(client);
