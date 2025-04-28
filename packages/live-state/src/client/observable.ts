@@ -37,10 +37,10 @@ export const createObservable = <T extends object>(
 };
 
 export type Observable<T> = {
+  [K in keyof T]: Observable<T[K]>;
+} & {
   get: () => T;
   subscribe: (callback: (value: T) => void) => () => void;
-} & {
-  [K in keyof T]: Observable<T[K]>;
 };
 
 // export type Observable<T> = {

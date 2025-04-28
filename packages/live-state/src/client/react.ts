@@ -73,10 +73,12 @@ import { Observable } from "./observable";
 //     useSubscribe: createUseSubscribe(client),
 //   };
 // }
-export const useLiveQuery = <T extends Observable<U>, U>(observable: T): U => {
+export const useLiveQuery = <T extends Observable<U>, U>(
+  observable: T
+): ReturnType<T["get"]> => {
   const slice = useSyncExternalStore(observable.subscribe, () =>
     observable.get()
   );
 
-  return slice;
+  return slice as ReturnType<T["get"]>;
 };
