@@ -127,7 +127,13 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
   const subscriptions: Record<string, Record<ClientId, Subscription>> = {};
 
   server.subscribeToMutations((m) => {
-    console.log("Mutation received from subscription:", m);
+    console.log("Mutation propagated:", m);
+    Object.entries(subscriptions[m.resource] ?? {}).forEach(
+      ([clientId, sub]) => {
+        // TODO handle filters
+        connections[clientId]?.send(JSON.stringify(m));
+      }
+    );
   });
 
   return (ws: WebSocket) => {
@@ -183,6 +189,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 type: mutationType.toUpperCase() as RequestType,
                 resourceId: resource,
                 payload: parsedMessage.payload,
+                messageId: parsedMessage._id,
               },
             });
 

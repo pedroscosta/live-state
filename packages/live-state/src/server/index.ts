@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { MutationMessage } from "../core/internals";
 import { LiveObjectAny, Schema } from "../schema";
 import { Storage } from "./storage";
@@ -10,6 +11,7 @@ export type Request = {
   resourceId: string;
   payload?: Record<string, any>;
   where?: Record<string, any>;
+  messageId?: string;
 };
 
 export type RouteRecord<
@@ -114,10 +116,31 @@ export class Server<TRouter extends AnyRouter> {
   }
 
   public async handleRequest(opts: { req: Request }) {
-    return this.router.routes[opts.req.resourceId]?.handleRequest({
-      req: opts.req,
-      db: this.storage,
-    });
+    const result = await this.router.routes[opts.req.resourceId]?.handleRequest(
+      {
+        req: opts.req,
+        db: this.storage,
+      }
+    );
+
+    if (result && opts.req.payload) {
+      // TODO handle partial updates
+      this.mutationSubscriptions.forEach((handler) => {
+        handler({
+          _id: opts.req.messageId ?? nanoid(),
+          type: "MUTATE",
+          resource: opts.req.resourceId,
+          mutationType:
+            opts.req.type.toUpperCase() as MutationMessage["mutationType"],
+          payload: opts.req.payload!,
+          where: [
+            (result.value as unknown as { id: { value: string } }).id.value,
+          ],
+        });
+      });
+    }
+
+    return result;
   }
 }
 
