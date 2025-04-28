@@ -79,6 +79,11 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
 
     this.ws.addEventListener("connectionChange", (e) => {
       if (e.open) {
+        this.sendWsMessage({
+          _id: nanoid(),
+          type: "BOOTSTRAP",
+        });
+
         Object.entries(this.routeSubscriptions).forEach(
           ([routeName, count]) => {
             if (count > 0) {

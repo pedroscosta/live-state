@@ -93,17 +93,14 @@ export const createWSServer: <T extends AnyRouter>(
             console.error("Error parsing mutation from the client:", e);
           }
         } else if (parsedMessage.type === "BOOTSTRAP") {
-          const { resource: objectName } = parsedMessage;
-
-          if (!router.routes[objectName]) return;
-
-          ws.send(
-            JSON.stringify({
-              type: "BOOTSTRAP",
-              resource: objectName,
-              data: Object.values(states[objectName] ?? {}),
-            } satisfies ServerBootstrapMessage)
-          );
+          // if (!router.routes[objectName]) return;
+          // ws.send(
+          //   JSON.stringify({
+          //     type: "BOOTSTRAP",
+          //     resource: objectName,
+          //     data: Object.values(states[objectName] ?? {}),
+          //   } satisfies ServerBootstrapMessage)
+          // );
         }
       } catch (e) {
         console.error("Error parsing message from the client:", e);
@@ -161,28 +158,39 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
 
           // TODO send bootstrap
         } else if (parsedMessage.type === "BOOTSTRAP") {
-          const { resource: objectName } = parsedMessage;
+          const { resources: _res } = parsedMessage;
 
-          const result = await server.handleRequest({
-            req: {
-              type: "FIND",
-              resourceId: objectName,
-            },
-          });
+          const resources = _res ?? server.schema.entities.map((e) => e.name);
 
-          if (!result) {
-            throw new Error("Invalid resource");
-          }
+          console.log("Bootstraping resources:", resources);
 
-          ws.send(
-            JSON.stringify({
-              type: "BOOTSTRAP",
-              resource: objectName,
-              data: Object.values(result),
-            } satisfies ServerBootstrapMessage)
+          await Promise.all(
+            resources.map(async (resourceId) => {
+              const result = await server.handleRequest({
+                req: {
+                  type: "FIND",
+                  resourceId,
+                },
+              });
+
+              if (!result) {
+                throw new Error("Invalid resource");
+              }
+
+              ws.send(
+                JSON.stringify({
+                  type: "BOOTSTRAP",
+                  resource: resourceId,
+                  data: Object.values(result).map((r) => ({
+                    value: r,
+                  })),
+                } satisfies ServerBootstrapMessage)
+              );
+            })
           );
         } else if (parsedMessage.type === "MUTATE") {
           const { resource, mutationType } = parsedMessage;
+          console.log("Received mutation from client:", parsedMessage);
           try {
             const result = await server.handleRequest({
               req: {

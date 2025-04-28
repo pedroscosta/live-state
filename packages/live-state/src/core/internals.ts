@@ -11,7 +11,7 @@ const clSubscribeMsgSchema = z.object({
 const clBootstrapMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("BOOTSTRAP"),
-  resource: z.string(),
+  resources: z.string().array().optional(),
 });
 
 const mutationsMsgSchema = z.object({
