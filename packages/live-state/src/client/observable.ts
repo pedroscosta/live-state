@@ -41,6 +41,7 @@ export type Observable<T> = {
 } & {
   get: () => T;
   subscribe: (callback: (value: T) => void) => () => void;
+  subscribeToRemote: () => () => void;
 };
 
 // export type Observable<T> = {

@@ -1,6 +1,6 @@
 // const identity = <T>(arg: T): T => arg;
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Observable } from "./observable";
 
 // function useLiveData<TClient extends Client<AnyRouter>>(
@@ -74,8 +74,18 @@ import { Observable } from "./observable";
 //   };
 // }
 export const useLiveQuery = <T extends Observable<U>, U>(
-  observable: T
+  observable: T,
+  opts?: {
+    subscribeToRemote?: boolean;
+  }
 ): ReturnType<T["get"]> => {
+  useEffect(() => {
+    if (opts?.subscribeToRemote) {
+      console.log(observable.subscribeToRemote());
+      return observable.subscribeToRemote();
+    }
+  }, [opts?.subscribeToRemote]);
+
   const slice = useSyncExternalStore(observable.subscribe, () =>
     observable.get()
   );

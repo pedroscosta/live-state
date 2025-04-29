@@ -175,8 +175,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
 
   public handleServerMessage(message: MessageEvent["data"]) {
     try {
+      console.log("Message received from the server:", message);
       const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
-      console.log("Message received from the server:", parsedMessage);
 
       if (parsedMessage.type === "MUTATE") {
         const { resource } = parsedMessage;
@@ -209,9 +209,10 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     }
   }
 
-  public subscribeToRoute(routeName: string) {
+  public subscribeToRemote(routeName: string) {
     this.routeSubscriptions[routeName] =
       (this.routeSubscriptions[routeName] ?? 0) + 1;
+    console.log("Subscribing to remote");
 
     this.sendWsMessage({
       _id: nanoid(),
@@ -220,6 +221,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     });
 
     return () => {
+      console.log("Unsubscribing from remote", routeName);
       this.routeSubscriptions[routeName] -= 1;
 
       if (this.routeSubscriptions[routeName] === 0) {
@@ -319,6 +321,8 @@ export const createClient = <TRouter extends AnyRouter>(
               const remove = ogClient.subscribeToSlice(selector, callback);
               return remove;
             };
+          if (lastSegment === "subscribeToRemote")
+            return ogClient.subscribeToRemote.bind(ogClient, selector[0]);
 
           if (selector.length === 1) {
             if (lastSegment === "insert")

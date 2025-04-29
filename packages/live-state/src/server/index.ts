@@ -131,7 +131,7 @@ export class Server<TRouter extends AnyRouter> {
           type: "MUTATE",
           resource: opts.req.resourceId,
           mutationType:
-            opts.req.type.toUpperCase() as MutationMessage["mutationType"],
+            opts.req.type.toLowerCase() as MutationMessage["mutationType"],
           payload: opts.req.payload!,
           where: [
             (result.value as unknown as { id: { value: string } }).id.value,
