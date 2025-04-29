@@ -1,11 +1,15 @@
 // import { client, useLiveData, useSubscribe } from "./live-client";
 
 import { useLiveQuery } from "@repo/live-state/client";
+import { nanoid } from "nanoid";
+import { Button } from "../../components/ui/button";
 import { store } from "./live-client";
 
 export function LiveComponent(): JSX.Element {
   // useSubscribe("counters");
-  const counters = useLiveQuery(store.counters);
+  const counters = useLiveQuery(store.counters, {
+    subscribeToRemote: true,
+  });
 
   // const raw = useSyncExternalStore(client.subscribeToState.bind(client), () =>
   //   client.getRaw()
@@ -13,7 +17,44 @@ export function LiveComponent(): JSX.Element {
 
   return (
     <div className="p-2 grid grid-cols-2">
-      <pre>{counters ? JSON.stringify(counters, null, 2) : "No counters"}</pre>
+      <div className="flex gap-4 flex-col">
+        {Object.values(counters ?? {}).map((counter) => (
+          <div key={counter.id} className="flex items-center gap-2">
+            <span className="px-2 py-1 border rounded-md bg-muted text-center w-64">
+              {counter.id}
+            </span>
+            <span>Value: {counter.counter}</span>
+            <Button
+              onClick={() => {
+                store.counters.update(counter.id, {
+                  counter: counter.counter - 1,
+                });
+              }}
+              type="button"
+            >
+              -1
+            </Button>
+            <Button
+              onClick={() => {
+                store.counters.update(counter.id, {
+                  counter: counter.counter + 1,
+                });
+              }}
+              type="button"
+            >
+              +1
+            </Button>
+          </div>
+        ))}
+        <Button
+          onClick={() => {
+            store.counters.insert({ id: nanoid(), counter: 0 });
+          }}
+          type="button"
+        >
+          Add Counter
+        </Button>
+      </div>
       {/* <div className="flex items-center flex-col gap-4">
         <span>
           Value:{" "}

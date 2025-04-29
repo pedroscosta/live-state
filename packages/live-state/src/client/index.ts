@@ -254,7 +254,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
       payload: this.schema.entities
         .find((e) => e.name === routeName)!
         .encode(mutationType, input, new Date().toISOString()),
-      where: (input as LiveObjectUpdateMutation<any>).where,
+      resourceId: (input as LiveObjectUpdateMutation<any>).id,
     };
 
     this.addOptimisticMutation(routeName, mutationMessage);
@@ -286,6 +286,12 @@ export type Client<TRouter extends AnyRouter> = {
       insert: (
         input: Simplify<
           LiveObjectInsertMutation<TRouter["routes"][K]["shape"]>
+        >["value"]
+      ) => void;
+      update: (
+        id: string,
+        value: Simplify<
+          LiveObjectUpdateMutation<TRouter["routes"][K]["shape"]>
         >["value"]
       ) => void;
     };
@@ -332,6 +338,15 @@ export const createClient = <TRouter extends AnyRouter>(
                 >["value"]
               ) => {
                 ogClient.mutate("insert", selector[0], { value: input });
+              };
+            if (lastSegment === "update")
+              return (
+                id: string,
+                input: Simplify<
+                  LiveObjectUpdateMutation<TRouter["routes"][string]["shape"]>
+                >["value"]
+              ) => {
+                ogClient.mutate("update", selector[0], { value: input, id });
               };
           }
           // if (base === "subscribeToState")

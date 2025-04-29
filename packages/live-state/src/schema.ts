@@ -177,7 +177,7 @@ export type LiveObjectInsertMutation<TObject extends LiveObject<any>> = {
 
 export type LiveObjectUpdateMutation<TObject extends LiveObject<any>> = {
   value: Partial<InferLiveObject<TObject["_value"]>>;
-  where?: InferWhereClause<TObject["_value"]>;
+  id: string;
 };
 
 type MutationUnion<TObject extends LiveObject<any>> =

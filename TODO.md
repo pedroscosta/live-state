@@ -1,11 +1,13 @@
 # TODO:
 
-[ ] Add optimistic updates
+[ ] Handle partial acks
+[ ] Handle rejects
 [ ] Add client storage
-[ ] Add server storage
+[ ] Add database server storage
 [ ] Add filters
 [ ] Add upsert mutation
 
+[X] Add optimistic updates
 [X] Add connect/disconnect controls on client
 [X] Add remote state message (Bootstraping)
 [X] Redo the reading part of the client

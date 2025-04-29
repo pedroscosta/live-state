@@ -8,9 +8,10 @@ export * from "./web-socket";
 export type RequestType = "FIND" | "INSERT" | "UPDATE" | "DELETE";
 export type Request = {
   type: RequestType;
-  resourceId: string;
+  resourceName: string;
   payload?: Record<string, any>;
   where?: Record<string, any>;
+  resourceId?: string;
   messageId?: string;
 };
 
@@ -47,7 +48,7 @@ export class Route<TShape extends LiveObjectAny> {
   }
 
   private handleFind(opts: { req: Request; db: Storage }) {
-    return opts.db.find<TShape>(opts.req.resourceId, opts.req.where);
+    return opts.db.find<TShape>(opts.req.resourceName, opts.req.where);
   }
 
   private handleInsert(opts: { req: Request; db: Storage }) {
@@ -55,7 +56,27 @@ export class Route<TShape extends LiveObjectAny> {
 
     const newRecord = this.shape.decode("insert", opts.req.payload);
 
-    return opts.db.insert<TShape>(opts.req.resourceId, newRecord);
+    return opts.db.insert<TShape>(opts.req.resourceName, newRecord);
+  }
+
+  private async handleUpdate(opts: { req: Request; db: Storage }) {
+    if (!opts.req.payload) throw new Error("Payload is required");
+    if (!opts.req.resourceId) throw new Error("ResourceId is required");
+
+    const target = await opts.db.findById<TShape>(
+      opts.req.resourceName,
+      opts.req.resourceId
+    );
+
+    if (!target) throw new Error("Target not found");
+
+    const newRecord = this.shape.decode("update", opts.req.payload, target);
+
+    return opts.db.update<TShape>(
+      opts.req.resourceName,
+      opts.req.resourceId,
+      newRecord
+    );
   }
 
   public async handleRequest(opts: { req: Request; db: Storage }) {
@@ -64,6 +85,8 @@ export class Route<TShape extends LiveObjectAny> {
         return this.handleFind(opts);
       case "INSERT":
         return this.handleInsert(opts);
+      case "UPDATE":
+        return this.handleUpdate(opts);
       default:
         throw new Error("Invalid request type");
     }
@@ -116,12 +139,12 @@ export class Server<TRouter extends AnyRouter> {
   }
 
   public async handleRequest(opts: { req: Request }) {
-    const result = await this.router.routes[opts.req.resourceId]?.handleRequest(
-      {
-        req: opts.req,
-        db: this.storage,
-      }
-    );
+    const result = await this.router.routes[
+      opts.req.resourceName
+    ]?.handleRequest({
+      req: opts.req,
+      db: this.storage,
+    });
 
     if (result && opts.req.payload) {
       // TODO handle partial updates
@@ -129,13 +152,13 @@ export class Server<TRouter extends AnyRouter> {
         handler({
           _id: opts.req.messageId ?? nanoid(),
           type: "MUTATE",
-          resource: opts.req.resourceId,
+          resource: opts.req.resourceName,
           mutationType:
             opts.req.type.toLowerCase() as MutationMessage["mutationType"],
           payload: opts.req.payload!,
-          where: [
+          resourceId:
+            opts.req.resourceId ??
             (result.value as unknown as { id: { value: string } }).id.value,
-          ],
         });
       });
     }

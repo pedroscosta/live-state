@@ -11,7 +11,7 @@ export function mergeMutation<TSchema extends LiveObject<any>>(
   prevState: Record<InferIndex<TSchema>, MaterializedLiveType<TSchema>>,
   mutationMsg: MutationMessage
 ): Record<InferIndex<TSchema>, MaterializedLiveType<TSchema>> {
-  const { mutationType, payload, where } = mutationMsg;
+  const { mutationType, payload, resourceId } = mutationMsg;
 
   if (mutationType === "insert") {
     const newRecord = schema.decode(
@@ -24,26 +24,24 @@ export function mergeMutation<TSchema extends LiveObject<any>>(
       [(newRecord.value as any).id.value]: newRecord,
     };
   } else if (mutationType === "update") {
-    if (!where) return prevState;
+    if (!resourceId) return prevState;
 
     const updatedRecords: Record<
       InferIndex<TSchema>,
       MaterializedLiveType<TSchema>
     > = {};
 
-    for (const id of where) {
-      const record = prevState?.[id];
+    const record = prevState?.[resourceId];
 
-      if (!record) continue;
+    if (!record) return prevState;
 
-      const updatedRecord = schema.decode(
-        mutationType as MutationType,
-        payload,
-        record
-      ) as MaterializedLiveType<TSchema>;
+    const updatedRecord = schema.decode(
+      mutationType as MutationType,
+      payload,
+      record
+    ) as MaterializedLiveType<TSchema>;
 
-      updatedRecords[(updatedRecord.value as any).id.value] = updatedRecord;
-    }
+    updatedRecords[(updatedRecord.value as any).id.value] = updatedRecord;
 
     return {
       ...prevState,

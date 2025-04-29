@@ -14,13 +14,14 @@ const clBootstrapMsgSchema = z.object({
   resources: z.string().array().optional(),
 });
 
+// TODO split this into separate schemas
 const mutationsMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("MUTATE"),
   resource: z.string(),
   mutationType: z.enum(["insert", "update"]),
   payload: z.record(z.any()),
-  where: z.array(z.string()).optional(),
+  resourceId: z.string().optional(),
 });
 
 export type MutationMessage = z.infer<typeof mutationsMsgSchema>;

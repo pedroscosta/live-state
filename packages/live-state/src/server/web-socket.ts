@@ -165,11 +165,11 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           console.log("Bootstraping resources:", resources);
 
           await Promise.all(
-            resources.map(async (resourceId) => {
+            resources.map(async (resourceName) => {
               const result = await server.handleRequest({
                 req: {
                   type: "FIND",
-                  resourceId,
+                  resourceName,
                 },
               });
 
@@ -180,10 +180,8 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               ws.send(
                 JSON.stringify({
                   type: "BOOTSTRAP",
-                  resource: resourceId,
-                  data: Object.values(result).map((r) => ({
-                    value: r,
-                  })),
+                  resource: resourceName,
+                  data: Object.values(result),
                 } satisfies ServerBootstrapMessage)
               );
             })
@@ -195,9 +193,10 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             const result = await server.handleRequest({
               req: {
                 type: mutationType.toUpperCase() as RequestType,
-                resourceId: resource,
+                resourceName: resource,
                 payload: parsedMessage.payload,
                 messageId: parsedMessage._id,
+                resourceId: parsedMessage.resourceId,
               },
             });
 
