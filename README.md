@@ -28,7 +28,7 @@ This repository is organized as a pnpm monorepo:
 Clone the repository and install dependencies:
 
 ```bash
-git clone <repo-url>  # replace with your repository URL
+git clone https://github.com/pedroscosta/live-state.git
 cd live-state
 pnpm install
 ```
