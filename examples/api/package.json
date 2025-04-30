@@ -25,7 +25,6 @@
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
-    "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/body-parser": "^1.19.5",
     "@types/cors": "^2.8.17",
