@@ -253,7 +253,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
       mutationType,
       payload: this.schema.entities
         .find((e) => e.name === routeName)!
-        .encode(mutationType, input, new Date().toISOString()),
+        .encodeMutation(mutationType, input, new Date().toISOString()),
       resourceId: (input as LiveObjectUpdateMutation<any>).id,
     };
 

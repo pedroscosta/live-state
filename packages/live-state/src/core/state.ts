@@ -14,10 +14,12 @@ export function mergeMutation<TSchema extends LiveObject<any>>(
   const { mutationType, payload, resourceId } = mutationMsg;
 
   if (mutationType === "insert") {
-    const newRecord = schema.decode(
+    const newRecord = schema.mergeMutation(
       mutationType as MutationType,
       payload
-    ) as MaterializedLiveType<TSchema>;
+    )[0] as MaterializedLiveType<TSchema>;
+
+    console.log("newRecord", newRecord);
 
     return {
       ...prevState,
@@ -35,11 +37,11 @@ export function mergeMutation<TSchema extends LiveObject<any>>(
 
     if (!record) return prevState;
 
-    const updatedRecord = schema.decode(
+    const updatedRecord = schema.mergeMutation(
       mutationType as MutationType,
       payload,
       record
-    ) as MaterializedLiveType<TSchema>;
+    )[0] as MaterializedLiveType<TSchema>;
 
     updatedRecords[(updatedRecord.value as any).id.value] = updatedRecord;
 

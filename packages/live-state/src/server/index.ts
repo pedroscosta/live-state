@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { MutationMessage } from "../core/internals";
-import { LiveObjectAny, Schema } from "../schema";
+import { LiveObjectAny, MaterializedLiveType, Schema } from "../schema";
 import { Storage } from "./storage";
 
 export * from "./web-socket";
@@ -40,6 +40,13 @@ export const router = <TRoutes extends RouteRecord>(opts: {
 
 export type AnyRouter = Router<RouteRecord>;
 
+type RouteResult<TShape extends LiveObjectAny> = {
+  data:
+    | MaterializedLiveType<TShape>
+    | Record<string, MaterializedLiveType<TShape>>;
+  acceptedValues: Record<string, any> | null;
+};
+
 export class Route<TShape extends LiveObjectAny> {
   readonly shape: TShape;
 
@@ -47,19 +54,37 @@ export class Route<TShape extends LiveObjectAny> {
     this.shape = shape;
   }
 
-  private handleFind(opts: { req: Request; db: Storage }) {
-    return opts.db.find<TShape>(opts.req.resourceName, opts.req.where);
+  private async handleFind(opts: {
+    req: Request;
+    db: Storage;
+  }): Promise<RouteResult<TShape>> {
+    return {
+      data: await opts.db.find<TShape>(opts.req.resourceName, opts.req.where),
+      acceptedValues: null,
+    };
   }
 
-  private handleInsert(opts: { req: Request; db: Storage }) {
+  private async handleInsert(opts: {
+    req: Request;
+    db: Storage;
+  }): Promise<RouteResult<TShape>> {
     if (!opts.req.payload) throw new Error("Payload is required");
 
-    const newRecord = this.shape.decode("insert", opts.req.payload);
+    const [newRecord, acceptedValues] = this.shape.mergeMutation(
+      "insert",
+      opts.req.payload
+    );
 
-    return opts.db.insert<TShape>(opts.req.resourceName, newRecord);
+    return {
+      data: await opts.db.insert<TShape>(opts.req.resourceName, newRecord),
+      acceptedValues,
+    };
   }
 
-  private async handleUpdate(opts: { req: Request; db: Storage }) {
+  private async handleUpdate(opts: {
+    req: Request;
+    db: Storage;
+  }): Promise<RouteResult<TShape>> {
     if (!opts.req.payload) throw new Error("Payload is required");
     if (!opts.req.resourceId) throw new Error("ResourceId is required");
 
@@ -70,16 +95,32 @@ export class Route<TShape extends LiveObjectAny> {
 
     if (!target) throw new Error("Target not found");
 
-    const newRecord = this.shape.decode("update", opts.req.payload, target);
-
-    return opts.db.update<TShape>(
-      opts.req.resourceName,
-      opts.req.resourceId,
-      newRecord
+    const [newRecord, acceptedValues] = this.shape.mergeMutation(
+      "update",
+      opts.req.payload,
+      target
     );
+
+    if (!acceptedValues)
+      return {
+        data: target,
+        acceptedValues: null,
+      };
+
+    return {
+      data: await opts.db.update<TShape>(
+        opts.req.resourceName,
+        opts.req.resourceId,
+        newRecord
+      ),
+      acceptedValues,
+    };
   }
 
-  public async handleRequest(opts: { req: Request; db: Storage }) {
+  public async handleRequest(opts: {
+    req: Request;
+    db: Storage;
+  }): Promise<RouteResult<TShape>> {
     switch (opts.req.type) {
       case "FIND":
         return this.handleFind(opts);
@@ -155,10 +196,11 @@ export class Server<TRouter extends AnyRouter> {
           resource: opts.req.resourceName,
           mutationType:
             opts.req.type.toLowerCase() as MutationMessage["mutationType"],
-          payload: opts.req.payload!,
+          payload: result.acceptedValues ?? {},
           resourceId:
             opts.req.resourceId ??
-            (result.value as unknown as { id: { value: string } }).id.value,
+            (result.data.value as unknown as { id: { value: string } }).id
+              .value,
         });
       });
     }

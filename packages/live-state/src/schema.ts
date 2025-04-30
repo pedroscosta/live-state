@@ -17,17 +17,24 @@ abstract class LiveType<
     this.optional = this.optional.bind(this);
   }
 
-  abstract encode(
+  abstract encodeMutation(
     mutationType: MutationType,
     input: EncodeInput,
     timestamp: string
   ): DecodeInput;
 
-  abstract decode(
+  /**
+   * Merges the materialized shape with the encoded mutation
+   * @param mutationType The type of mutation
+   * @param encodedMutation The encoded mutation
+   * @param materializedShape The materialized shape
+   * @returns A tuple of the new materialized shape and the accepted diff
+   */
+  abstract mergeMutation(
     mutationType: MutationType,
     encodedMutation: DecodeInput,
     materializedShape?: MaterializedLiveType<LiveType<Value, Meta>>
-  ): MaterializedLiveType<LiveType<Value, Meta>>;
+  ): [MaterializedLiveType<LiveType<Value, Meta>>, DecodeInput | null];
 
   optional(): OptionalLiveType<this> {
     return new OptionalLiveType<this>();
@@ -40,14 +47,14 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
   T["_encodeInput"],
   T["_decodeInput"]
 > {
-  encode(
+  encodeMutation(
     mutationType: MutationType,
     input: T["_value"] | undefined,
     timestamp: string
   ): string {
     throw new Error("Method not implemented.");
   }
-  decode(
+  mergeMutation(
     mutationType: MutationType,
     encodedMutation: T["_decodeInput"],
     materializedShape?:
@@ -60,14 +67,17 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
           >
         >
       | undefined
-  ): MaterializedLiveType<
-    LiveType<
-      T["_value"] | undefined,
-      T["_meta"],
-      T["_value"] | Partial<T["_value"] | undefined>,
-      T["_decodeInput"]
-    >
-  > {
+  ): [
+    MaterializedLiveType<
+      LiveType<
+        T["_value"] | undefined,
+        T["_meta"],
+        T["_value"] | Partial<T["_value"] | undefined>,
+        T["_decodeInput"]
+      >
+    >,
+    T["_decodeInput"] | null,
+  ] {
     throw new Error("Method not implemented.");
   }
 }
@@ -83,7 +93,7 @@ abstract class LiveAtomicType<
 > extends LiveType<Value, Meta, EncodeInput> {}
 
 export class LiveNumber extends LiveAtomicType<number> {
-  encode(
+  encodeMutation(
     mutationType: MutationType,
     input: Partial<number>,
     timestamp: string
@@ -94,25 +104,23 @@ export class LiveNumber extends LiveAtomicType<number> {
     return `${input};${timestamp}`;
   }
 
-  decode(
+  mergeMutation(
     mutationType: MutationType,
     encodedMutation: string,
     materializedShape?: MaterializedLiveType<LiveNumber>
-  ): MaterializedLiveType<LiveNumber> {
+  ): [MaterializedLiveType<LiveNumber>, string | null] {
     const [value, ts] = encodedMutation.split(";");
 
     if (
       materializedShape &&
       materializedShape._meta.timestamp.localeCompare(ts) >= 0
     )
-      return materializedShape;
+      return [materializedShape, null];
 
-    return {
-      value: Number(value),
-      _meta: {
-        timestamp: ts,
-      },
-    };
+    return [
+      { value: Number(value), _meta: { timestamp: ts } },
+      encodedMutation,
+    ];
   }
 
   static create() {
@@ -123,7 +131,7 @@ export class LiveNumber extends LiveAtomicType<number> {
 export const number = LiveNumber.create;
 
 export class LiveString extends LiveAtomicType<string> {
-  encode(
+  encodeMutation(
     mutationType: MutationType,
     input: Partial<string>,
     timestamp: string
@@ -134,25 +142,28 @@ export class LiveString extends LiveAtomicType<string> {
     return `${input};${timestamp}`;
   }
 
-  decode(
+  mergeMutation(
     mutationType: MutationType,
     encodedMutation: string,
     materializedShape?: MaterializedLiveType<LiveString>
-  ): MaterializedLiveType<LiveString> {
+  ): [MaterializedLiveType<LiveString>, string | null] {
     const [value, ts] = encodedMutation.split(";");
 
     if (
       materializedShape &&
       materializedShape._meta.timestamp.localeCompare(ts) >= 0
     )
-      return materializedShape;
+      return [materializedShape, null];
 
-    return {
-      value: value,
-      _meta: {
-        timestamp: ts,
+    return [
+      {
+        value: value,
+        _meta: {
+          timestamp: ts,
+        },
       },
-    };
+      encodedMutation,
+    ];
   }
 
   static create() {
@@ -201,7 +212,7 @@ export class LiveObject<
     this.fields = fields;
   }
 
-  encode(
+  encodeMutation(
     mutationType: MutationType,
     input: MutationUnion<this>,
     timestamp: string
@@ -211,51 +222,44 @@ export class LiveObject<
     return Object.fromEntries(
       Object.entries(input.value).map(([key, value]) => [
         key,
-        this.fields[key].encode("set", value, timestamp),
+        this.fields[key].encodeMutation("set", value, timestamp),
       ])
     );
   }
 
-  decode(
+  mergeMutation(
     mutationType: MutationType,
     encodedMutations: Record<string, any>,
     materializedShape?: MaterializedLiveType<this> | undefined
-  ): MaterializedLiveType<this> {
-    if (mutationType === "insert") {
-      // TODO Enable this again
-      // if (materializedShape) throw new Error("Insert conflict");
+  ): [MaterializedLiveType<this>, Record<string, any> | null] {
+    if (mutationType === "update" && !materializedShape)
+      throw new Error("Missing previous value");
 
-      return {
-        value: Object.fromEntries(
-          Object.entries(encodedMutations).map(([key, value]) => [
-            key,
-            this.fields[key].decode(mutationType, value),
-          ])
-        ),
-      } as MaterializedLiveType<this>;
-    } else if (mutationType === "update") {
-      if (!materializedShape) throw new Error("Missing previous value");
+    const acceptedMutations: Record<string, any> = {};
 
-      return {
+    return [
+      {
         value: {
-          ...materializedShape.value,
+          ...(materializedShape?.value ?? {}),
           ...Object.fromEntries(
-            Object.entries(encodedMutations).map(([key, value]) => [
-              key,
-              this.fields[key].decode(
+            Object.entries(encodedMutations).map(([key, value]) => {
+              const [newValue, acceptedValue] = this.fields[key].mergeMutation(
                 mutationType,
                 value,
-                materializedShape.value[
+                materializedShape?.value[
                   key
                 ] as MaterializedLiveType<LiveTypeAny>
-              ),
-            ])
+              );
+
+              if (acceptedValue) acceptedMutations[key] = acceptedValue;
+
+              return [key, newValue];
+            })
           ),
         },
-      } as MaterializedLiveType<this>;
-    }
-
-    throw new Error("Mutation type not implemented.");
+      } as MaterializedLiveType<this>,
+      acceptedMutations,
+    ];
   }
 
   static create<TSchema extends Record<string, LiveTypeAny>>(

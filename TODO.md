@@ -1,12 +1,12 @@
 # TODO:
 
-[ ] Handle partial acks
 [ ] Handle rejects
 [ ] Add client storage
 [ ] Add database server storage
 [ ] Add filters
 [ ] Add upsert mutation
 
+[X] Handle partial acks
 [X] Add optimistic updates
 [X] Add connect/disconnect controls on client
 [X] Add remote state message (Bootstraping)

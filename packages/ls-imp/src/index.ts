@@ -4,6 +4,7 @@ import { routeFactory, router } from "@repo/live-state/server";
 export const counters = object("counters", {
   id: string(),
   counter: number(),
+  counter2: number(),
 });
 
 const publicRoute = routeFactory();

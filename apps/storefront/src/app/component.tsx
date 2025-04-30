@@ -23,32 +23,57 @@ export function LiveComponent(): JSX.Element {
             <span className="px-2 py-1 border rounded-md bg-muted text-center w-64">
               {counter.id}
             </span>
-            <span>Value: {counter.counter}</span>
-            <Button
-              onClick={() => {
-                store.counters.update(counter.id, {
-                  counter: counter.counter - 1,
-                });
-              }}
-              type="button"
-            >
-              -1
-            </Button>
-            <Button
-              onClick={() => {
-                store.counters.update(counter.id, {
-                  counter: counter.counter + 1,
-                });
-              }}
-              type="button"
-            >
-              +1
-            </Button>
+            <div className="flex gap-2">
+              <span>Value: {counter.counter}</span>
+              <Button
+                onClick={() => {
+                  store.counters.update(counter.id, {
+                    counter: counter.counter - 1,
+                  });
+                }}
+                type="button"
+              >
+                -1
+              </Button>
+              <Button
+                onClick={() => {
+                  store.counters.update(counter.id, {
+                    counter: counter.counter + 1,
+                  });
+                }}
+                type="button"
+              >
+                +1
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <span>Value: {counter.counter2}</span>
+              <Button
+                onClick={() => {
+                  store.counters.update(counter.id, {
+                    counter2: counter.counter2 - 1,
+                  });
+                }}
+                type="button"
+              >
+                -1
+              </Button>
+              <Button
+                onClick={() => {
+                  store.counters.update(counter.id, {
+                    counter2: counter.counter2 + 1,
+                  });
+                }}
+                type="button"
+              >
+                +1
+              </Button>
+            </div>
           </div>
         ))}
         <Button
           onClick={() => {
-            store.counters.insert({ id: nanoid(), counter: 0 });
+            store.counters.insert({ id: nanoid(), counter: 0, counter2: 0 });
           }}
           type="button"
         >

@@ -173,7 +173,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 },
               });
 
-              if (!result) {
+              if (!result || !result.data) {
                 throw new Error("Invalid resource");
               }
 
@@ -181,7 +181,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 JSON.stringify({
                   type: "BOOTSTRAP",
                   resource: resourceName,
-                  data: Object.values(result),
+                  data: Object.values(result.data),
                 } satisfies ServerBootstrapMessage)
               );
             })
