@@ -3,6 +3,7 @@ import { MutationMessage } from "../core/internals";
 import { LiveObjectAny, MaterializedLiveType, Schema } from "../schema";
 import { Storage } from "./storage";
 
+export * from "./storage";
 export * from "./web-socket";
 
 export type RequestType = "FIND" | "INSERT" | "UPDATE" | "DELETE";

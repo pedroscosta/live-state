@@ -81,7 +81,6 @@ export const useLiveQuery = <T extends Observable<U>, U>(
 ): ReturnType<T["get"]> => {
   useEffect(() => {
     if (opts?.subscribeToRemote) {
-      console.log(observable.subscribeToRemote());
       return observable.subscribeToRemote();
     }
   }, [opts?.subscribeToRemote]);

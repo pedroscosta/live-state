@@ -1,10 +1,13 @@
-import { server, webSocketAdapter } from "@repo/live-state/server";
+import {
+  InMemoryStorage,
+  server,
+  webSocketAdapter,
+} from "@repo/live-state/server";
 import { routerImpl, schema } from "@repo/ls-impl";
 import cors from "cors";
 import express from "express";
 import expressWs from "express-ws";
 import morgan from "morgan";
-import { InMemoryStorage } from "../../../packages/live-state/src/server/storage";
 
 const lsServer = server({
   router: routerImpl,
