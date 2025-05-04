@@ -4,9 +4,10 @@ import WebSocket from "ws";
 import { AnyRouter, ClientId, RequestType, Server } from ".";
 import { mergeMutation } from "../core";
 import {
-  clientMessageSchema,
   MutationMessage,
   ServerBootstrapMessage,
+  ServerRejectMessage,
+  clientMessageSchema,
 } from "../core/internals";
 import { InferIndex, LiveTypeAny, MaterializedLiveType } from "../schema";
 
@@ -200,7 +201,19 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               },
             });
 
-            console.log("Result", result);
+            if (
+              !result ||
+              !result.acceptedValues ||
+              Object.keys(result.acceptedValues).length === 0
+            ) {
+              ws.send(
+                JSON.stringify({
+                  _id: parsedMessage._id,
+                  type: "REJECT",
+                  resource,
+                } satisfies ServerRejectMessage)
+              );
+            }
           } catch (e) {
             console.error("Error parsing mutation from the client:", e);
           }

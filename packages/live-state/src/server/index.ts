@@ -188,7 +188,12 @@ export class Server<TRouter extends AnyRouter> {
       db: this.storage,
     });
 
-    if (result && opts.req.payload) {
+    if (
+      result &&
+      opts.req.payload &&
+      result.acceptedValues &&
+      Object.keys(result.acceptedValues).length > 0
+    ) {
       // TODO handle partial updates
       this.mutationSubscriptions.forEach((handler) => {
         handler({

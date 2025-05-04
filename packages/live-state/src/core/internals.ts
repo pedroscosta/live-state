@@ -1,4 +1,4 @@
-import { z, ZodType, ZodUnion } from "zod";
+import { type ZodType, type ZodUnion, z } from "zod";
 
 const clMsgId = z.string().nanoid();
 
@@ -50,9 +50,18 @@ const svBootstrapMsgSchema = z.object({
 
 export type ServerBootstrapMessage = z.infer<typeof svBootstrapMsgSchema>;
 
+const svRejectMsgSchema = z.object({
+  _id: clMsgId,
+  type: z.literal("REJECT"),
+  resource: z.string(),
+});
+
+export type ServerRejectMessage = z.infer<typeof svRejectMsgSchema>;
+
 export const serverMessageSchema = z.union([
   mutationsMsgSchema,
   svBootstrapMsgSchema,
+  svRejectMsgSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;

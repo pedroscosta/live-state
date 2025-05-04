@@ -8,16 +8,16 @@ import { mergeMutation, mergeMutationReducer } from "../core/state";
 import {
   InferIndex,
   InferLiveType,
-  inferValue,
   LiveObject,
   LiveObjectInsertMutation,
   LiveObjectUpdateMutation,
   MaterializedLiveType,
   Schema,
+  inferValue,
 } from "../schema";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
-import { createObservable, Observable } from "./observable";
+import { Observable, createObservable } from "./observable";
 import { Tree } from "./tree";
 import { index } from "./utils";
 import { WebSocketClient } from "./web-socket";
@@ -202,6 +202,11 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
         this._set(
           resource,
           Object.fromEntries(data.map((d) => [d.value?.id?.value, d]))
+        );
+      } else if (parsedMessage.type === "REJECT") {
+        this.removeOptimisticMutation(
+          parsedMessage.resource,
+          parsedMessage._id
         );
       }
     } catch (e) {

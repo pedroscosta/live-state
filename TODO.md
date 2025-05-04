@@ -1,11 +1,12 @@
 # TODO:
 
-[ ] Handle rejects
+[ ] Add relations
 [ ] Add client storage
 [ ] Add database server storage
 [ ] Add filters
 [ ] Add upsert mutation
 
+[X] Handle rejects
 [X] Handle partial acks
 [X] Add optimistic updates
 [X] Add connect/disconnect controls on client
