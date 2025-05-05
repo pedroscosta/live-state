@@ -43,8 +43,8 @@ export type ClientState<TRouter extends AnyRouter> = Record<
 >;
 
 type MutationInputMap = {
-  insert: LiveObjectInsertMutation<LiveObject<any>>;
-  update: LiveObjectUpdateMutation<LiveObject<any>>;
+  insert: LiveObjectInsertMutation<LiveObject<any, any>>;
+  update: LiveObjectUpdateMutation<LiveObject<any, any>>;
 };
 
 class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {

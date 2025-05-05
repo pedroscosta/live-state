@@ -1,0 +1,273 @@
+import { createClient } from "../client";
+import { routeFactory, router } from "../server";
+import { string } from "./atomic-types";
+import {
+  InferLiveType,
+  LiveType,
+  LiveTypeAny,
+  LiveTypeMeta,
+  MutationType,
+} from "./live-type";
+
+export * from "./atomic-types";
+export * from "./live-type";
+
+export type InferLiveObject<T extends Record<string, LiveTypeAny>> = {
+  [K in keyof T]: InferLiveType<T[K]>;
+};
+
+export type LiveObjectMutation<TSchema extends Record<string, LiveTypeAny>> = {
+  value: Partial<InferLiveObject<TSchema>>;
+  where?: Record<string, any>; // TODO Infer indexable types
+};
+
+export type LiveObjectInsertMutation<TObject extends LiveObject<any, any>> = {
+  value: InferLiveObject<TObject["_value"]>;
+};
+
+export type LiveObjectUpdateMutation<TObject extends LiveObject<any, any>> = {
+  value: Partial<InferLiveObject<TObject["_value"]>>;
+  id: string;
+};
+
+type MutationUnion<TObject extends LiveObject<any, any>> =
+  | LiveObjectInsertMutation<TObject>
+  | LiveObjectUpdateMutation<TObject>;
+
+export class LiveObject<
+  TSchema extends Record<string, LiveTypeAny>,
+  TRelations extends Record<string, Relation<LiveObjectAny>>,
+> extends LiveType<
+  TSchema,
+  LiveTypeMeta,
+  MutationUnion<LiveObject<TSchema, TRelations>>,
+  Record<string, any>
+> {
+  public readonly name: string;
+  public readonly fields: TSchema;
+  public readonly relations: TRelations;
+
+  constructor(name: string, fields: TSchema, relations?: TRelations) {
+    super();
+    this.name = name;
+    this.fields = fields;
+    this.relations = relations ?? ({} as TRelations);
+  }
+
+  encodeMutation(
+    mutationType: MutationType,
+    input: MutationUnion<this>,
+    timestamp: string
+  ): Record<string, any> {
+    if (mutationType === "set") throw new Error("Method not implemented.");
+
+    return Object.fromEntries(
+      Object.entries(input.value).map(([key, value]) => [
+        key,
+        this.fields[key].encodeMutation("set", value, timestamp),
+      ])
+    );
+  }
+
+  mergeMutation(
+    mutationType: MutationType,
+    encodedMutations: Record<string, any>,
+    materializedShape?: MaterializedLiveType<this> | undefined
+  ): [MaterializedLiveType<this>, Record<string, any> | null] {
+    if (mutationType === "update" && !materializedShape)
+      throw new Error("Missing previous value");
+
+    const acceptedMutations: Record<string, any> = {};
+
+    return [
+      {
+        value: {
+          ...(materializedShape?.value ?? {}),
+          ...Object.fromEntries(
+            Object.entries(encodedMutations).map(([key, value]) => {
+              const [newValue, acceptedValue] = this.fields[key].mergeMutation(
+                mutationType,
+                value,
+                materializedShape?.value[
+                  key
+                ] as MaterializedLiveType<LiveTypeAny>
+              );
+
+              if (acceptedValue) acceptedMutations[key] = acceptedValue;
+
+              return [key, newValue];
+            })
+          ),
+        },
+      } as MaterializedLiveType<this>,
+      acceptedMutations,
+    ];
+  }
+
+  setRelations<TRelations extends Record<string, Relation<LiveObjectAny>>>(
+    relations: TRelations
+  ) {
+    return new LiveObject(this.name, this.fields, relations);
+  }
+
+  static create<TSchema extends Record<string, LiveTypeAny>>(
+    name: string,
+    schema: TSchema
+  ) {
+    return new LiveObject<TSchema, never>(name, schema);
+  }
+}
+
+export const object = LiveObject.create;
+
+export type LiveObjectAny = LiveObject<Record<string, LiveTypeAny>, any>;
+
+export class Relation<TEntity extends LiveObjectAny> {
+  public readonly entity: TEntity;
+  public readonly type: "one" | "many";
+  public readonly required: boolean;
+
+  constructor(
+    entity: TEntity,
+    type: "one" | "many",
+    required: boolean = false
+  ) {
+    this.entity = entity;
+    this.type = type;
+    this.required = required;
+  }
+}
+
+export const relations = <
+  TRelationRecord extends Record<string, Relation<LiveObjectAny>>,
+>(
+  liveObject: LiveObjectAny,
+  relationCreator: (types: {
+    one: <TEntity extends LiveObjectAny>(
+      entity: TEntity,
+      opts?: { required: boolean }
+    ) => Relation<TEntity>;
+    many: <TEntity extends LiveObjectAny>(
+      entity: TEntity,
+      opts?: { required: boolean }
+    ) => Relation<TEntity>;
+  }) => TRelationRecord
+) => {
+  return {
+    resource: liveObject.name,
+    relations: relationCreator({
+      one: (entity, opts) => new Relation(entity, "one", opts?.required),
+      many: (entity, opts) => new Relation(entity, "many", opts?.required),
+    }),
+  };
+};
+
+export const createSchema = <
+  TEntity extends LiveObjectAny,
+  TRelations extends ReturnType<typeof relations>,
+>(definition: {
+  entities: TEntity[];
+  relations: TRelations[];
+}): Array<
+  TEntity extends LiveObject<infer TSchema, any>
+    ? LiveObject<TSchema, TRelations["relations"]>
+    : never
+> => {
+  return definition.entities.map((entity) => {
+    const relationsDef = definition.relations.find(
+      (def) => def.resource === entity.name
+    );
+
+    if (!relationsDef) {
+      return entity as any;
+    }
+
+    return entity.setRelations(relationsDef.relations) as any;
+  });
+};
+
+export type MaterializedLiveType<T extends LiveTypeAny> =
+  keyof T["_meta"] extends never
+    ? {
+        value: T["_value"] extends Record<string, LiveTypeAny>
+          ? {
+              [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+            }
+          : T["_value"];
+      }
+    : {
+        value: T["_value"] extends Record<string, LiveTypeAny>
+          ? {
+              [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+            }
+          : T["_value"];
+        _meta: T["_meta"];
+      };
+
+export const inferValue = <T extends LiveTypeAny>(
+  type: MaterializedLiveType<T>
+): InferLiveType<T> => {
+  if (typeof type.value !== "object") return type.value;
+
+  return Object.fromEntries(
+    Object.entries(type.value).map(([key, value]) => [
+      key,
+      inferValue(value as any),
+    ])
+  ) as InferLiveType<T>;
+};
+
+////////////////////////////////// testing
+
+const user = object("user", {
+  email: string(),
+});
+
+const comment = object("comment", {
+  text: string(),
+});
+
+const issue = object("issue", {
+  name: string(),
+}).setRelations({
+  creator: new Relation(user, "one", true),
+  comments: new Relation(comment, "many", true),
+});
+
+// const issueRelations = relations(issue, ({ one, many }) => ({
+//   creator: one(user),
+//   comments: many(comment),
+// }));
+
+// const schema = createSchema({
+//   entities: [user, issue, comment],
+// });
+
+export type Schema = {
+  entities: LiveObjectAny[];
+};
+
+const publicRoute = routeFactory();
+
+export const routerImpl = router({
+  routes: {
+    issue: publicRoute(issue),
+    // user: publicRoute(user),
+  },
+});
+
+export type Router = typeof routerImpl;
+
+// const { client: client1, store: store1 } = createClient<Router>({
+//   url: "ws://localhost:5001/ws",
+//   schema,
+// });
+
+const { client: client2, store: store2 } = createClient<Router>({
+  url: "ws://localhost:5001/ws",
+  schema: {
+    entities: [user, issue],
+  },
+});
+
+type a = (typeof store2)["issue"];

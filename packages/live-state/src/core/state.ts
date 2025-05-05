@@ -6,7 +6,7 @@ import {
 } from "../schema";
 import { MutationMessage } from "./internals";
 
-export function mergeMutation<TSchema extends LiveObject<any>>(
+export function mergeMutation<TSchema extends LiveObject<any, any>>(
   schema: TSchema,
   prevState: Record<InferIndex<TSchema>, MaterializedLiveType<TSchema>>,
   mutationMsg: MutationMessage
@@ -54,7 +54,7 @@ export function mergeMutation<TSchema extends LiveObject<any>>(
   return prevState;
 }
 
-export function mergeMutationReducer<TSchema extends LiveObject<any>>(
+export function mergeMutationReducer<TSchema extends LiveObject<any, any>>(
   schema: TSchema
 ) {
   return (
