@@ -76,7 +76,11 @@ export class LiveObject<
     return Object.fromEntries(
       Object.entries(input.value).map(([key, value]) => [
         key,
-        this.fields[key].encodeMutation("set", value, timestamp),
+        (this.fields[key] ?? this.relations[key]).encodeMutation(
+          "set",
+          value,
+          timestamp
+        ),
       ])
     );
   }
@@ -97,7 +101,9 @@ export class LiveObject<
           ...(materializedShape?.value ?? {}),
           ...Object.fromEntries(
             Object.entries(encodedMutations).map(([key, value]) => {
-              const [newValue, acceptedValue] = this.fields[key].mergeMutation(
+              const [newValue, acceptedValue] = (
+                this.fields[key] ?? this.relations[key]
+              ).mergeMutation(
                 mutationType,
                 value,
                 materializedShape?.value[
@@ -137,15 +143,64 @@ export type LiveObjectAny = LiveObject<Record<string, LiveTypeAny>, any>;
 export class Relation<
   TEntity extends LiveObjectAny,
   TType extends "one" | "many",
+> extends LiveType<
+  InferIndex<TEntity>,
+  {
+    timestamp: string;
+  } & LiveTypeMeta
 > {
   public readonly entity: TEntity;
   public readonly type: TType;
   public readonly required: boolean;
 
   constructor(entity: TEntity, type: TType, required: boolean = false) {
+    super();
     this.entity = entity;
     this.type = type;
     this.required = required;
+  }
+  encodeMutation(
+    mutationType: MutationType,
+    input: string,
+    timestamp: string
+  ): string {
+    console.log("Encoding mutation", mutationType, input, timestamp);
+    if (mutationType !== "set")
+      throw new Error("Mutation type not implemented.");
+    if (this.type === "many") throw new Error("Many not implemented.");
+
+    return `${input};${timestamp}`;
+  }
+
+  mergeMutation(
+    mutationType: MutationType,
+    encodedMutation: string,
+    materializedShape?:
+      | { value: string; _meta: { timestamp: string } }
+      | undefined
+  ): [{ value: string; _meta: { timestamp: string } }, string | null] {
+    console.log(
+      "Merging mutation",
+      mutationType,
+      encodedMutation,
+      materializedShape
+    );
+    if (this.type === "many") throw new Error("Many not implemented.");
+
+    const [value, ts] = encodedMutation.split(";");
+
+    if (materializedShape && materializedShape.value.localeCompare(ts) >= 0)
+      return [materializedShape, null];
+
+    return [
+      {
+        value: value,
+        _meta: {
+          timestamp: ts,
+        },
+      },
+      encodedMutation,
+    ];
   }
 }
 
