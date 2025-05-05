@@ -7,11 +7,11 @@ import {
 import { mergeMutation, mergeMutationReducer } from "../core/state";
 import {
   InferIndex,
-  InferLiveType,
+  InferLiveObject,
   LiveObject,
   LiveObjectInsertMutation,
   LiveObjectUpdateMutation,
-  MaterializedLiveType,
+  MaterializedLiveObject,
   Schema,
   inferValue,
 } from "../schema";
@@ -28,19 +28,21 @@ export type ClientRawState<TRouter extends AnyRouter> = Record<
   keyof TRouter["routes"],
   | Record<
       string,
-      MaterializedLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
+      MaterializedLiveObject<
+        TRouter["routes"][keyof TRouter["routes"]]["shape"]
+      >
     >
   | undefined
 >;
 
-export type ClientState<TRouter extends AnyRouter> = Record<
-  keyof TRouter["routes"],
-  | Record<
-      string,
-      InferLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
-    >
-  | undefined
->;
+export type ClientState<TRouter extends AnyRouter> = {
+  [K in keyof TRouter["routes"]]:
+    | Record<
+        InferIndex<TRouter["routes"][K]["shape"]>,
+        InferLiveObject<TRouter["routes"][K]["shape"]>
+      >
+    | undefined;
+};
 
 type MutationInputMap = {
   insert: LiveObjectInsertMutation<LiveObject<any, any>>;
@@ -160,7 +162,9 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     objectName: keyof TRouter["routes"],
     state: Record<
       InferIndex<TRouter["routes"][keyof TRouter["routes"]]["shape"]>,
-      MaterializedLiveType<TRouter["routes"][keyof TRouter["routes"]]["shape"]>
+      MaterializedLiveObject<
+        TRouter["routes"][keyof TRouter["routes"]]["shape"]
+      >
     >,
     mutationToRemove?: MutationMessage["_id"]
   ) {

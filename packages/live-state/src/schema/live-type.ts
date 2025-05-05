@@ -46,4 +46,3 @@ export type InferLiveType<T extends LiveTypeAny> =
 
 // TODO use proper index type
 export type InferIndex<T extends LiveTypeAny> = string;
-export type InferWhereClause<T extends LiveTypeAny> = string[];

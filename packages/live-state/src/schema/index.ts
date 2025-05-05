@@ -2,6 +2,7 @@ import { createClient } from "../client";
 import { routeFactory, router } from "../server";
 import { string } from "./atomic-types";
 import {
+  InferIndex,
   InferLiveType,
   LiveType,
   LiveTypeAny,
@@ -12,21 +13,23 @@ import {
 export * from "./atomic-types";
 export * from "./live-type";
 
-export type InferLiveObject<T extends Record<string, LiveTypeAny>> = {
-  [K in keyof T]: InferLiveType<T[K]>;
+export type InferLiveObject<T extends LiveObjectAny> = {
+  [K in keyof T["fields"]]: InferLiveType<T["fields"][K]>;
+} & {
+  [K in keyof T["relations"]]: InferLiveObject<T["relations"][K]["entity"]>;
 };
 
-export type LiveObjectMutation<TSchema extends Record<string, LiveTypeAny>> = {
+export type LiveObjectMutation<TSchema extends LiveObjectAny> = {
   value: Partial<InferLiveObject<TSchema>>;
   where?: Record<string, any>; // TODO Infer indexable types
 };
 
-export type LiveObjectInsertMutation<TObject extends LiveObject<any, any>> = {
-  value: InferLiveObject<TObject["_value"]>;
+export type LiveObjectInsertMutation<TObject extends LiveObjectAny> = {
+  value: InferLiveObject<TObject>;
 };
 
-export type LiveObjectUpdateMutation<TObject extends LiveObject<any, any>> = {
-  value: Partial<InferLiveObject<TObject["_value"]>>;
+export type LiveObjectUpdateMutation<TObject extends LiveObjectAny> = {
+  value: Partial<InferLiveObject<TObject>>;
   id: string;
 };
 
@@ -204,6 +207,11 @@ export type MaterializedLiveType<T extends LiveTypeAny> =
         _meta: T["_meta"];
       };
 
+export type MaterializedLiveObject<T extends LiveObjectAny> =
+  MaterializedLiveType<T> & {
+    [K in keyof T["relations"]]: InferIndex<T["relations"][K]["entity"]>;
+  };
+
 export const inferValue = <T extends LiveTypeAny>(
   type: MaterializedLiveType<T>
 ): InferLiveType<T> => {
@@ -251,8 +259,8 @@ const publicRoute = routeFactory();
 
 export const routerImpl = router({
   routes: {
+    user: publicRoute(user),
     issue: publicRoute(issue),
-    // user: publicRoute(user),
   },
 });
 
@@ -270,4 +278,4 @@ const { client: client2, store: store2 } = createClient<Router>({
   },
 });
 
-type a = (typeof store2)["issue"];
+store2.issue.test.creator.email;

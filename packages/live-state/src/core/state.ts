@@ -1,23 +1,23 @@
 import {
   InferIndex,
   LiveObject,
-  MaterializedLiveType,
+  MaterializedLiveObject,
   MutationType,
 } from "../schema";
 import { MutationMessage } from "./internals";
 
 export function mergeMutation<TSchema extends LiveObject<any, any>>(
   schema: TSchema,
-  prevState: Record<InferIndex<TSchema>, MaterializedLiveType<TSchema>>,
+  prevState: Record<InferIndex<TSchema>, MaterializedLiveObject<TSchema>>,
   mutationMsg: MutationMessage
-): Record<InferIndex<TSchema>, MaterializedLiveType<TSchema>> {
+): Record<InferIndex<TSchema>, MaterializedLiveObject<TSchema>> {
   const { mutationType, payload, resourceId } = mutationMsg;
 
   if (mutationType === "insert") {
     const newRecord = schema.mergeMutation(
       mutationType as MutationType,
       payload
-    )[0] as MaterializedLiveType<TSchema>;
+    )[0] as MaterializedLiveObject<TSchema>;
 
     console.log("newRecord", newRecord);
 
@@ -30,7 +30,7 @@ export function mergeMutation<TSchema extends LiveObject<any, any>>(
 
     const updatedRecords: Record<
       InferIndex<TSchema>,
-      MaterializedLiveType<TSchema>
+      MaterializedLiveObject<TSchema>
     > = {};
 
     const record = prevState?.[resourceId];
@@ -41,7 +41,7 @@ export function mergeMutation<TSchema extends LiveObject<any, any>>(
       mutationType as MutationType,
       payload,
       record
-    )[0] as MaterializedLiveType<TSchema>;
+    )[0] as MaterializedLiveObject<TSchema>;
 
     updatedRecords[(updatedRecord.value as any).id.value] = updatedRecord;
 
@@ -58,7 +58,7 @@ export function mergeMutationReducer<TSchema extends LiveObject<any, any>>(
   schema: TSchema
 ) {
   return (
-    prevState: Record<InferIndex<TSchema>, MaterializedLiveType<TSchema>>,
+    prevState: Record<InferIndex<TSchema>, MaterializedLiveObject<TSchema>>,
     mutationMsg: MutationMessage
   ) => mergeMutation(schema, prevState, mutationMsg);
 }
