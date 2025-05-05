@@ -113,7 +113,10 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     return this.state;
   }
 
-  private updateOptimisticState(objectName: keyof TRouter["routes"]) {
+  private updateOptimisticState(
+    objectName: keyof TRouter["routes"],
+    notifyPaths?: string[][]
+  ) {
     const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
       mergeMutationReducer<TSchema["entities"][number]>(
         this.schema.entities.find((e) => e.name === objectName)!
@@ -124,11 +127,11 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     this.optimisticState[objectName] = Object.fromEntries(
       Object.entries(optimisticState).map(([key, value]) => [
         key,
-        inferValue(value),
+        inferValue(value) as InferLiveObject<TSchema["entities"][number]>,
       ])
     );
 
-    this.notifyStateSubscribers([objectName.toString()]);
+    notifyPaths?.forEach((p) => this.notifyStateSubscribers(p as string[]));
   }
 
   private addOptimisticMutation(
@@ -142,7 +145,14 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
       mutation,
     ];
 
-    this.updateOptimisticState(objectName);
+    this.updateOptimisticState(
+      objectName,
+      Object.keys(mutation.payload).map((k) =>
+        mutation.resourceId
+          ? [objectName, mutation.resourceId, k]
+          : [objectName, k]
+      ) as string[][]
+    );
   }
 
   private removeOptimisticMutation(
@@ -173,7 +183,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     if (mutationToRemove) {
       this.removeOptimisticMutation(objectName, mutationToRemove);
     } else {
-      this.updateOptimisticState(objectName);
+      this.updateOptimisticState(objectName, [[objectName.toString()]]);
     }
   }
 
@@ -277,7 +287,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
 
   private notifyStateSubscribers(path: string[]) {
     this.listeners
-      .getAllUnder(path)
+      .getAllAbove(path)
       ?.forEach((listener) => listener(this.state));
   }
 }
@@ -329,8 +339,9 @@ export const createClient = <TRouter extends AnyRouter>(
           const selector = path.slice(0, -1);
           const lastSegment = path[path.length - 1];
 
-          if (lastSegment === "get")
+          if (lastSegment === "get") {
             return () => index(ogClient.get(), selector);
+          }
           if (lastSegment === "subscribe")
             return (callback: (value: any) => void) => {
               const remove = ogClient.subscribeToSlice(selector, callback);
@@ -358,48 +369,8 @@ export const createClient = <TRouter extends AnyRouter>(
                 ogClient.mutate("update", selector[0], { value: input, id });
               };
           }
-          // if (base === "subscribeToState")
-          //   return ogClient.subscribeToState.bind(ogClient);
-          // if (base === "subscribeToRoute")
-          //   return ogClient.subscribeToRoute.bind(ogClient);
-
-          // if (path.length > 3 || base !== "routes")
-          //   throw new SyntaxError(
-          //     `Trying to access a property on the client that does't exist ${path.join(".")}`
-          //   );
-
-          // if (op === "insert")
-          //   return (
-          //     value: LiveObjectInsertMutation<
-          //       TRouter["routes"][string]["shape"]
-          //     >["value"]
-          //   ) => {
-          //     ogClient.mutate("insert", routeName, {
-          //       value,
-          //     });
-          //   };
-
-          // if (op === "update")
-          //   return (
-          //     input: LiveObjectUpdateMutation<TRouter["routes"][string]["shape"]>
-          //   ) => {
-          //     ogClient.mutate("update", routeName, input);
-          //   };
         },
       }
     ) as unknown as Client<TRouter>["store"],
   };
 };
-
-// TODO REMOVE
-
-// const obs = createObservable({} as any, {
-//   get: (target, path) => {
-//     console.log("Target:", target);
-//     console.log("Path:", path);
-//   },
-// });
-
-// console.log("obs.issues", obs.issues);
-// console.log("obs.issues[0]", obs.issues[0]);
-// console.log("obs.issues[0].name", obs.issues[0].name.get());

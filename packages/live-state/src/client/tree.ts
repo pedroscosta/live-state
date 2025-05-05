@@ -66,6 +66,33 @@ export class Tree<T> {
     return result;
   }
 
+  /**
+   * Get a flattened set of all T from the root to the given path (including the node at the path itself, if it has a set)
+   */
+  getAllAbove(path: string[]): Set<T> {
+    const result = new Set<T>();
+    let node = this.root;
+    
+    // Add values from root if any
+    if (node.values) {
+      node.values.forEach((v) => result.add(v));
+    }
+    
+    // Traverse the path and collect values
+    for (let i = 0; i < path.length; i++) {
+      const part = path[i];
+      const next = node.children.get(part);
+      if (!next) break; // Path doesn't exist, return what we have so far
+      
+      node = next;
+      if (node.values) {
+        node.values.forEach((v) => result.add(v));
+      }
+    }
+    
+    return result;
+  }
+
   // Helper: get node at path
   private getNode(path: string[]): TreeNode<T> | undefined {
     let node = this.root;

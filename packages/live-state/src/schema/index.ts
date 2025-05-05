@@ -1,6 +1,3 @@
-import { createClient } from "../client";
-import { routeFactory, router } from "../server";
-import { string } from "./atomic-types";
 import {
   InferIndex,
   InferLiveType,
@@ -13,23 +10,35 @@ import {
 export * from "./atomic-types";
 export * from "./live-type";
 
-export type InferLiveObject<T extends LiveObjectAny> = {
+type InferLiveObjectWithoutRelations<T extends LiveObjectAny> = {
   [K in keyof T["fields"]]: InferLiveType<T["fields"][K]>;
-} & {
-  [K in keyof T["relations"]]: InferLiveObject<T["relations"][K]["entity"]>;
 };
 
+export type InferLiveObject<T extends LiveObjectAny> =
+  InferLiveObjectWithoutRelations<T> & {
+    [K in keyof T["relations"]]: T["relations"][K]["type"] extends "one"
+      ? InferLiveObject<T["relations"][K]["entity"]>
+      : InferLiveObject<T["relations"][K]["entity"]>[];
+  };
+
+export type InferLiveObjectWithRelationalIds<T extends LiveObjectAny> =
+  InferLiveObjectWithoutRelations<T> & {
+    [K in keyof T["relations"]]: T["relations"][K]["type"] extends "one"
+      ? InferIndex<T["relations"][K]["entity"]>
+      : InferIndex<T["relations"][K]["entity"]>[];
+  };
+
 export type LiveObjectMutation<TSchema extends LiveObjectAny> = {
-  value: Partial<InferLiveObject<TSchema>>;
+  value: Partial<InferLiveObjectWithRelationalIds<TSchema>>;
   where?: Record<string, any>; // TODO Infer indexable types
 };
 
 export type LiveObjectInsertMutation<TObject extends LiveObjectAny> = {
-  value: InferLiveObject<TObject>;
+  value: InferLiveObjectWithRelationalIds<TObject>;
 };
 
 export type LiveObjectUpdateMutation<TObject extends LiveObjectAny> = {
-  value: Partial<InferLiveObject<TObject>>;
+  value: Partial<InferLiveObjectWithRelationalIds<TObject>>;
   id: string;
 };
 
@@ -39,7 +48,7 @@ type MutationUnion<TObject extends LiveObject<any, any>> =
 
 export class LiveObject<
   TSchema extends Record<string, LiveTypeAny>,
-  TRelations extends Record<string, Relation<LiveObjectAny>>,
+  TRelations extends Record<string, Relation<LiveObjectAny, any>>,
 > extends LiveType<
   TSchema,
   LiveTypeMeta,
@@ -107,7 +116,7 @@ export class LiveObject<
     ];
   }
 
-  setRelations<TRelations extends Record<string, Relation<LiveObjectAny>>>(
+  setRelations<TRelations extends Record<string, Relation<LiveObjectAny, any>>>(
     relations: TRelations
   ) {
     return new LiveObject(this.name, this.fields, relations);
@@ -125,16 +134,15 @@ export const object = LiveObject.create;
 
 export type LiveObjectAny = LiveObject<Record<string, LiveTypeAny>, any>;
 
-export class Relation<TEntity extends LiveObjectAny> {
+export class Relation<
+  TEntity extends LiveObjectAny,
+  TType extends "one" | "many",
+> {
   public readonly entity: TEntity;
-  public readonly type: "one" | "many";
+  public readonly type: TType;
   public readonly required: boolean;
 
-  constructor(
-    entity: TEntity,
-    type: "one" | "many",
-    required: boolean = false
-  ) {
+  constructor(entity: TEntity, type: TType, required: boolean = false) {
     this.entity = entity;
     this.type = type;
     this.required = required;
@@ -142,18 +150,18 @@ export class Relation<TEntity extends LiveObjectAny> {
 }
 
 export const relations = <
-  TRelationRecord extends Record<string, Relation<LiveObjectAny>>,
+  TRelationRecord extends Record<string, Relation<LiveObjectAny, any>>,
 >(
   liveObject: LiveObjectAny,
   relationCreator: (types: {
     one: <TEntity extends LiveObjectAny>(
       entity: TEntity,
       opts?: { required: boolean }
-    ) => Relation<TEntity>;
+    ) => Relation<TEntity, "one">;
     many: <TEntity extends LiveObjectAny>(
       entity: TEntity,
       opts?: { required: boolean }
-    ) => Relation<TEntity>;
+    ) => Relation<TEntity, "many">;
   }) => TRelationRecord
 ) => {
   return {
@@ -225,57 +233,57 @@ export const inferValue = <T extends LiveTypeAny>(
   ) as InferLiveType<T>;
 };
 
-////////////////////////////////// testing
+// ////////////////////////////////// testing
 
-const user = object("user", {
-  email: string(),
-});
-
-const comment = object("comment", {
-  text: string(),
-});
-
-const issue = object("issue", {
-  name: string(),
-}).setRelations({
-  creator: new Relation(user, "one", true),
-  comments: new Relation(comment, "many", true),
-});
-
-// const issueRelations = relations(issue, ({ one, many }) => ({
-//   creator: one(user),
-//   comments: many(comment),
-// }));
-
-// const schema = createSchema({
-//   entities: [user, issue, comment],
+// const user = object("user", {
+//   email: string(),
 // });
+
+// const comment = object("comment", {
+//   text: string(),
+// });
+
+// const issue = object("issue", {
+//   name: string(),
+// }).setRelations({
+//   creator: new Relation(user, "one", true),
+//   comments: new Relation(comment, "many", true),
+// });
+
+// // const issueRelations = relations(issue, ({ one, many }) => ({
+// //   creator: one(user),
+// //   comments: many(comment),
+// // }));
+
+// // const schema = createSchema({
+// //   entities: [user, issue, comment],
+// // });
 
 export type Schema = {
   entities: LiveObjectAny[];
 };
 
-const publicRoute = routeFactory();
+// const publicRoute = routeFactory();
 
-export const routerImpl = router({
-  routes: {
-    user: publicRoute(user),
-    issue: publicRoute(issue),
-  },
-});
-
-export type Router = typeof routerImpl;
-
-// const { client: client1, store: store1 } = createClient<Router>({
-//   url: "ws://localhost:5001/ws",
-//   schema,
+// export const routerImpl = router({
+//   routes: {
+//     user: publicRoute(user),
+//     issue: publicRoute(issue),
+//   },
 // });
 
-const { client: client2, store: store2 } = createClient<Router>({
-  url: "ws://localhost:5001/ws",
-  schema: {
-    entities: [user, issue],
-  },
-});
+// export type Router = typeof routerImpl;
 
-store2.issue.test.creator.email;
+// // const { client: client1, store: store1 } = createClient<Router>({
+// //   url: "ws://localhost:5001/ws",
+// //   schema,
+// // });
+
+// const { client: client2, store: store2 } = createClient<Router>({
+//   url: "ws://localhost:5001/ws",
+//   schema: {
+//     entities: [user, issue],
+//   },
+// });
+
+// store2.issue.test.creator.email;

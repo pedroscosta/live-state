@@ -1,92 +1,46 @@
-// const identity = <T>(arg: T): T => arg;
-
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { Observable } from "./observable";
 
-// function useLiveData<TClient extends Client<AnyRouter>>(
-//   store: TClient
-// ): Simplify<ClientState<TClient["_router"]>>;
+// export const useLiveQuery = <T extends Observable<U>, U>(
+//   observable: T,
+//   opts?: {
+//     subscribeToRemote?: boolean;
+//   }
+// ): ReturnType<T["get"]> => {
+//   useEffect(() => {
+//     if (opts?.subscribeToRemote) {
+//       return observable.subscribeToRemote();
+//     }
+//   }, [opts?.subscribeToRemote]);
 
-// function useLiveData<TClient extends Client<AnyRouter>, StateSlice>(
-//   store: TClient,
-//   selector: (state: ClientState<TClient["_router"]>) => StateSlice
-// ): Simplify<StateSlice>;
-
-// function useLiveData<TClient extends Client<AnyRouter>, StateSlice>(
-//   store: TClient,
-//   selector: (
-//     state: ClientState<TClient["_router"]>
-//   ) => StateSlice = identity as any
-// ) {
-//   const slice = React.useSyncExternalStore(store.subscribeToState, () =>
-//     selector(store.get() as ClientState<TClient["_router"]>)
+//   const slice = useSyncExternalStore(observable.subscribe, () =>
+//     observable.get()
 //   );
-//   React.useDebugValue(slice);
-//   return slice;
-// }
 
-// function createUseLiveData<TClient extends Client<AnyRouter>>(
-//   store: TClient
-// ): <StateSlice = ClientState<TClient["_router"]>>(
-//   selector?: (state: ClientState<TClient["_router"]>) => StateSlice
-// ) => Simplify<StateSlice> {
-//   return function useData<StateSlice = ClientState<TClient["_router"]>>(
-//     selector?: (state: ClientState<TClient["_router"]>) => StateSlice
-//   ) {
-//     const getSnapshot = React.useCallback(
-//       () =>
-//         selector
-//           ? selector(store.get() as ClientState<TClient["_router"]>)
-//           : store.get(),
-//       [selector]
-//     );
-
-//     const slice = useSyncExternalStore(
-//       store.subscribeToState.bind(store),
-//       getSnapshot
-//     );
-
-//     useDebugValue(slice);
-//     return slice as Simplify<StateSlice>;
-//   };
-// }
-
-// function createUseSubscribe<TClient extends Client<AnyRouter>>(
-//   client: TClient
-// ) {
-//   return function useSubscribe(route: keyof TClient["_router"]["routes"]) {
-//     useEffect(() => {
-//       const unsubscribe = client.subscribeToRoute(route as string);
-
-//       return () => {
-//         unsubscribe();
-//       };
-//     }, [route]);
-//   };
-// }
-
-// export function reactiveClient<TClient extends Client<AnyRouter>>(
-//   client: TClient
-// ) {
-//   return {
-//     useLiveData: createUseLiveData(client),
-//     useSubscribe: createUseSubscribe(client),
-//   };
-// }
+//   return slice as ReturnType<T["get"]>;
+// };
 export const useLiveQuery = <T extends Observable<U>, U>(
   observable: T,
   opts?: {
     subscribeToRemote?: boolean;
   }
 ): ReturnType<T["get"]> => {
+  const [slice, setSlice] = useState(() => observable.get());
+
   useEffect(() => {
     if (opts?.subscribeToRemote) {
       return observable.subscribeToRemote();
     }
   }, [opts?.subscribeToRemote]);
 
-  const slice = useSyncExternalStore(observable.subscribe, () =>
-    observable.get()
+  useEffect(
+    () =>
+      observable.subscribe(() => {
+        const newSlice = observable.get();
+        console.log("Slice updated", newSlice);
+        setSlice(newSlice);
+      }),
+    []
   );
 
   return slice as ReturnType<T["get"]>;
