@@ -157,7 +157,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
 
   private removeOptimisticMutation(
     objectName: keyof TRouter["routes"],
-    mutationId: MutationMessage["_id"]
+    mutationId: MutationMessage["_id"],
+    notify: boolean = false
   ) {
     console.log("Removing optimistic mutation:", mutationId);
 
@@ -165,7 +166,10 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
       (m) => m._id !== mutationId
     );
 
-    this.updateOptimisticState(objectName);
+    this.updateOptimisticState(
+      objectName,
+      notify ? [[objectName.toString()]] : undefined
+    );
   }
 
   private _set(
@@ -220,7 +224,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
       } else if (parsedMessage.type === "REJECT") {
         this.removeOptimisticMutation(
           parsedMessage.resource,
-          parsedMessage._id
+          parsedMessage._id,
+          true
         );
       }
     } catch (e) {
