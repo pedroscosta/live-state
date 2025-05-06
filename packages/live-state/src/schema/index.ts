@@ -1,3 +1,6 @@
+import { routeFactory, router } from "../server";
+import { Simplify } from "../utils";
+import { string } from "./atomic-types";
 import {
   InferIndex,
   InferLiveType,
@@ -21,12 +24,32 @@ export type InferLiveObject<T extends LiveObjectAny> =
       : InferLiveObject<T["relations"][K]["entity"]>[];
   };
 
+type InferRelationalColumns<T extends Record<string, RelationAny>> = {
+  [K in keyof T as T[K] extends Relation<
+    any,
+    any,
+    any,
+    infer ColumnName,
+    any,
+    any
+  >
+    ? ColumnName extends string
+      ? ColumnName
+      : never
+    : never]: T[K]["type"] extends "one"
+    ? T[K] extends Relation<infer Entity, any, any, any, any, any>
+      ? T[K]["required"] extends true
+        ? InferIndex<Entity>
+        : InferIndex<Entity> | undefined
+      : never
+    : never;
+};
+
 export type InferLiveObjectWithRelationalIds<T extends LiveObjectAny> =
-  InferLiveObjectWithoutRelations<T> & {
-    [K in keyof T["relations"]]: T["relations"][K]["type"] extends "one"
-      ? InferIndex<T["relations"][K]["entity"]>
-      : InferIndex<T["relations"][K]["entity"]>[];
-  };
+  keyof T["relations"] extends string
+    ? InferLiveObjectWithoutRelations<T> &
+        InferRelationalColumns<T["relations"]>
+    : InferLiveObjectWithoutRelations<T>;
 
 export type LiveObjectMutation<TSchema extends LiveObjectAny> = {
   value: Partial<InferLiveObjectWithRelationalIds<TSchema>>;
@@ -42,24 +65,25 @@ export type LiveObjectUpdateMutation<TObject extends LiveObjectAny> = {
   id: string;
 };
 
-type MutationUnion<TObject extends LiveObject<any, any>> =
+export type MutationUnion<TObject extends LiveObject<any, any, any>> =
   | LiveObjectInsertMutation<TObject>
   | LiveObjectUpdateMutation<TObject>;
 
 export class LiveObject<
+  TName extends string,
   TSchema extends Record<string, LiveTypeAny>,
-  TRelations extends Record<string, Relation<LiveObjectAny, any>>,
+  TRelations extends Record<string, RelationAny>,
 > extends LiveType<
   TSchema,
   LiveTypeMeta,
-  MutationUnion<LiveObject<TSchema, TRelations>>,
+  MutationUnion<LiveObject<TName, TSchema, TRelations>>,
   Record<string, any>
 > {
-  public readonly name: string;
+  public readonly name: TName;
   public readonly fields: TSchema;
   public readonly relations: TRelations;
 
-  constructor(name: string, fields: TSchema, relations?: TRelations) {
+  constructor(name: TName, fields: TSchema, relations?: TRelations) {
     super();
     this.name = name;
     this.fields = fields;
@@ -122,27 +146,39 @@ export class LiveObject<
     ];
   }
 
-  setRelations<TRelations extends Record<string, Relation<LiveObjectAny, any>>>(
+  setRelations<TRelations extends Record<string, RelationAny>>(
     relations: TRelations
   ) {
-    return new LiveObject(this.name, this.fields, relations);
+    return new LiveObject<this["name"], this["fields"], TRelations>(
+      this.name,
+      this.fields,
+      relations
+    );
   }
 
-  static create<TSchema extends Record<string, LiveTypeAny>>(
-    name: string,
-    schema: TSchema
-  ) {
-    return new LiveObject<TSchema, never>(name, schema);
+  static create<
+    TName extends string,
+    TSchema extends Record<string, LiveTypeAny>,
+  >(name: TName, schema: TSchema) {
+    return new LiveObject<TName, TSchema, never>(name, schema);
   }
 }
 
 export const object = LiveObject.create;
 
-export type LiveObjectAny = LiveObject<Record<string, LiveTypeAny>, any>;
+export type LiveObjectAny = LiveObject<
+  string,
+  Record<string, LiveTypeAny>,
+  any
+>;
 
 export class Relation<
   TEntity extends LiveObjectAny,
+  TSourceEntity extends LiveObjectAny,
   TType extends "one" | "many",
+  TRelationalColumn extends keyof TSourceEntity["fields"],
+  TForeignColumn extends keyof TEntity["fields"],
+  TRequired extends boolean,
 > extends LiveType<
   InferIndex<TEntity>,
   {
@@ -151,14 +187,26 @@ export class Relation<
 > {
   public readonly entity: TEntity;
   public readonly type: TType;
-  public readonly required: boolean;
+  public readonly required: TRequired;
+  public readonly relationalColumn?: TRelationalColumn;
+  public readonly foreignColumn?: TForeignColumn;
+  public readonly sourceEntity!: TSourceEntity;
 
-  constructor(entity: TEntity, type: TType, required: boolean = false) {
+  private constructor(
+    entity: TEntity,
+    type: TType,
+    column?: TRelationalColumn,
+    foreignColumn?: TForeignColumn,
+    required?: TRequired
+  ) {
     super();
     this.entity = entity;
     this.type = type;
-    this.required = required;
+    this.required = (required ?? false) as TRequired;
+    this.relationalColumn = column;
+    this.foreignColumn = foreignColumn;
   }
+
   encodeMutation(
     mutationType: MutationType,
     input: string,
@@ -202,55 +250,101 @@ export class Relation<
       encodedMutation,
     ];
   }
+
+  static createOneFactory<TOriginEntity extends LiveObjectAny>() {
+    return <
+      TEntity extends LiveObjectAny,
+      TColumn extends keyof TOriginEntity["fields"],
+      TRequired extends boolean = false,
+    >(
+      entity: TEntity,
+      column: TColumn,
+      required?: TRequired
+    ) => {
+      return new Relation<
+        TEntity,
+        TOriginEntity,
+        "one",
+        TColumn,
+        never,
+        TRequired
+      >(entity, "one", column, undefined, (required ?? false) as TRequired);
+    };
+  }
+
+  static createManyFactory<TOriginEntity extends LiveObjectAny>() {
+    return <
+      TEntity extends LiveObjectAny,
+      TColumn extends keyof TEntity["fields"],
+      TRequired extends boolean = false,
+    >(
+      entity: TEntity,
+      foreignColumn: TColumn,
+      required?: TRequired
+    ) => {
+      return new Relation<
+        TEntity,
+        TOriginEntity,
+        "many",
+        never,
+        TColumn,
+        TRequired
+      >(
+        entity,
+        "many",
+        undefined,
+        foreignColumn,
+        (required ?? false) as TRequired
+      );
+    };
+  }
 }
 
-export const relations = <
-  TRelationRecord extends Record<string, Relation<LiveObjectAny, any>>,
+type RelationAny = Relation<LiveObjectAny, LiveObjectAny, any, any, any, any>;
+
+export const createRelations = <
+  TSourceObject extends LiveObjectAny,
+  TRelations extends Record<string, RelationAny>,
 >(
-  liveObject: LiveObjectAny,
-  relationCreator: (types: {
-    one: <TEntity extends LiveObjectAny>(
-      entity: TEntity,
-      opts?: { required: boolean }
-    ) => Relation<TEntity, "one">;
-    many: <TEntity extends LiveObjectAny>(
-      entity: TEntity,
-      opts?: { required: boolean }
-    ) => Relation<TEntity, "many">;
-  }) => TRelationRecord
-) => {
+  liveObject: TSourceObject,
+  factory: (connectors: {
+    one: ReturnType<typeof Relation.createOneFactory<TSourceObject>>;
+    many: ReturnType<typeof Relation.createManyFactory<TSourceObject>>;
+  }) => TRelations
+): RelationsDecl<TSourceObject["name"], TRelations> => {
   return {
-    resource: liveObject.name,
-    relations: relationCreator({
-      one: (entity, opts) => new Relation(entity, "one", opts?.required),
-      many: (entity, opts) => new Relation(entity, "many", opts?.required),
+    $type: "relations",
+    objectName: liveObject.name,
+    relations: factory({
+      one: Relation.createOneFactory<TSourceObject>(),
+      many: Relation.createManyFactory<TSourceObject>(),
     }),
   };
 };
 
-export const createSchema = <
-  TEntity extends LiveObjectAny,
-  TRelations extends ReturnType<typeof relations>,
->(definition: {
-  entities: TEntity[];
-  relations: TRelations[];
-}): Array<
-  TEntity extends LiveObject<infer TSchema, any>
-    ? LiveObject<TSchema, TRelations["relations"]>
-    : never
-> => {
-  return definition.entities.map((entity) => {
-    const relationsDef = definition.relations.find(
-      (def) => def.resource === entity.name
-    );
+// export const createSchema = <
+//   TEntity extends LiveObjectAny,
+//   TRelations extends ReturnType<typeof relations>,
+// >(definition: {
+//   entities: TEntity[];
+//   relations: TRelations[];
+// }): Array<
+//   TEntity extends LiveObject<infer TSchema, any>
+//     ? LiveObject<TSchema, TRelations["relations"]>
+//     : never
+// > => {
+//   return definition.entities.map((entity) => {
+//     const relationsDef = definition.relations.find(
+//       (def) => def.resource === entity.name
+//     );
 
-    if (!relationsDef) {
-      return entity as any;
-    }
+//     if (!relationsDef) {
+//       return entity as any;
+//     }
 
-    return entity.setRelations(relationsDef.relations) as any;
-  });
-};
+//     return entity.setRelations(relationsDef.relations) as any;
+//   });
+// };
 
 export type MaterializedLiveType<T extends LiveTypeAny> =
   keyof T["_meta"] extends never
@@ -288,7 +382,141 @@ export const inferValue = <T extends LiveTypeAny>(
   ) as InferLiveType<T>;
 };
 
-// ////////////////////////////////// testing
+type ExtractObjectValues<T> = T[keyof T];
+
+type RelationsDecl<
+  TObjectName extends string = string,
+  TRelations extends Record<string, RelationAny> = Record<string, RelationAny>,
+> = {
+  $type: "relations";
+  objectName: TObjectName;
+  relations: TRelations;
+};
+
+type ParseRelationsFromSchema<
+  TRawSchema extends RawSchema,
+  TObjectName extends string,
+> = ExtractObjectValues<{
+  [K in keyof TRawSchema]: TRawSchema[K] extends RelationsDecl<
+    infer TObjectName_,
+    any
+  >
+    ? TObjectName_ extends TObjectName
+      ? {
+          [K2 in keyof TRawSchema[K]["relations"]]: Relation<
+            ParseObjectFromSchema<
+              TRawSchema,
+              TRawSchema[K]["relations"][K2]["entity"]["name"]
+            >,
+            TRawSchema[K]["relations"][K2]["sourceEntity"],
+            TRawSchema[K]["relations"][K2]["type"],
+            Exclude<
+              TRawSchema[K]["relations"][K2]["relationalColumn"],
+              undefined
+            >,
+            Exclude<TRawSchema[K]["relations"][K2]["foreignColumn"], undefined>,
+            TRawSchema[K]["relations"][K2]["required"]
+          >;
+        }
+      : never
+    : never;
+}>;
+
+type ParseObjectFromSchema<
+  TRawSchema extends RawSchema,
+  TObjectName extends string,
+> = ExtractObjectValues<{
+  [K in keyof TRawSchema]: TRawSchema[K] extends LiveObjectAny
+    ? TRawSchema[K]["name"] extends TObjectName
+      ? LiveObject<
+          TRawSchema[K]["name"],
+          TRawSchema[K]["fields"],
+          ParseRelationsFromSchema<TRawSchema, TRawSchema[K]["name"]>
+        >
+      : never
+    : never;
+}>;
+
+type RawSchema = Record<string, LiveObjectAny | RelationsDecl>;
+
+export type Schema<TRawSchema extends RawSchema> = {
+  [K in keyof TRawSchema as TRawSchema[K] extends LiveObjectAny
+    ? TRawSchema[K]["name"]
+    : never]: TRawSchema[K] extends LiveObjectAny
+    ? ParseObjectFromSchema<TRawSchema, TRawSchema[K]["name"]>
+    : never;
+};
+
+export const createSchema = <TRawSchema extends RawSchema>(
+  schema: TRawSchema
+): Schema<TRawSchema> => {
+  return Object.fromEntries(
+    Object.entries(schema).flatMap(([key, value]) => {
+      if ((value as RelationsDecl).$type === "relations") return [];
+
+      let retVal = value as LiveObjectAny;
+      const relDecl = Object.values(schema).find(
+        (v) =>
+          (v as RelationsDecl).$type === "relations" &&
+          (v as RelationsDecl).objectName === (value as LiveObjectAny).name
+      );
+
+      if (relDecl) {
+        retVal = retVal.setRelations(relDecl.relations);
+      }
+
+      return [[retVal.name, retVal]];
+    })
+  ) as Schema<TRawSchema>;
+};
+
+const post_ = object("post", {
+  id: string(),
+  title: string(),
+});
+
+const comment_ = object("comment", {
+  id: string(),
+  text: string(),
+  postId: string(),
+});
+
+const postRelations = createRelations(post_, ({ many }) => ({
+  comments: many(comment_, "postId"),
+}));
+
+// const commentRelations = createRelations(comment_, ({ one }) => ({
+//   post: one(post_, "postId"),
+// }));
+
+const schema_ = createSchema({
+  post_,
+  comment_,
+  postRelations,
+  // commentRelations,
+});
+
+type test1 = (typeof schema_)["post"]["relations"]["comments"];
+type test = Simplify<
+  InferRelationalColumns<(typeof schema_)["comment"]["relations"]>
+>;
+
+const publicRoute = routeFactory();
+
+const router_ = router({
+  routes: {
+    post: publicRoute(post_),
+    comment: publicRoute(comment_),
+  },
+});
+
+type b = (typeof schema_)["post"];
+type c = (typeof schema_)["comment"];
+type d = LiveObjectInsertMutation<b>;
+type e = InferLiveObjectWithRelationalIds<c>;
+type f = InferLiveObjectWithoutRelations<c>;
+type g = InferRelationalColumns<c["relations"]>;
+type h = keyof c["relations"] extends string ? true : false;
 
 // const user = object("user", {
 //   email: string(),
@@ -313,10 +541,6 @@ export const inferValue = <T extends LiveTypeAny>(
 // // const schema = createSchema({
 // //   entities: [user, issue, comment],
 // // });
-
-export type Schema = {
-  entities: LiveObjectAny[];
-};
 
 // const publicRoute = routeFactory();
 

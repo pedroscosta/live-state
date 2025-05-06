@@ -1,9 +1,7 @@
-import { LiveObjectAny, MaterializedLiveType } from "../schema";
+import { LiveObjectAny, MaterializedLiveType, Schema } from "../schema";
 
 export abstract class Storage {
-  public abstract updateSchema(opts: {
-    entities: LiveObjectAny[];
-  }): Promise<void>;
+  public abstract updateSchema(opts: Schema<any>): Promise<void>;
 
   public abstract findById<T extends LiveObjectAny>(
     resourceName: string,
@@ -30,12 +28,10 @@ export abstract class Storage {
 export class InMemoryStorage extends Storage {
   private storage: Record<string, Record<string, any>> = {};
 
-  public async updateSchema(opts: {
-    entities: LiveObjectAny[];
-  }): Promise<void> {
+  public async updateSchema(opts: Schema<any>): Promise<void> {
     console.log("Updating schema", opts);
-    this.storage = opts.entities.reduce(
-      (acc, entity) => {
+    this.storage = Object.entries(opts).reduce(
+      (acc, [_, entity]) => {
         acc[entity.name] = {};
         return acc;
       },

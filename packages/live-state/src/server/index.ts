@@ -148,14 +148,14 @@ export type MutationHandler = (mutation: MutationMessage) => void;
 export class Server<TRouter extends AnyRouter> {
   readonly router: TRouter;
   readonly storage: Storage;
-  readonly schema: Schema;
+  readonly schema: Schema<any>;
 
   private mutationSubscriptions: Set<MutationHandler> = new Set();
 
   private constructor(opts: {
     router: TRouter;
     storage: Storage;
-    schema: Schema;
+    schema: Schema<any>;
   }) {
     this.router = opts.router;
     this.storage = opts.storage;
@@ -167,7 +167,7 @@ export class Server<TRouter extends AnyRouter> {
   public static create<TRouter extends AnyRouter>(opts: {
     router: TRouter;
     storage: Storage;
-    schema: Schema;
+    schema: Schema<any>;
   }) {
     return new Server<TRouter>(opts);
   }

@@ -8,10 +8,11 @@ import { mergeMutation, mergeMutationReducer } from "../core/state";
 import {
   InferIndex,
   InferLiveObject,
-  LiveObject,
+  LiveObjectAny,
   LiveObjectInsertMutation,
   LiveObjectUpdateMutation,
   MaterializedLiveObject,
+  MutationUnion,
   Schema,
   inferValue,
 } from "../schema";
@@ -45,11 +46,11 @@ export type ClientState<TRouter extends AnyRouter> = {
 };
 
 type MutationInputMap = {
-  insert: LiveObjectInsertMutation<LiveObject<any, any>>;
-  update: LiveObjectUpdateMutation<LiveObject<any, any>>;
+  insert: LiveObjectInsertMutation<LiveObjectAny>;
+  update: LiveObjectUpdateMutation<LiveObjectAny>;
 };
 
-class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
+class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   public readonly _router!: TRouter;
 
   public readonly url: string;
@@ -118,8 +119,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     notifyPaths?: string[][]
   ) {
     const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
-      mergeMutationReducer<TSchema["entities"][number]>(
-        this.schema.entities.find((e) => e.name === objectName)!
+      mergeMutationReducer<TSchema[string]>(
+        this.schema[objectName as string] as TSchema[string]
       ),
       this.state[objectName] ?? {}
     );
@@ -127,7 +128,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     this.optimisticState[objectName] = Object.fromEntries(
       Object.entries(optimisticState).map(([key, value]) => [
         key,
-        inferValue(value) as InferLiveObject<TSchema["entities"][number]>,
+        inferValue(value) as InferLiveObject<TSchema[string]>,
       ])
     );
 
@@ -204,8 +205,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
         try {
           this._set(
             resource,
-            mergeMutation<TSchema["entities"][number]>(
-              this.schema.entities.find((e) => e.name === resource)!,
+            mergeMutation<TSchema[string]>(
+              this.schema[resource as string] as TSchema[string],
               routeState,
               parsedMessage
             ),
@@ -270,14 +271,17 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema> {
     routeName: keyof TRouter["routes"],
     input: MutationInputMap[TMutation]
   ) {
+    console.log("Mutating", routeName, mutationType, input, this.schema);
     const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
       resource: routeName as string,
       mutationType,
-      payload: this.schema.entities
-        .find((e) => e.name === routeName)!
-        .encodeMutation(mutationType, input, new Date().toISOString()),
+      payload: this.schema[routeName].encodeMutation(
+        mutationType,
+        input as MutationUnion<TSchema[string]>,
+        new Date().toISOString()
+      ),
       resourceId: (input as LiveObjectUpdateMutation<any>).id,
     };
 
@@ -324,13 +328,13 @@ export type Client<TRouter extends AnyRouter> = {
 
 export type ClientOptions = {
   url: string;
-  schema: Schema;
+  schema: Schema<any>;
 };
 
 export const createClient = <TRouter extends AnyRouter>(
   opts: ClientOptions
 ): Client<TRouter> => {
-  const ogClient = new InnerClient<TRouter, Schema>(opts);
+  const ogClient = new InnerClient<TRouter, Schema<any>>(opts);
 
   return {
     _router: ogClient._router,
@@ -362,7 +366,11 @@ export const createClient = <TRouter extends AnyRouter>(
                   LiveObjectInsertMutation<TRouter["routes"][string]["shape"]>
                 >["value"]
               ) => {
-                ogClient.mutate("insert", selector[0], { value: input });
+                ogClient.mutate("insert", selector[0], {
+                  value: input,
+                } as LiveObjectInsertMutation<
+                  TRouter["routes"][string]["shape"]
+                >);
               };
             if (lastSegment === "update")
               return (

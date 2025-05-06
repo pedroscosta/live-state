@@ -161,7 +161,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
         } else if (parsedMessage.type === "BOOTSTRAP") {
           const { resources: _res } = parsedMessage;
 
-          const resources = _res ?? server.schema.entities.map((e) => e.name);
+          const resources = _res ?? Object.keys(server.schema);
 
           console.log("Bootstraping resources:", resources);
 
