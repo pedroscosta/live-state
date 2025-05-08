@@ -16,6 +16,7 @@ export type Request = {
   messageId?: string;
 };
 
+// TODO check if this can be a fixed type
 export type RouteRecord<
   T extends Record<string, Route<LiveObjectAny>> = Record<
     string,

@@ -1,31 +1,27 @@
 import { nanoid } from "nanoid";
-import {
-  ClientMessage,
-  MutationMessage,
-  serverMessageSchema,
-} from "../core/internals";
-import { mergeMutation, mergeMutationReducer } from "../core/state";
+import { ClientMessage, MutationMessage } from "../core/internals";
 import {
   InferIndex,
   InferLiveObject,
+  inferValue,
   LiveObjectAny,
   LiveObjectInsertMutation,
   LiveObjectUpdateMutation,
+  LiveString,
   MaterializedLiveObject,
+  MaterializedLiveType,
   MutationUnion,
   Schema,
-  inferValue,
 } from "../schema";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
-import { Observable, createObservable } from "./observable";
-import { Tree } from "./tree";
-import { index } from "./utils";
+import { GraphNode, ObjectGraph } from "./obj-graph";
+import { createObservable, Observable } from "./observable";
 import { WebSocketClient } from "./web-socket";
 
 export * from "./react";
 
-export type ClientRawState<TRouter extends AnyRouter> = Record<
+export type RawObjPool<TRouter extends AnyRouter> = Record<
   keyof TRouter["routes"],
   | Record<
       string,
@@ -57,12 +53,16 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   public readonly ws: WebSocketClient;
   public readonly schema: TSchema;
 
-  state: ClientRawState<TRouter> = {} as ClientRawState<TRouter>;
-  mutationStack: Record<keyof TRouter["routes"], MutationMessage[]> =
-    {} as Record<keyof TRouter["routes"], MutationMessage[]>;
-  optimisticState: ClientState<TRouter> = {} as ClientState<TRouter>;
+  private rawObjPool: RawObjPool<TRouter> = {} as RawObjPool<TRouter>;
+  private optimisticMutationStack: Record<
+    keyof TRouter["routes"],
+    MutationMessage[]
+  > = {} as Record<keyof TRouter["routes"], MutationMessage[]>;
+  private optimisticObjGraph: ObjectGraph = new ObjectGraph();
+  private optimisticRawObjPool: RawObjPool<TRouter> = {} as RawObjPool<TRouter>;
 
-  private listeners: Tree<(state: typeof this.state) => void> = new Tree();
+  private resourceTypeSubscriptions: Record<string, Set<() => void>> = {};
+
   // This is subscriptions count for each route
   private routeSubscriptions: Record<string, number> = {};
 
@@ -99,139 +99,150 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
           }
         );
 
-        Object.values(this.mutationStack).forEach((mutations) => {
+        Object.values(this.optimisticMutationStack).forEach((mutations) => {
           mutations.forEach((m) => this.sendWsMessage(m));
         });
       }
     });
   }
 
-  public get() {
-    return this.optimisticState;
-  }
+  public get(path: string[]) {
+    if (path.length === 0) throw new Error("Path must not be empty");
 
-  public getRaw() {
-    return this.state;
-  }
-
-  private updateOptimisticState(
-    objectName: keyof TRouter["routes"],
-    notifyPaths?: string[][]
-  ) {
-    const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
-      mergeMutationReducer<TSchema[string]>(
-        this.schema[objectName as string] as TSchema[string]
-      ),
-      this.state[objectName] ?? {}
-    );
-
-    this.optimisticState[objectName] = Object.fromEntries(
-      Object.entries(optimisticState).map(([key, value]) => [
-        key,
-        inferValue(value) as InferLiveObject<TSchema[string]>,
-      ])
-    );
-
-    notifyPaths?.forEach((p) => this.notifyStateSubscribers(p as string[]));
-  }
-
-  private addOptimisticMutation(
-    objectName: keyof TRouter["routes"],
-    mutation: MutationMessage
-  ) {
-    console.log("Adding optimistic mutation:", mutation);
-
-    this.mutationStack[objectName] = [
-      ...(this.mutationStack[objectName] ?? []),
-      mutation,
-    ];
-
-    this.updateOptimisticState(
-      objectName,
-      Object.keys(mutation.payload).map((k) =>
-        mutation.resourceId
-          ? [objectName, mutation.resourceId, k]
-          : [objectName, k]
-      ) as string[][]
-    );
-  }
-
-  private removeOptimisticMutation(
-    objectName: keyof TRouter["routes"],
-    mutationId: MutationMessage["_id"],
-    notify: boolean = false
-  ) {
-    console.log("Removing optimistic mutation:", mutationId);
-
-    this.mutationStack[objectName] = this.mutationStack[objectName]?.filter(
-      (m) => m._id !== mutationId
-    );
-
-    this.updateOptimisticState(
-      objectName,
-      notify ? [[objectName.toString()]] : undefined
-    );
-  }
-
-  private _set(
-    objectName: keyof TRouter["routes"],
-    state: Record<
-      InferIndex<TRouter["routes"][keyof TRouter["routes"]]["shape"]>,
-      MaterializedLiveObject<
-        TRouter["routes"][keyof TRouter["routes"]]["shape"]
-      >
-    >,
-    mutationToRemove?: MutationMessage["_id"]
-  ) {
-    this.state[objectName] = state;
-
-    if (mutationToRemove) {
-      this.removeOptimisticMutation(objectName, mutationToRemove);
-    } else {
-      this.updateOptimisticState(objectName, [[objectName.toString()]]);
+    if (path.length === 1) {
+      return Object.fromEntries(
+        Object.entries(this.optimisticRawObjPool[path[0]] ?? {}).map(
+          ([k, v]) => [k, inferValue(v)]
+        )
+      );
     }
+
+    console.log(
+      this.getFullObject(path[0], path[1]),
+      inferValue(this.getFullObject(path[0], path[1]) as any)
+    );
+
+    return inferValue(this.getFullObject(path[0], path[1]) as any);
   }
+
+  // public getRaw() {
+  //   return this.state;
+  // }
+
+  // private updateOptimisticState(
+  //   objectName: keyof TRouter["routes"],
+  //   notifyPaths?: string[][]
+  // ) {
+  //   const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
+  //     mergeMutationReducer<TSchema[string]>(
+  //       this.schema[objectName as string] as TSchema[string]
+  //     ),
+  //     this.state[objectName] ?? {}
+  //   );
+
+  //   this.optimisticState[objectName] = Object.fromEntries(
+  //     Object.entries(optimisticState).map(([key, value]) => [
+  //       key,
+  //       inferValue(value) as InferLiveObject<TSchema[string]>,
+  //     ])
+  //   );
+
+  //   notifyPaths?.forEach((p) => this.notifyStateSubscribers(p as string[]));
+  // }
+
+  // private addOptimisticMutation(
+  //   objectName: keyof TRouter["routes"],
+  //   mutation: MutationMessage
+  // ) {
+  //   console.log("Adding optimistic mutation:", mutation);
+
+  //   this.mutationStack[objectName] = [
+  //     ...(this.mutationStack[objectName] ?? []),
+  //     mutation,
+  //   ];
+
+  //   this.updateOptimisticState(
+  //     objectName,
+  //     Object.keys(mutation.payload).map((k) =>
+  //       mutation.resourceId
+  //         ? [objectName, mutation.resourceId, k]
+  //         : [objectName, k]
+  //     ) as string[][]
+  //   );
+  // }
+
+  // private removeOptimisticMutation(
+  //   objectName: keyof TRouter["routes"],
+  //   mutationId: MutationMessage["_id"],
+  //   notify: boolean = false
+  // ) {
+  //   console.log("Removing optimistic mutation:", mutationId);
+
+  //   this.mutationStack[objectName] = this.mutationStack[objectName]?.filter(
+  //     (m) => m._id !== mutationId
+  //   );
+
+  //   this.updateOptimisticState(
+  //     objectName,
+  //     notify ? [[objectName.toString()]] : undefined
+  //   );
+  // }
+
+  // private _set(
+  //   objectName: keyof TRouter["routes"],
+  //   state: Record<
+  //     InferIndex<TRouter["routes"][keyof TRouter["routes"]]["shape"]>,
+  //     MaterializedLiveObject<
+  //       TRouter["routes"][keyof TRouter["routes"]]["shape"]
+  //     >
+  //   >,
+  //   mutationToRemove?: MutationMessage["_id"]
+  // ) {
+  //   this.state[objectName] = state;
+
+  //   if (mutationToRemove) {
+  //     this.removeOptimisticMutation(objectName, mutationToRemove);
+  //   } else {
+  //     this.updateOptimisticState(objectName, [[objectName.toString()]]);
+  //   }
+  // }
 
   public handleServerMessage(message: MessageEvent["data"]) {
-    try {
-      console.log("Message received from the server:", message);
-      const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
-
-      if (parsedMessage.type === "MUTATE") {
-        const { resource } = parsedMessage;
-
-        const routeState = this.state[resource] ?? {};
-
-        try {
-          this._set(
-            resource,
-            mergeMutation<TSchema[string]>(
-              this.schema[resource as string] as TSchema[string],
-              routeState,
-              parsedMessage
-            ),
-            parsedMessage._id
-          );
-        } catch (e) {
-          console.error("Error parsing mutation from the server:", e);
-        }
-      } else if (parsedMessage.type === "BOOTSTRAP") {
-        const { resource, data } = parsedMessage;
-
-        this._set(
-          resource,
-          Object.fromEntries(data.map((d) => [d.value?.id?.value, d]))
-        );
-      } else if (parsedMessage.type === "REJECT") {
-        this.removeOptimisticMutation(
-          parsedMessage.resource,
-          parsedMessage._id,
-          true
-        );
-      }
-    } catch (e) {
-      console.error("Error parsing message from the server:", e);
-    }
+    // try {
+    //   console.log("Message received from the server:", message);
+    //   const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
+    //   if (parsedMessage.type === "MUTATE") {
+    //     const { resource } = parsedMessage;
+    //     const routeState = this.state[resource] ?? {};
+    //     try {
+    //       this._set(
+    //         resource,
+    //         mergeMutation<TSchema[string]>(
+    //           this.schema[resource as string] as TSchema[string],
+    //           routeState,
+    //           parsedMessage
+    //         ),
+    //         parsedMessage._id
+    //       );
+    //     } catch (e) {
+    //       console.error("Error parsing mutation from the server:", e);
+    //     }
+    //   } else if (parsedMessage.type === "BOOTSTRAP") {
+    //     const { resource, data } = parsedMessage;
+    //     this._set(
+    //       resource,
+    //       Object.fromEntries(data.map((d) => [d.value?.id?.value, d]))
+    //     );
+    //   } else if (parsedMessage.type === "REJECT") {
+    //     this.removeOptimisticMutation(
+    //       parsedMessage.resource,
+    //       parsedMessage._id,
+    //       true
+    //     );
+    //   }
+    // } catch (e) {
+    //   console.error("Error parsing message from the server:", e);
+    // }
   }
 
   public subscribeToRemote(routeName: string) {
@@ -255,15 +266,27 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
     };
   }
 
-  public subscribeToSlice(
-    path: string[],
-    listener: (state: typeof this.state) => void
-  ) {
-    this.listeners.add(path, listener);
+  public subscribeToSlice(path: string[], listener: () => void) {
+    if (path.length === 1) {
+      if (!this.resourceTypeSubscriptions[path[0]])
+        this.resourceTypeSubscriptions[path[0]] = new Set();
 
-    return () => {
-      this.listeners.remove(path, listener);
-    };
+      this.resourceTypeSubscriptions[path[0]].add(listener);
+
+      return () => {
+        this.resourceTypeSubscriptions[path[0]].delete(listener);
+      };
+    }
+
+    if (path.length === 2) {
+      const node = this.optimisticObjGraph.getNode(path[1]);
+
+      if (!node) throw new Error("Node not found");
+
+      return this.optimisticObjGraph.subscribe(path[1], listener);
+    }
+
+    throw new Error("Not implemented");
   }
 
   public mutate<TMutation extends keyof MutationInputMap>(
@@ -271,7 +294,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
     routeName: keyof TRouter["routes"],
     input: MutationInputMap[TMutation]
   ) {
-    console.log("Mutating", routeName, mutationType, input, this.schema);
+    console.log("Mutating", routeName, input);
     const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
@@ -282,23 +305,179 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
         input as MutationUnion<TSchema[string]>,
         new Date().toISOString()
       ),
-      resourceId: (input as LiveObjectUpdateMutation<any>).id,
+      resourceId: (input as LiveObjectUpdateMutation<any>).value.id,
     };
 
-    this.addOptimisticMutation(routeName, mutationMessage);
+    this.addMutation(routeName, mutationMessage, true);
 
     this.sendWsMessage(mutationMessage);
+
+    console.log("Mutated", this.optimisticObjGraph, this.optimisticRawObjPool);
   }
 
   private sendWsMessage(message: ClientMessage) {
     if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
   }
 
-  private notifyStateSubscribers(path: string[]) {
-    this.listeners
-      .getAllAbove(path)
-      ?.forEach((listener) => listener(this.state));
+  private addMutation(
+    routeName: keyof TRouter["routes"],
+    mutation: MutationMessage,
+    optimistic: boolean = false
+  ) {
+    const schema = this.schema[routeName];
+
+    if (!schema) throw new Error("Schema not found");
+
+    console.log("Adding mutation", routeName, mutation, optimistic);
+    if (optimistic) {
+      if (!this.optimisticMutationStack[routeName])
+        this.optimisticMutationStack[routeName] = [];
+
+      this.optimisticMutationStack[routeName].push(mutation);
+
+      console.log("Optimistic mutation added", this.optimisticMutationStack);
+    }
+
+    if (!this.optimisticObjGraph.getNode(mutation.resourceId))
+      this.optimisticObjGraph.createNode(
+        mutation.resourceId,
+        routeName as string,
+        Object.values(schema.relations).flatMap((k) =>
+          k.type === "many" ? [k.foreignColumn] : []
+        )
+      );
+
+    const prevValue =
+      this.optimisticRawObjPool[routeName]?.[mutation.resourceId] ??
+      this.rawObjPool[routeName]?.[mutation.resourceId];
+
+    if (!optimistic) {
+      this.rawObjPool[routeName] ??= {};
+      this.rawObjPool[routeName][mutation.resourceId] = this.schema[
+        routeName
+      ].mergeMutation(
+        mutation.mutationType,
+        mutation.payload,
+        this.rawObjPool[routeName][mutation.resourceId]
+      )[0] as MaterializedLiveObject<
+        TRouter["routes"][keyof TRouter["routes"]]["shape"]
+      >;
+    }
+
+    this.optimisticRawObjPool[routeName] ??= {};
+
+    this.optimisticRawObjPool[routeName][mutation.resourceId] =
+      this.optimisticMutationStack[routeName].reduce((acc, mutation) => {
+        if (mutation.resourceId !== mutation.resourceId) return acc;
+
+        return this.schema[routeName].mergeMutation(
+          mutation.mutationType,
+          mutation.payload,
+          acc
+        )[0] as MaterializedLiveObject<
+          TRouter["routes"][keyof TRouter["routes"]]["shape"]
+        >;
+      }, prevValue) as MaterializedLiveObject<
+        TRouter["routes"][keyof TRouter["routes"]]["shape"]
+      >;
+
+    this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
+      listener()
+    );
+
+    if (Object.keys(schema.relations).length > 0) {
+      const schemaRelationalFields = Object.fromEntries(
+        Object.entries(schema.relations).flatMap(([k, r]) =>
+          r.type === "one" ? [[r.relationalColumn as string, k]] : []
+        )
+      );
+
+      Object.entries(mutation.payload).forEach(([k, v]) => {
+        if (!schemaRelationalFields[k]) return;
+
+        const [, acceptedValue] = schema.relations[
+          schemaRelationalFields[k]
+        ].mergeMutation(
+          "set",
+          v,
+          prevValue as MaterializedLiveType<LiveString> | undefined
+        );
+
+        if (!acceptedValue) return;
+
+        // TODO Handle if objects arrive out of order by creating the other node if it doesn't exist
+
+        this.optimisticObjGraph.createLink(
+          mutation.resourceId,
+          acceptedValue.split(";")[0],
+          k
+        );
+      });
+    }
   }
+
+  private getFullObject(
+    resourceType: string,
+    id: string
+  ): MaterializedLiveObject<LiveObjectAny> | undefined {
+    const node = this.optimisticObjGraph.getNode(id);
+
+    if (!node) return;
+
+    const obj = this.optimisticRawObjPool[resourceType]?.[id];
+
+    if (!obj) return;
+
+    return {
+      value: {
+        ...obj.value,
+        ...Object.fromEntries(
+          Array.from(node.referencedBy.entries()).map(([k, v]) => {
+            const isMany = v instanceof Set;
+
+            const otherNode = isMany
+              ? Array.from(v.values()).flatMap((v) => {
+                  const node = this.optimisticObjGraph.getNode(v);
+
+                  return node ? [node] : [];
+                })
+              : this.optimisticObjGraph.getNode(v);
+
+            if (!otherNode) return [k, undefined];
+
+            const [relationName, relation] =
+              Object.entries(this.schema[resourceType].relations).find(
+                (r) => r[1].relationalColumn === k || r[1].foreignColumn === k
+              ) ?? [];
+
+            const otherNodeType = relation?.entity.name;
+
+            if (!otherNodeType || !relation)
+              return [k, isMany ? [] : undefined];
+
+            return [
+              relationName,
+              {
+                value: isMany
+                  ? (otherNode as GraphNode[]).map(
+                      (v) => this.optimisticRawObjPool[otherNodeType]?.[v.id]
+                    )
+                  : this.optimisticRawObjPool[otherNodeType]?.[
+                      (otherNode as GraphNode).id
+                    ],
+              },
+            ];
+          })
+        ),
+      },
+    };
+  }
+
+  // private notifyStateSubscribers(path: string[]) {
+  //   this.listeners
+  //     .getAllAbove(path)
+  //     ?.forEach((listener) => listener(this.state));
+  // }
 }
 
 export type Client<TRouter extends AnyRouter> = {
@@ -349,10 +528,10 @@ export const createClient = <TRouter extends AnyRouter>(
           const lastSegment = path[path.length - 1];
 
           if (lastSegment === "get") {
-            return () => index(ogClient.get(), selector);
+            return () => ogClient.get(selector);
           }
           if (lastSegment === "subscribe")
-            return (callback: (value: any) => void) => {
+            return (callback: () => void) => {
               const remove = ogClient.subscribeToSlice(selector, callback);
               return remove;
             };

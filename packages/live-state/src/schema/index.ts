@@ -1,6 +1,6 @@
 import { routeFactory, router } from "../server";
 import { Simplify } from "../utils";
-import { string } from "./atomic-types";
+import { LiveString, string } from "./atomic-types";
 import {
   InferIndex,
   InferLiveType,
@@ -223,10 +223,8 @@ export class Relation<
   mergeMutation(
     mutationType: MutationType,
     encodedMutation: string,
-    materializedShape?:
-      | { value: string; _meta: { timestamp: string } }
-      | undefined
-  ): [{ value: string; _meta: { timestamp: string } }, string | null] {
+    materializedShape?: MaterializedLiveType<LiveString> | undefined
+  ): [MaterializedLiveType<LiveString>, string | null] {
     console.log(
       "Merging mutation",
       mutationType,
@@ -372,6 +370,8 @@ export type MaterializedLiveObject<T extends LiveObjectAny> =
 export const inferValue = <T extends LiveTypeAny>(
   type: MaterializedLiveType<T>
 ): InferLiveType<T> => {
+  if (Array.isArray(type.value))
+    return (type.value as any[]).map((v) => inferValue(v)) as InferLiveType<T>;
   if (typeof type.value !== "object") return type.value;
 
   return Object.fromEntries(

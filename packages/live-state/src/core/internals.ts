@@ -21,7 +21,7 @@ const mutationsMsgSchema = z.object({
   resource: z.string(),
   mutationType: z.enum(["insert", "update"]),
   payload: z.record(z.any()),
-  resourceId: z.string().optional(),
+  resourceId: z.string(),
 });
 
 export type MutationMessage = z.infer<typeof mutationsMsgSchema>;
