@@ -215,7 +215,7 @@ export class ObjectGraph {
    * Notifies all subscribers of a node that it has been updated
    * @param nodeId The ID of the node whose subscribers to notify
    */
-  private notifySubscribers(nodeId: string): void {
+  public notifySubscribers(nodeId: string): void {
     const node = this.nodes.get(nodeId);
     if (!node) return;
 

@@ -321,10 +321,6 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
         TRouter["routes"][keyof TRouter["routes"]]["shape"]
       >;
 
-    this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
-      listener()
-    );
-
     if (Object.keys(schema.relations).length > 0) {
       const schemaRelationalFields = Object.fromEntries(
         Object.entries(schema.relations).flatMap(([k, r]) =>
@@ -356,6 +352,12 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
         );
       });
     }
+
+    this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
+      listener()
+    );
+
+    this.optimisticObjGraph.notifySubscribers(mutation.resourceId);
   }
 
   private getFullObject(
