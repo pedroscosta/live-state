@@ -22,8 +22,14 @@ This repository is organized as a pnpm monorepo:
 
 ### Installation
 
-> [!NOTE]
-> Live-state is currently in pre-alpha stage. So there is no npm package.
+> [!IMPORTANT]  
+> Live-state is currently in alpha. It's not ready for production use. Use at your own risk.
+
+```bash
+pnpm add @live-state/sync
+```
+
+### Development
 
 Clone the repository and install dependencies:
 
