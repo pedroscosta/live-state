@@ -1,4 +1,4 @@
-import { useLiveQuery } from "live-state/client";
+import { useLiveQuery } from "@live-state/sync/client";
 import { nanoid } from "nanoid";
 import { memo } from "react";
 import { Button } from "../../components/ui/button";

@@ -1,7 +1,7 @@
 "use client";
 
 import { Switch } from "@/components/ui/switch";
-import { SubscriptionProvider } from "live-state/client";
+import { SubscriptionProvider } from "@live-state/sync/client";
 import { useSyncExternalStore } from "react";
 import { Board } from "./board";
 import { client } from "./live-client";

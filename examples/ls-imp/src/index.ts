@@ -1,4 +1,4 @@
-import { routeFactory, router } from "live-state/server";
+import { routeFactory, router } from "@live-state/sync/server";
 
 import { schema } from "./schema";
 

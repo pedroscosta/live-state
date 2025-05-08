@@ -1,7 +1,10 @@
 {
-  "name": "live-state",
+  "name": "@live-state/sync",
   "version": "0.0.1-alpha.1",
   "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "A sync engine with built-in client store and ORM.",
   "author": "Pedro Costa",
   "license": "Apache-2.0",

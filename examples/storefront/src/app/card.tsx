@@ -1,4 +1,4 @@
-import { useLiveQuery } from "live-state/client";
+import { useLiveQuery } from "@live-state/sync/client";
 import { Button } from "../../components/ui/button";
 import { store } from "./live-client";
 

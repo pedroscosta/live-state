@@ -12,7 +12,7 @@
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {
-    "live-state": "workspace:*",
+    "@live-state/sync": "workspace:*",
     "@repo/ls-impl": "workspace:*",
     "@trpc/server": "^10.45.2",
     "body-parser": "^1.20.2",

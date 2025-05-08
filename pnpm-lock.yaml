@@ -17,6 +17,9 @@ importers:
 
   examples/api:
     dependencies:
+      '@live-state/sync':
+        specifier: workspace:*
+        version: link:../../packages/live-state
       '@repo/ls-impl':
         specifier: workspace:*
         version: link:../ls-imp
@@ -35,9 +38,6 @@ importers:
       express-ws:
         specifier: ^5.0.2
         version: 5.0.2(express@4.21.2)
-      live-state:
-        specifier: workspace:*
-        version: link:../../packages/live-state
       morgan:
         specifier: ^1.10.0
         version: 1.10.0
@@ -93,12 +93,12 @@ importers:
 
   examples/ls-imp:
     dependencies:
+      '@live-state/sync':
+        specifier: workspace:*
+        version: link:../../packages/live-state
       express-ws:
         specifier: ^5.0.2
         version: 5.0.2(express@4.21.2)
-      live-state:
-        specifier: workspace:*
-        version: link:../../packages/live-state
       ws:
         specifier: ^8.18.0
         version: 8.18.1
@@ -133,6 +133,9 @@ importers:
 
   examples/storefront:
     dependencies:
+      '@live-state/sync':
+        specifier: workspace:*
+        version: link:../../packages/live-state
       '@microlink/react-json-view':
         specifier: ^1.26.1
         version: 1.26.1(@types/react@18.3.20)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -154,9 +157,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      live-state:
-        specifier: workspace:*
-        version: link:../../packages/live-state
       lucide-react:
         specifier: ^0.485.0
         version: 0.485.0(react@18.3.1)

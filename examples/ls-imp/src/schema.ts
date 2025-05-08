@@ -8,7 +8,7 @@ import {
   number,
   object,
   string,
-} from "live-state";
+} from "@live-state/sync";
 
 const group = object("groups", {
   id: string(),
