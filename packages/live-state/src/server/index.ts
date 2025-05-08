@@ -17,30 +17,32 @@ export type Request = {
 };
 
 // TODO check if this can be a fixed type
-export type RouteRecord<
-  T extends Record<string, Route<LiveObjectAny>> = Record<
-    string,
-    Route<LiveObjectAny>
-  >,
-> = T;
+export type RouteRecord = Record<string, Route<LiveObjectAny>>;
 
-export class Router<TRoutes extends RouteRecord> {
+export class Router<TSchema extends Schema<any>, TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
 
   private constructor(opts: { routes: TRoutes }) {
     this.routes = opts.routes;
   }
 
-  public static create<TRoutes extends RouteRecord>(opts: { routes: TRoutes }) {
-    return new Router<TRoutes>(opts);
+  public static create<
+    TSchema extends Schema<any>,
+    TRoutes extends RouteRecord,
+  >(opts: { routes: TRoutes }) {
+    return new Router<TSchema, TRoutes>(opts);
   }
 }
 
-export const router = <TRoutes extends RouteRecord>(opts: {
+export const router = <
+  TSchema extends Schema<any>,
+  TRoutes extends Record<keyof TSchema, Route<LiveObjectAny>>,
+>(opts: {
+  schema: TSchema;
   routes: TRoutes;
 }) => Router.create({ ...opts });
 
-export type AnyRouter = Router<RouteRecord>;
+export type AnyRouter = Router<Schema<any>, RouteRecord>;
 
 type RouteResult<TShape extends LiveObjectAny> = {
   data:
