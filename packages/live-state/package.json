@@ -1,7 +1,16 @@
 {
-  "name": "@repo/live-state",
-  "version": "0.0.0-alpha.1",
-  "private": true,
+  "name": "live-state",
+  "version": "0.0.1-alpha.1",
+  "private": false,
+  "description": "A sync engine with built-in client store and ORM.",
+  "author": "Pedro Costa",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/pedroscosta/live-state",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedroscosta/live-state.git",
+    "directory": "packages/live-state"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

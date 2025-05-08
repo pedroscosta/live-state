@@ -8,7 +8,7 @@ import {
   number,
   object,
   string,
-} from "@repo/live-state";
+} from "live-state";
 
 const group = object("groups", {
   id: string(),

@@ -17,12 +17,9 @@ importers:
 
   examples/api:
     dependencies:
-      '@repo/live-state':
-        specifier: workspace:*
-        version: link:../../packages/live-state
       '@repo/ls-impl':
         specifier: workspace:*
-        version: link:../../packages/ls-imp
+        version: link:../ls-imp
       '@trpc/server':
         specifier: ^10.45.2
         version: 10.45.2
@@ -38,6 +35,9 @@ importers:
       express-ws:
         specifier: ^5.0.2
         version: 5.0.2(express@4.21.2)
+      live-state:
+        specifier: workspace:*
+        version: link:../../packages/live-state
       morgan:
         specifier: ^1.10.0
         version: 1.10.0
@@ -91,6 +91,46 @@ importers:
         specifier: 5.5.4
         version: 5.5.4
 
+  examples/ls-imp:
+    dependencies:
+      express-ws:
+        specifier: ^5.0.2
+        version: 5.0.2(express@4.21.2)
+      live-state:
+        specifier: workspace:*
+        version: link:../../packages/live-state
+      ws:
+        specifier: ^8.18.0
+        version: 8.18.1
+      zod:
+        specifier: ^3.24.1
+        version: 3.24.2
+    devDependencies:
+      '@jest/globals':
+        specifier: ^29.7.0
+        version: 29.7.0
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/config-typescript
+      '@types/express-ws':
+        specifier: ^3.0.5
+        version: 3.0.5
+      '@types/node':
+        specifier: ^20.11.24
+        version: 20.17.28
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.18.0
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.17.28)
+      tsup:
+        specifier: ^8.0.2
+        version: 8.4.0(jiti@2.4.2)(postcss@8.5.3)(typescript@5.5.4)(yaml@2.7.1)
+      typescript:
+        specifier: 5.5.4
+        version: 5.5.4
+
   examples/storefront:
     dependencies:
       '@microlink/react-json-view':
@@ -102,12 +142,9 @@ importers:
       '@radix-ui/react-switch':
         specifier: ^1.1.3
         version: 1.1.3(@types/react-dom@18.3.5(@types/react@18.3.20))(@types/react@18.3.20)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@repo/live-state':
-        specifier: workspace:*
-        version: link:../../packages/live-state
       '@repo/ls-impl':
         specifier: workspace:*
-        version: link:../../packages/ls-imp
+        version: link:../ls-imp
       '@tailwindcss/postcss':
         specifier: ^4.0.17
         version: 4.0.17
@@ -117,6 +154,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      live-state:
+        specifier: workspace:*
+        version: link:../../packages/live-state
       lucide-react:
         specifier: ^0.485.0
         version: 0.485.0(react@18.3.1)
@@ -208,46 +248,6 @@ importers:
       react:
         specifier: 18.0.0
         version: 18.0.0
-      tsup:
-        specifier: ^8.0.2
-        version: 8.4.0(jiti@2.4.2)(postcss@8.5.3)(typescript@5.5.4)(yaml@2.7.1)
-      typescript:
-        specifier: 5.5.4
-        version: 5.5.4
-
-  packages/ls-imp:
-    dependencies:
-      '@repo/live-state':
-        specifier: workspace:*
-        version: link:../live-state
-      express-ws:
-        specifier: ^5.0.2
-        version: 5.0.2(express@4.21.2)
-      ws:
-        specifier: ^8.18.0
-        version: 8.18.1
-      zod:
-        specifier: ^3.24.1
-        version: 3.24.2
-    devDependencies:
-      '@jest/globals':
-        specifier: ^29.7.0
-        version: 29.7.0
-      '@repo/typescript-config':
-        specifier: workspace:*
-        version: link:../config-typescript
-      '@types/express-ws':
-        specifier: ^3.0.5
-        version: 3.0.5
-      '@types/node':
-        specifier: ^20.11.24
-        version: 20.17.28
-      '@types/ws':
-        specifier: ^8.5.13
-        version: 8.18.0
-      jest:
-        specifier: ^29.7.0
-        version: 29.7.0(@types/node@20.17.28)
       tsup:
         specifier: ^8.0.2
         version: 8.4.0(jiti@2.4.2)(postcss@8.5.3)(typescript@5.5.4)(yaml@2.7.1)
