@@ -39,7 +39,6 @@ export const createWSServer: <T extends AnyRouter>(
 
     Object.entries(subscriptions[shape]).forEach(([id, sub]) => {
       if (ignore && id === ignore) return;
-      console.log(id, sub);
 
       connections[id]?.send(JSON.stringify(mutation));
     });

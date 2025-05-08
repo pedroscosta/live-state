@@ -19,8 +19,6 @@ export function mergeMutation<TSchema extends LiveObjectAny>(
       payload
     )[0] as MaterializedLiveObject<TSchema>;
 
-    console.log("newRecord", newRecord);
-
     return {
       ...prevState,
       [(newRecord.value as any).id.value]: newRecord,

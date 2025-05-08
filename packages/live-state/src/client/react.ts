@@ -37,7 +37,6 @@ export const useLiveQuery = <T extends Observable<U>, U>(
     () =>
       observable.subscribe(() => {
         const newSlice = observable.get();
-        console.log("Slice updated", newSlice);
         setSlice(newSlice);
       }),
     []

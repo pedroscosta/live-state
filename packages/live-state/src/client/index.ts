@@ -117,95 +117,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
       );
     }
 
-    console.log(
-      this.getFullObject(path[0], path[1]),
-      inferValue(this.getFullObject(path[0], path[1]) as any)
-    );
-
     return inferValue(this.getFullObject(path[0], path[1]) as any);
   }
-
-  // public getRaw() {
-  //   return this.state;
-  // }
-
-  // private updateOptimisticState(
-  //   objectName: keyof TRouter["routes"],
-  //   notifyPaths?: string[][]
-  // ) {
-  //   const optimisticState = (this.mutationStack[objectName] ?? []).reduce(
-  //     mergeMutationReducer<TSchema[string]>(
-  //       this.schema[objectName as string] as TSchema[string]
-  //     ),
-  //     this.state[objectName] ?? {}
-  //   );
-
-  //   this.optimisticState[objectName] = Object.fromEntries(
-  //     Object.entries(optimisticState).map(([key, value]) => [
-  //       key,
-  //       inferValue(value) as InferLiveObject<TSchema[string]>,
-  //     ])
-  //   );
-
-  //   notifyPaths?.forEach((p) => this.notifyStateSubscribers(p as string[]));
-  // }
-
-  // private addOptimisticMutation(
-  //   objectName: keyof TRouter["routes"],
-  //   mutation: MutationMessage
-  // ) {
-  //   console.log("Adding optimistic mutation:", mutation);
-
-  //   this.mutationStack[objectName] = [
-  //     ...(this.mutationStack[objectName] ?? []),
-  //     mutation,
-  //   ];
-
-  //   this.updateOptimisticState(
-  //     objectName,
-  //     Object.keys(mutation.payload).map((k) =>
-  //       mutation.resourceId
-  //         ? [objectName, mutation.resourceId, k]
-  //         : [objectName, k]
-  //     ) as string[][]
-  //   );
-  // }
-
-  // private removeOptimisticMutation(
-  //   objectName: keyof TRouter["routes"],
-  //   mutationId: MutationMessage["_id"],
-  //   notify: boolean = false
-  // ) {
-  //   console.log("Removing optimistic mutation:", mutationId);
-
-  //   this.mutationStack[objectName] = this.mutationStack[objectName]?.filter(
-  //     (m) => m._id !== mutationId
-  //   );
-
-  //   this.updateOptimisticState(
-  //     objectName,
-  //     notify ? [[objectName.toString()]] : undefined
-  //   );
-  // }
-
-  // private _set(
-  //   objectName: keyof TRouter["routes"],
-  //   state: Record<
-  //     InferIndex<TRouter["routes"][keyof TRouter["routes"]]["shape"]>,
-  //     MaterializedLiveObject<
-  //       TRouter["routes"][keyof TRouter["routes"]]["shape"]
-  //     >
-  //   >,
-  //   mutationToRemove?: MutationMessage["_id"]
-  // ) {
-  //   this.state[objectName] = state;
-
-  //   if (mutationToRemove) {
-  //     this.removeOptimisticMutation(objectName, mutationToRemove);
-  //   } else {
-  //     this.updateOptimisticState(objectName, [[objectName.toString()]]);
-  //   }
-  // }
 
   public handleServerMessage(message: MessageEvent["data"]) {
     // try {
@@ -248,7 +161,6 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   public subscribeToRemote(routeName: string) {
     this.routeSubscriptions[routeName] =
       (this.routeSubscriptions[routeName] ?? 0) + 1;
-    console.log("Subscribing to remote");
 
     this.sendWsMessage({
       _id: nanoid(),
@@ -257,7 +169,6 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
     });
 
     return () => {
-      console.log("Unsubscribing from remote", routeName);
       this.routeSubscriptions[routeName] -= 1;
 
       if (this.routeSubscriptions[routeName] === 0) {
@@ -294,7 +205,6 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
     routeName: keyof TRouter["routes"],
     input: MutationInputMap[TMutation]
   ) {
-    console.log("Mutating", routeName, input);
     const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
@@ -311,8 +221,6 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
     this.addMutation(routeName, mutationMessage, true);
 
     this.sendWsMessage(mutationMessage);
-
-    console.log("Mutated", this.optimisticObjGraph, this.optimisticRawObjPool);
   }
 
   private sendWsMessage(message: ClientMessage) {
@@ -328,14 +236,11 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
 
     if (!schema) throw new Error("Schema not found");
 
-    console.log("Adding mutation", routeName, mutation, optimistic);
     if (optimistic) {
       if (!this.optimisticMutationStack[routeName])
         this.optimisticMutationStack[routeName] = [];
 
       this.optimisticMutationStack[routeName].push(mutation);
-
-      console.log("Optimistic mutation added", this.optimisticMutationStack);
     }
 
     if (!this.optimisticObjGraph.getNode(mutation.resourceId))
