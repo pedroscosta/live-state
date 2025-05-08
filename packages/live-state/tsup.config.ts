@@ -8,6 +8,8 @@ export default defineConfig((options: Options) => [
     },
     dts: true,
     format: ["cjs", "esm"],
+    minify: true,
+    treeshake: true,
     ...options,
   },
   {
@@ -18,6 +20,8 @@ export default defineConfig((options: Options) => [
     tsconfig: "./src/client/tsconfig.json",
     dts: true,
     format: ["esm"],
+    minify: true,
+    treeshake: true,
     ...options,
   },
 ]);
