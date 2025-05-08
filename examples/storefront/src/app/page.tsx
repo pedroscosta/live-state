@@ -2,7 +2,7 @@
 
 import { Switch } from "@/components/ui/switch";
 import { useSyncExternalStore } from "react";
-import { LiveComponent } from "./component";
+import { Board } from "./board";
 import { client } from "./live-client";
 
 export default function Store(): JSX.Element {
@@ -29,7 +29,7 @@ export default function Store(): JSX.Element {
           />
         </div>
       </header>
-      <LiveComponent />
+      <Board />
     </>
   );
 }

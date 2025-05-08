@@ -10,7 +10,7 @@ export default function RootLayout({
       <head>
         <script src="https://unpkg.com/react-scan/dist/auto.global.js" async />
       </head>
-      <body>{children}</body>
+      <body className="flex flex-col min-h-screen">{children}</body>
     </html>
   );
 }

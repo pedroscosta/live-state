@@ -1,22 +1,21 @@
-import { number, object, string } from "@repo/live-state";
 import { routeFactory, router } from "@repo/live-state/server";
 
-export const counters = object("counters", {
-  id: string(),
-  counter: number(),
-  counter2: number(),
-});
+import { schema } from "./schema";
+
+/*
+ * Routes
+ */
 
 const publicRoute = routeFactory();
 
-export const schema = {
-  entities: [counters],
-};
-
 export const routerImpl = router({
+  schema,
   routes: {
-    counters: publicRoute(counters),
+    groups: publicRoute(schema.groups),
+    cards: publicRoute(schema.cards),
   },
 });
 
 export type Router = typeof routerImpl;
+
+export { schema };
