@@ -67,27 +67,35 @@ export class LiveNumber extends LiveAtomicType<number> {
     input: Partial<number>,
     timestamp: string
   ) {
-    if (mutationType !== "set")
-      throw new Error("Mutation type not implemented.");
-
-    return `${input};${timestamp}`;
+    return {
+      value: input,
+      _meta: {
+        timestamp,
+      },
+    };
   }
 
   mergeMutation(
     mutationType: MutationType,
-    encodedMutation: string,
+    encodedMutation: { value: number; _meta: { timestamp: string } },
     materializedShape?: MaterializedLiveType<LiveNumber>
-  ): [MaterializedLiveType<LiveNumber>, string | null] {
-    const [value, ts] = encodedMutation.split(";");
-
+  ): [
+    MaterializedLiveType<LiveNumber>,
+    { value: number; _meta: { timestamp: string } } | null,
+  ] {
     if (
       materializedShape &&
-      materializedShape._meta.timestamp.localeCompare(ts) >= 0
+      materializedShape._meta.timestamp.localeCompare(
+        encodedMutation._meta.timestamp
+      ) >= 0
     )
       return [materializedShape, null];
 
     return [
-      { value: Number(value), _meta: { timestamp: ts } },
+      {
+        value: Number(encodedMutation.value),
+        _meta: encodedMutation._meta,
+      },
       encodedMutation,
     ];
   }
@@ -105,34 +113,31 @@ export class LiveString extends LiveAtomicType<string> {
     input: Partial<string>,
     timestamp: string
   ) {
-    if (mutationType !== "set")
-      throw new Error("Mutation type not implemented.");
-
-    return `${input};${timestamp}`;
+    return {
+      value: input,
+      _meta: {
+        timestamp,
+      },
+    };
   }
 
   mergeMutation(
     mutationType: MutationType,
-    encodedMutation: string,
+    encodedMutation: { value: string; _meta: { timestamp: string } },
     materializedShape?: MaterializedLiveType<LiveString>
-  ): [MaterializedLiveType<LiveString>, string | null] {
-    const [value, ts] = encodedMutation.split(";");
-
+  ): [
+    MaterializedLiveType<LiveString>,
+    { value: string; _meta: { timestamp: string } } | null,
+  ] {
     if (
       materializedShape &&
-      materializedShape._meta.timestamp.localeCompare(ts) >= 0
+      materializedShape._meta.timestamp.localeCompare(
+        encodedMutation._meta.timestamp
+      ) >= 0
     )
       return [materializedShape, null];
 
-    return [
-      {
-        value: value,
-        _meta: {
-          timestamp: ts,
-        },
-      },
-      encodedMutation,
-    ];
+    return [encodedMutation, encodedMutation];
   }
 
   static create() {

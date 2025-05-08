@@ -2,13 +2,21 @@ import { MaterializedLiveType } from ".";
 
 export type LiveTypeMeta = {};
 
-export type MutationType = "set" | "insert" | "update"; // | "delete"
+export type MutationType = "set"; // | "delete"
+
+// DecodeInput extends {
+//   value: Value;
+//   _meta?: keyof Meta extends string ? Meta : never;
+// } = { value: Value; _meta?: keyof Meta extends string ? Meta : never },
 
 export abstract class LiveType<
   Value = any,
   Meta extends LiveTypeMeta = LiveTypeMeta,
   EncodeInput = Partial<Value> | Value,
-  DecodeInput = string,
+  DecodeInput = {
+    value: Value;
+    _meta: keyof Meta extends never ? never : Meta;
+  },
 > {
   readonly _value!: Value;
   readonly _meta!: Meta;

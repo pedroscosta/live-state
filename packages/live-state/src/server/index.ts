@@ -6,15 +6,25 @@ import { Storage } from "./storage";
 export * from "./storage";
 export * from "./web-socket";
 
-export type RequestType = "FIND" | "INSERT" | "UPDATE" | "DELETE";
-export type Request = {
-  type: RequestType;
+type RequestBase = {
   resourceName: string;
-  payload?: Record<string, any>;
+  context: Record<string, any>;
   where?: Record<string, any>;
-  resourceId?: string;
-  messageId?: string;
 };
+
+export type FindRequest = RequestBase & {
+  type: "FIND";
+};
+
+export type SetRequest = RequestBase & {
+  type: "SET";
+  resourceId: string;
+  payload: Record<string, any>;
+};
+
+export type Request = FindRequest | SetRequest;
+
+export type RequestType = Request["type"];
 
 // TODO check if this can be a fixed type
 export type RouteRecord = Record<string, Route<LiveObjectAny>>;
@@ -59,7 +69,7 @@ export class Route<TShape extends LiveObjectAny> {
   }
 
   private async handleFind(opts: {
-    req: Request;
+    req: FindRequest;
     db: Storage;
   }): Promise<RouteResult<TShape>> {
     return {
@@ -68,25 +78,8 @@ export class Route<TShape extends LiveObjectAny> {
     };
   }
 
-  private async handleInsert(opts: {
-    req: Request;
-    db: Storage;
-  }): Promise<RouteResult<TShape>> {
-    if (!opts.req.payload) throw new Error("Payload is required");
-
-    const [newRecord, acceptedValues] = this.shape.mergeMutation(
-      "insert",
-      opts.req.payload
-    );
-
-    return {
-      data: await opts.db.insert<TShape>(opts.req.resourceName, newRecord),
-      acceptedValues,
-    };
-  }
-
-  private async handleUpdate(opts: {
-    req: Request;
+  private async handleSet(opts: {
+    req: SetRequest;
     db: Storage;
   }): Promise<RouteResult<TShape>> {
     if (!opts.req.payload) throw new Error("Payload is required");
@@ -97,22 +90,24 @@ export class Route<TShape extends LiveObjectAny> {
       opts.req.resourceId
     );
 
-    if (!target) throw new Error("Target not found");
+    // Handle where clause in the stored data, in the payload and in the final result
 
     const [newRecord, acceptedValues] = this.shape.mergeMutation(
-      "update",
+      "set",
       opts.req.payload,
       target
     );
 
-    if (!acceptedValues)
+    if (!acceptedValues) {
+      if (!target) throw new Error("Mutation rejected");
       return {
         data: target,
         acceptedValues: null,
       };
+    }
 
     return {
-      data: await opts.db.update<TShape>(
+      data: await opts.db.upsert<TShape>(
         opts.req.resourceName,
         opts.req.resourceId,
         newRecord
@@ -127,11 +122,9 @@ export class Route<TShape extends LiveObjectAny> {
   }): Promise<RouteResult<TShape>> {
     switch (opts.req.type) {
       case "FIND":
-        return this.handleFind(opts);
-      case "INSERT":
-        return this.handleInsert(opts);
-      case "UPDATE":
-        return this.handleUpdate(opts);
+        return this.handleFind(opts as { req: FindRequest; db: Storage });
+      case "SET":
+        return this.handleSet(opts as { req: SetRequest; db: Storage });
       default:
         throw new Error("Invalid request type");
     }
@@ -193,23 +186,18 @@ export class Server<TRouter extends AnyRouter> {
 
     if (
       result &&
-      opts.req.payload &&
+      opts.req.type === "SET" &&
       result.acceptedValues &&
       Object.keys(result.acceptedValues).length > 0
     ) {
       // TODO handle partial updates
       this.mutationSubscriptions.forEach((handler) => {
         handler({
-          _id: opts.req.messageId ?? nanoid(),
+          _id: opts.req.context.messageId ?? nanoid(),
           type: "MUTATE",
           resource: opts.req.resourceName,
-          mutationType:
-            opts.req.type.toLowerCase() as MutationMessage["mutationType"],
           payload: result.acceptedValues ?? {},
-          resourceId:
-            opts.req.resourceId ??
-            (result.data.value as unknown as { id: { value: string } }).id
-              .value,
+          resourceId: (opts.req as SetRequest).resourceId,
         });
       });
     }

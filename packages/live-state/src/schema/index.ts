@@ -49,23 +49,8 @@ export type InferLiveObjectWithRelationalIds<T extends LiveObjectAny> =
         InferRelationalColumns<T["relations"]>
     : InferLiveObjectWithoutRelations<T>;
 
-export type LiveObjectMutation<TSchema extends LiveObjectAny> = {
-  value: Partial<InferLiveObjectWithRelationalIds<TSchema>>;
-  where?: Record<string, any>; // TODO Infer indexable types
-};
-
-export type LiveObjectInsertMutation<TObject extends LiveObjectAny> = {
-  value: InferLiveObjectWithRelationalIds<TObject>;
-};
-
-export type LiveObjectUpdateMutation<TObject extends LiveObjectAny> = {
-  value: Partial<InferLiveObjectWithRelationalIds<TObject>>;
-  id: string;
-};
-
-export type MutationUnion<TObject extends LiveObject<any, any, any>> =
-  | LiveObjectInsertMutation<TObject>
-  | LiveObjectUpdateMutation<TObject>;
+export type LiveObjectMutationInput<TSchema extends LiveObjectAny> =
+  InferLiveObjectWithRelationalIds<TSchema>;
 
 export class LiveObject<
   TName extends string,
@@ -74,8 +59,8 @@ export class LiveObject<
 > extends LiveType<
   TSchema,
   LiveTypeMeta,
-  MutationUnion<LiveObject<TName, TSchema, TRelations>>,
-  Record<string, any>
+  LiveObjectMutationInput<any>,
+  Record<string, MaterializedLiveType<LiveTypeAny>>
 > {
   public readonly name: TName;
   public readonly fields: TSchema;
@@ -89,14 +74,12 @@ export class LiveObject<
   }
 
   encodeMutation(
-    mutationType: MutationType,
-    input: MutationUnion<this>,
+    _mutationType: MutationType,
+    input: LiveObjectMutationInput<this>,
     timestamp: string
   ): Record<string, any> {
-    if (mutationType === "set") throw new Error("Method not implemented.");
-
     return Object.fromEntries(
-      Object.entries(input.value).map(([key, value]) => [
+      Object.entries(input).map(([key, value]) => [
         key,
         (this.fields[key] ?? this.relations[key]).encodeMutation(
           "set",
@@ -109,12 +92,9 @@ export class LiveObject<
 
   mergeMutation(
     mutationType: MutationType,
-    encodedMutations: Record<string, any>,
+    encodedMutations: Record<string, MaterializedLiveType<LiveTypeAny>>,
     materializedShape?: MaterializedLiveType<this> | undefined
   ): [MaterializedLiveType<this>, Record<string, any> | null] {
-    if (mutationType === "update" && !materializedShape)
-      throw new Error("Missing previous value");
-
     const acceptedMutations: Record<string, any> = {};
 
     return [
@@ -209,42 +189,38 @@ export class Relation<
     mutationType: MutationType,
     input: string,
     timestamp: string
-  ): string {
-    console.log("Encoding mutation", mutationType, input, timestamp);
+  ): { value: string; _meta: { timestamp: string } } {
     if (mutationType !== "set")
       throw new Error("Mutation type not implemented.");
     if (this.type === "many") throw new Error("Many not implemented.");
 
-    return `${input};${timestamp}`;
+    return {
+      value: input,
+      _meta: {
+        timestamp,
+      },
+    };
   }
 
   mergeMutation(
     mutationType: MutationType,
-    encodedMutation: string,
+    encodedMutation: { value: string; _meta: { timestamp: string } },
     materializedShape?: MaterializedLiveType<LiveString> | undefined
-  ): [MaterializedLiveType<LiveString>, string | null] {
-    console.log(
-      "Merging mutation",
-      mutationType,
-      encodedMutation,
-      materializedShape
-    );
+  ): [
+    MaterializedLiveType<LiveString>,
+    { value: string; _meta: { timestamp: string } } | null,
+  ] {
     if (this.type === "many") throw new Error("Many not implemented.");
 
-    const [value, ts] = encodedMutation.split(";");
-
-    if (materializedShape && materializedShape.value.localeCompare(ts) >= 0)
+    if (
+      materializedShape &&
+      materializedShape._meta.timestamp.localeCompare(
+        encodedMutation._meta.timestamp
+      ) >= 0
+    )
       return [materializedShape, null];
 
-    return [
-      {
-        value: value,
-        _meta: {
-          timestamp: ts,
-        },
-      },
-      encodedMutation,
-    ];
+    return [encodedMutation, encodedMutation];
   }
 
   static createOneFactory<TOriginEntity extends LiveObjectAny>() {
@@ -317,30 +293,6 @@ export const createRelations = <
     }),
   };
 };
-
-// export const createSchema = <
-//   TEntity extends LiveObjectAny,
-//   TRelations extends ReturnType<typeof relations>,
-// >(definition: {
-//   entities: TEntity[];
-//   relations: TRelations[];
-// }): Array<
-//   TEntity extends LiveObject<infer TSchema, any>
-//     ? LiveObject<TSchema, TRelations["relations"]>
-//     : never
-// > => {
-//   return definition.entities.map((entity) => {
-//     const relationsDef = definition.relations.find(
-//       (def) => def.resource === entity.name
-//     );
-
-//     if (!relationsDef) {
-//       return entity as any;
-//     }
-
-//     return entity.setRelations(relationsDef.relations) as any;
-//   });
-// };
 
 export type MaterializedLiveType<T extends LiveTypeAny> =
   keyof T["_meta"] extends never

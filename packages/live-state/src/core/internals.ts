@@ -10,18 +10,32 @@ const clSubscribeMsgSchema = z.object({
 
 const clBootstrapMsgSchema = z.object({
   _id: clMsgId,
-  type: z.literal("BOOTSTRAP"),
+  type: z.literal("SYNC"),
+  lastSyncedAt: z.string().optional(),
   resources: z.string().array().optional(),
 });
 
-// TODO split this into separate schemas
+const payloadSchema = z
+  .record(
+    z.object({
+      value: z.string().or(z.number()).or(z.boolean()).or(z.date()),
+      _meta: z.object({ timestamp: z.string().optional() }).optional(),
+    })
+  )
+  .superRefine((v, ctx) => {
+    if (v["id"])
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Payload cannot have an id",
+      });
+  });
+
 const mutationsMsgSchema = z.object({
   _id: clMsgId,
   type: z.literal("MUTATE"),
   resource: z.string(),
-  mutationType: z.enum(["insert", "update"]),
-  payload: z.record(z.any()),
   resourceId: z.string(),
+  payload: payloadSchema,
 });
 
 export type MutationMessage = z.infer<typeof mutationsMsgSchema>;
@@ -43,9 +57,10 @@ export const clientMessageSchema = z.union([
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 const svBootstrapMsgSchema = z.object({
-  type: z.literal("BOOTSTRAP"),
+  _id: clMsgId,
+  type: z.literal("SYNC"),
   resource: z.string(),
-  data: z.array(z.any()),
+  data: z.record(payloadSchema),
 });
 
 export type ServerBootstrapMessage = z.infer<typeof svBootstrapMsgSchema>;

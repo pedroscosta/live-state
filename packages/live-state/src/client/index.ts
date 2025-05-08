@@ -1,16 +1,18 @@
 import { nanoid } from "nanoid";
-import { ClientMessage, MutationMessage } from "../core/internals";
+import {
+  ClientMessage,
+  MutationMessage,
+  serverMessageSchema,
+} from "../core/internals";
 import {
   InferIndex,
   InferLiveObject,
   inferValue,
   LiveObjectAny,
-  LiveObjectInsertMutation,
-  LiveObjectUpdateMutation,
+  LiveObjectMutationInput,
   LiveString,
   MaterializedLiveObject,
   MaterializedLiveType,
-  MutationUnion,
   Schema,
 } from "../schema";
 import { AnyRouter } from "../server";
@@ -39,11 +41,6 @@ export type ClientState<TRouter extends AnyRouter> = {
         InferLiveObject<TRouter["routes"][K]["shape"]>
       >
     | undefined;
-};
-
-type MutationInputMap = {
-  insert: LiveObjectInsertMutation<LiveObjectAny>;
-  update: LiveObjectUpdateMutation<LiveObjectAny>;
 };
 
 class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
@@ -84,7 +81,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
       if (e.open) {
         this.sendWsMessage({
           _id: nanoid(),
-          type: "BOOTSTRAP",
+          type: "SYNC",
+          // TODO lastSyncedAt
         });
 
         Object.entries(this.routeSubscriptions).forEach(
@@ -117,45 +115,56 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
       );
     }
 
-    return inferValue(this.getFullObject(path[0], path[1]) as any);
+    const fullObject = this.getFullObject(path[0], path[1]);
+
+    if (!fullObject)
+      throw new Error(
+        "Object of type " + path[0] + " not found with id " + path[1]
+      );
+
+    return inferValue(fullObject);
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
-    // try {
-    //   console.log("Message received from the server:", message);
-    //   const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
-    //   if (parsedMessage.type === "MUTATE") {
-    //     const { resource } = parsedMessage;
-    //     const routeState = this.state[resource] ?? {};
-    //     try {
-    //       this._set(
-    //         resource,
-    //         mergeMutation<TSchema[string]>(
-    //           this.schema[resource as string] as TSchema[string],
-    //           routeState,
-    //           parsedMessage
-    //         ),
-    //         parsedMessage._id
-    //       );
-    //     } catch (e) {
-    //       console.error("Error parsing mutation from the server:", e);
-    //     }
-    //   } else if (parsedMessage.type === "BOOTSTRAP") {
-    //     const { resource, data } = parsedMessage;
-    //     this._set(
-    //       resource,
-    //       Object.fromEntries(data.map((d) => [d.value?.id?.value, d]))
-    //     );
-    //   } else if (parsedMessage.type === "REJECT") {
-    //     this.removeOptimisticMutation(
-    //       parsedMessage.resource,
-    //       parsedMessage._id,
-    //       true
-    //     );
-    //   }
-    // } catch (e) {
-    //   console.error("Error parsing message from the server:", e);
-    // }
+    try {
+      console.log("Message received from the server:", message);
+      const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
+
+      console.log("Parsed message:", parsedMessage);
+
+      if (parsedMessage.type === "MUTATE") {
+        const { resource } = parsedMessage;
+
+        try {
+          this.addMutation(resource, parsedMessage);
+        } catch (e) {
+          console.error("Error parsing mutation from the server:", e);
+        }
+      } else if (parsedMessage.type === "SYNC") {
+        const { resource, data } = parsedMessage;
+
+        console.log("Syncing resource:", data, parsedMessage);
+
+        Object.entries(data).forEach(([id, payload]) => {
+          this.addMutation(resource, {
+            _id: id,
+            type: "MUTATE",
+            resource,
+            resourceId: id,
+            payload,
+          });
+        });
+      } else if (parsedMessage.type === "REJECT") {
+        // TODO handle reject
+        // this.removeOptimisticMutation(
+        //   parsedMessage.resource,
+        //   parsedMessage._id,
+        //   true
+        // );
+      }
+    } catch (e) {
+      console.error("Error parsing message from the server:", e);
+    }
   }
 
   public subscribeToRemote(routeName: string) {
@@ -200,22 +209,28 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
     throw new Error("Not implemented");
   }
 
-  public mutate<TMutation extends keyof MutationInputMap>(
-    mutationType: TMutation,
+  public mutate(
     routeName: keyof TRouter["routes"],
-    input: MutationInputMap[TMutation]
+    resourceId: string,
+    payload: Partial<
+      Omit<
+        Simplify<
+          LiveObjectMutationInput<TRouter["routes"][string]["shape"]>
+        >["value"],
+        "id"
+      >
+    >
   ) {
     const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
       resource: routeName as string,
-      mutationType,
       payload: this.schema[routeName].encodeMutation(
-        mutationType,
-        input as MutationUnion<TSchema[string]>,
+        "set",
+        payload as LiveObjectMutationInput<TSchema[string]>,
         new Date().toISOString()
       ),
-      resourceId: (input as LiveObjectUpdateMutation<any>).value.id,
+      resourceId,
     };
 
     this.addMutation(routeName, mutationMessage, true);
@@ -234,6 +249,8 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   ) {
     const schema = this.schema[routeName];
 
+    console.log("Adding mutation", mutation);
+
     if (!schema) throw new Error("Schema not found");
 
     if (optimistic) {
@@ -241,6 +258,11 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
         this.optimisticMutationStack[routeName] = [];
 
       this.optimisticMutationStack[routeName].push(mutation);
+    } else {
+      if (this.optimisticMutationStack[routeName])
+        this.optimisticMutationStack[routeName] = this.optimisticMutationStack[
+          routeName
+        ].filter((m) => m._id !== mutation._id);
     }
 
     if (!this.optimisticObjGraph.getNode(mutation.resourceId))
@@ -258,31 +280,44 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
 
     if (!optimistic) {
       this.rawObjPool[routeName] ??= {};
-      this.rawObjPool[routeName][mutation.resourceId] = this.schema[
-        routeName
-      ].mergeMutation(
-        mutation.mutationType,
-        mutation.payload,
-        this.rawObjPool[routeName][mutation.resourceId]
-      )[0] as MaterializedLiveObject<
+      this.rawObjPool[routeName][mutation.resourceId] = {
+        value: {
+          ...(
+            this.schema[routeName].mergeMutation(
+              "set",
+              mutation.payload,
+              this.rawObjPool[routeName][mutation.resourceId]
+            )[0] as MaterializedLiveObject<
+              TRouter["routes"][keyof TRouter["routes"]]["shape"]
+            >
+          ).value,
+          id: { value: mutation.resourceId },
+        },
+      } as unknown as MaterializedLiveObject<
         TRouter["routes"][keyof TRouter["routes"]]["shape"]
       >;
     }
 
     this.optimisticRawObjPool[routeName] ??= {};
 
-    this.optimisticRawObjPool[routeName][mutation.resourceId] =
-      this.optimisticMutationStack[routeName].reduce((acc, mutation) => {
-        if (mutation.resourceId !== mutation.resourceId) return acc;
+    const reducedResult = (
+      this.optimisticMutationStack[routeName] ?? []
+    ).reduce((acc, mutation) => {
+      if (mutation.resourceId !== mutation.resourceId) return acc;
 
-        return this.schema[routeName].mergeMutation(
-          mutation.mutationType,
-          mutation.payload,
-          acc
-        )[0] as MaterializedLiveObject<
-          TRouter["routes"][keyof TRouter["routes"]]["shape"]
-        >;
-      }, prevValue) as MaterializedLiveObject<
+      return this.schema[routeName].mergeMutation(
+        "set",
+        mutation.payload,
+        acc
+      )[0] as MaterializedLiveObject<
+        TRouter["routes"][keyof TRouter["routes"]]["shape"]
+      >;
+    }, this.rawObjPool[routeName]?.[mutation.resourceId]);
+
+    if (reducedResult)
+      this.optimisticRawObjPool[routeName][mutation.resourceId] = {
+        value: { ...reducedResult.value, id: { value: mutation.resourceId } },
+      } as unknown as MaterializedLiveObject<
         TRouter["routes"][keyof TRouter["routes"]]["shape"]
       >;
 
@@ -304,8 +339,10 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
           schemaRelationalFields[k]
         ].mergeMutation(
           "set",
-          v,
-          prevValue as MaterializedLiveType<LiveString> | undefined
+          v as { value: string; _meta: { timestamp: string } },
+          prevValue?.value[k as keyof (typeof prevValue)["value"]] as
+            | MaterializedLiveType<LiveString>
+            | undefined
         );
 
         if (!acceptedValue) return;
@@ -314,7 +351,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
 
         this.optimisticObjGraph.createLink(
           mutation.resourceId,
-          acceptedValue.split(";")[0],
+          acceptedValue.value,
           k
         );
       });
@@ -377,12 +414,6 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
       },
     };
   }
-
-  // private notifyStateSubscribers(path: string[]) {
-  //   this.listeners
-  //     .getAllAbove(path)
-  //     ?.forEach((listener) => listener(this.state));
-  // }
 }
 
 export type Client<TRouter extends AnyRouter> = {
@@ -397,14 +428,17 @@ export type Client<TRouter extends AnyRouter> = {
     [K in keyof TRouter["routes"]]: {
       insert: (
         input: Simplify<
-          LiveObjectInsertMutation<TRouter["routes"][K]["shape"]>
+          LiveObjectMutationInput<TRouter["routes"][K]["shape"]>
         >["value"]
       ) => void;
       update: (
         id: string,
-        value: Simplify<
-          LiveObjectUpdateMutation<TRouter["routes"][K]["shape"]>
-        >["value"]
+        value: Omit<
+          Simplify<
+            LiveObjectMutationInput<TRouter["routes"][K]["shape"]>
+          >["value"],
+          "id"
+        >
       ) => void;
     };
   };
@@ -447,23 +481,27 @@ export const createClient = <TRouter extends AnyRouter>(
             if (lastSegment === "insert")
               return (
                 input: Simplify<
-                  LiveObjectInsertMutation<TRouter["routes"][string]["shape"]>
+                  LiveObjectMutationInput<TRouter["routes"][string]["shape"]>
                 >["value"]
               ) => {
-                ogClient.mutate("insert", selector[0], {
-                  value: input,
-                } as LiveObjectInsertMutation<
-                  TRouter["routes"][string]["shape"]
-                >);
+                const { id, ...rest } = input;
+                ogClient.mutate(selector[0], id, rest);
               };
             if (lastSegment === "update")
               return (
                 id: string,
-                input: Simplify<
-                  LiveObjectUpdateMutation<TRouter["routes"][string]["shape"]>
-                >["value"]
+                input: Partial<
+                  Omit<
+                    Simplify<
+                      LiveObjectMutationInput<
+                        TRouter["routes"][string]["shape"]
+                      >
+                    >["value"],
+                    "id"
+                  >
+                >
               ) => {
-                ogClient.mutate("update", selector[0], { value: input, id });
+                ogClient.mutate(selector[0], id, input);
               };
           }
         },
