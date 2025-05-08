@@ -1,6 +1,7 @@
 "use client";
 
 import { Switch } from "@/components/ui/switch";
+import { SubscriptionProvider } from "@repo/live-state/client";
 import { useSyncExternalStore } from "react";
 import { Board } from "./board";
 import { client } from "./live-client";
@@ -17,7 +18,7 @@ export default function Store(): JSX.Element {
   );
 
   return (
-    <>
+    <SubscriptionProvider client={client}>
       <header className="w-full h-16 flex items-center justify-end gap-2 p-2 border-b">
         <div className="flex items-center gap-2">
           Connected
@@ -30,6 +31,6 @@ export default function Store(): JSX.Element {
         </div>
       </header>
       <Board />
-    </>
+    </SubscriptionProvider>
   );
 }

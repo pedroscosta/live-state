@@ -425,6 +425,7 @@ export type Client<TRouter extends AnyRouter> = {
   _router: TRouter;
   client: {
     ws: WebSocketClient;
+    subscribeToRemote: (resourceType?: string[]) => () => void;
   };
   store: Observable<ClientState<TRouter>> & {
     [K in keyof TRouter["routes"]]: {
@@ -460,6 +461,17 @@ export const createClient = <TRouter extends AnyRouter>(
     _router: ogClient._router,
     client: {
       ws: ogClient.ws,
+      subscribeToRemote: (resourceType?: string[]) => {
+        const removeListeners: (() => void)[] = [];
+
+        for (const rt of resourceType ?? Object.keys(ogClient.schema)) {
+          removeListeners.push(ogClient.subscribeToRemote(rt));
+        }
+
+        return () => {
+          removeListeners.forEach((remove) => remove());
+        };
+      },
     },
     store: createObservable(
       {},
