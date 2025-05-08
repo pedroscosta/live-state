@@ -10,9 +10,7 @@ import { store } from "./live-client";
 const MemoItem = memo(Group);
 
 export function Board(): JSX.Element {
-  const groups = useLiveQuery(store.groups, {
-    subscribeToRemote: true,
-  });
+  const groups = useLiveQuery(store.groups);
 
   return (
     <div className="p-2 flex flex-1 border overflow-y-hidden overflow-x-auto gap-6">

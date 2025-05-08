@@ -26,21 +26,17 @@ export type Request = FindRequest | SetRequest;
 
 export type RequestType = Request["type"];
 
-// TODO check if this can be a fixed type
 export type RouteRecord = Record<string, Route<LiveObjectAny>>;
 
-export class Router<TSchema extends Schema<any>, TRoutes extends RouteRecord> {
+export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
 
   private constructor(opts: { routes: TRoutes }) {
     this.routes = opts.routes;
   }
 
-  public static create<
-    TSchema extends Schema<any>,
-    TRoutes extends RouteRecord,
-  >(opts: { routes: TRoutes }) {
-    return new Router<TSchema, TRoutes>(opts);
+  public static create<TRoutes extends RouteRecord>(opts: { routes: TRoutes }) {
+    return new Router<TRoutes>(opts);
   }
 }
 
@@ -52,7 +48,7 @@ export const router = <
   routes: TRoutes;
 }) => Router.create({ ...opts });
 
-export type AnyRouter = Router<Schema<any>, RouteRecord>;
+export type AnyRouter = Router<RouteRecord>;
 
 type RouteResult<TShape extends LiveObjectAny> = {
   data:
