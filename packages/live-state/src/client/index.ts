@@ -11,7 +11,7 @@ import {
   LiveObjectAny,
   LiveObjectMutationInput,
   LiveString,
-  MaterializedLiveObject,
+  LiveTypeAny,
   MaterializedLiveType,
   Schema,
 } from "../schema";
@@ -23,15 +23,9 @@ import { WebSocketClient } from "./web-socket";
 
 export * from "./react";
 
-export type RawObjPool<TRouter extends AnyRouter> = Record<
-  keyof TRouter["routes"],
-  | Record<
-      string,
-      MaterializedLiveObject<
-        TRouter["routes"][keyof TRouter["routes"]]["shape"]
-      >
-    >
-  | undefined
+export type RawObjPool = Record<
+  string,
+  Record<string, MaterializedLiveType<LiveObjectAny> | undefined> | undefined
 >;
 
 export type ClientState<TRouter extends AnyRouter> = {
@@ -43,20 +37,15 @@ export type ClientState<TRouter extends AnyRouter> = {
     | undefined;
 };
 
-class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
-  public readonly _router!: TRouter;
-
+class InnerClient {
   public readonly url: string;
   public readonly ws: WebSocketClient;
-  public readonly schema: TSchema;
+  public readonly schema: Schema<any>;
 
-  private rawObjPool: RawObjPool<TRouter> = {} as RawObjPool<TRouter>;
-  private optimisticMutationStack: Record<
-    keyof TRouter["routes"],
-    MutationMessage[]
-  > = {} as Record<keyof TRouter["routes"], MutationMessage[]>;
+  private rawObjPool: RawObjPool = {} as RawObjPool;
+  private optimisticMutationStack: Record<string, MutationMessage[]> = {};
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
-  private optimisticRawObjPool: RawObjPool<TRouter> = {} as RawObjPool<TRouter>;
+  private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
   private resourceTypeSubscriptions: Record<string, Set<() => void>> = {};
 
@@ -65,7 +54,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
 
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
-    this.schema = opts.schema as TSchema;
+    this.schema = opts.schema;
     this.ws = new WebSocketClient({
       url: opts.url,
       autoConnect: true,
@@ -210,24 +199,19 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   }
 
   public mutate(
-    routeName: keyof TRouter["routes"],
+    routeName: string,
     resourceId: string,
     payload: Partial<
-      Omit<
-        Simplify<
-          LiveObjectMutationInput<TRouter["routes"][string]["shape"]>
-        >["value"],
-        "id"
-      >
+      Omit<Simplify<LiveObjectMutationInput<LiveObjectAny>>["value"], "id">
     >
   ) {
     const mutationMessage: MutationMessage = {
       _id: nanoid(),
       type: "MUTATE",
-      resource: routeName as string,
+      resource: routeName,
       payload: this.schema[routeName].encodeMutation(
         "set",
-        payload as LiveObjectMutationInput<TSchema[string]>,
+        payload as LiveObjectMutationInput<LiveObjectAny>,
         new Date().toISOString()
       ),
       resourceId,
@@ -243,7 +227,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   }
 
   private addMutation(
-    routeName: keyof TRouter["routes"],
+    routeName: string,
     mutation: MutationMessage,
     optimistic: boolean = false
   ) {
@@ -285,17 +269,16 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
           ...(
             this.schema[routeName].mergeMutation(
               "set",
-              mutation.payload,
+              mutation.payload as Record<
+                string,
+                MaterializedLiveType<LiveTypeAny>
+              >,
               this.rawObjPool[routeName][mutation.resourceId]
-            )[0] as MaterializedLiveObject<
-              TRouter["routes"][keyof TRouter["routes"]]["shape"]
-            >
+            )[0] as MaterializedLiveType<LiveTypeAny>
           ).value,
           id: { value: mutation.resourceId },
         },
-      } as unknown as MaterializedLiveObject<
-        TRouter["routes"][keyof TRouter["routes"]]["shape"]
-      >;
+      } as MaterializedLiveType<LiveObjectAny>;
     }
 
     this.optimisticRawObjPool[routeName] ??= {};
@@ -307,19 +290,15 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
 
       return this.schema[routeName].mergeMutation(
         "set",
-        mutation.payload,
+        mutation.payload as Record<string, MaterializedLiveType<LiveTypeAny>>,
         acc
-      )[0] as MaterializedLiveObject<
-        TRouter["routes"][keyof TRouter["routes"]]["shape"]
-      >;
+      )[0];
     }, this.rawObjPool[routeName]?.[mutation.resourceId]);
 
     if (reducedResult)
       this.optimisticRawObjPool[routeName][mutation.resourceId] = {
         value: { ...reducedResult.value, id: { value: mutation.resourceId } },
-      } as unknown as MaterializedLiveObject<
-        TRouter["routes"][keyof TRouter["routes"]]["shape"]
-      >;
+      } as MaterializedLiveType<LiveTypeAny>;
 
     if (Object.keys(schema.relations).length > 0) {
       const schemaRelationalFields = Object.fromEntries(
@@ -363,7 +342,7 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
   private getFullObject(
     resourceType: string,
     id: string
-  ): MaterializedLiveObject<LiveObjectAny> | undefined {
+  ): MaterializedLiveType<LiveObjectAny> | undefined {
     const node = this.optimisticObjGraph.getNode(id);
 
     if (!node) return;
@@ -414,15 +393,11 @@ class InnerClient<TRouter extends AnyRouter, TSchema extends Schema<any>> {
           })
         ),
       },
-    };
+    } as MaterializedLiveType<LiveObjectAny>;
   }
 }
 
 export type Client<TRouter extends AnyRouter> = {
-  /**
-   * @internal
-   */
-  _router: TRouter;
   client: {
     ws: WebSocketClient;
     subscribeToRemote: (resourceType?: string[]) => () => void;
@@ -455,10 +430,9 @@ export type ClientOptions = {
 export const createClient = <TRouter extends AnyRouter>(
   opts: ClientOptions
 ): Client<TRouter> => {
-  const ogClient = new InnerClient<TRouter, Schema<any>>(opts);
+  const ogClient = new InnerClient(opts);
 
   return {
-    _router: ogClient._router,
     client: {
       ws: ogClient.ws,
       subscribeToRemote: (resourceType?: string[]) => {

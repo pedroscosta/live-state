@@ -6,6 +6,7 @@ import {
   LiveTypeAny,
   LiveTypeMeta,
   MutationType,
+  StorageFieldType,
 } from "./live-type";
 
 export * from "./atomic-types";
@@ -134,6 +135,10 @@ export class LiveObject<
     );
   }
 
+  getStorageFieldType(): StorageFieldType {
+    throw new Error("Method not implemented.");
+  }
+
   static create<
     TName extends string,
     TSchema extends Record<string, LiveTypeAny>,
@@ -223,6 +228,14 @@ export class Relation<
     return [encodedMutation, encodedMutation];
   }
 
+  getStorageFieldType(): StorageFieldType {
+    return {
+      type: "varchar",
+      nullable: !this.required,
+      references: `${this.entity.name}.${String(this.foreignColumn ?? this.relationalColumn ?? "id")}`,
+    };
+  }
+
   static createOneFactory<TOriginEntity extends LiveObjectAny>() {
     return <
       TEntity extends LiveObjectAny,
@@ -294,34 +307,46 @@ export const createRelations = <
   };
 };
 
-export type MaterializedLiveType<T extends LiveTypeAny> =
-  keyof T["_meta"] extends never
-    ? {
-        value: T["_value"] extends Record<string, LiveTypeAny>
-          ? {
-              [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
-            }
-          : T["_value"];
-      }
-    : {
-        value: T["_value"] extends Record<string, LiveTypeAny>
-          ? {
-              [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
-            }
-          : T["_value"];
-        _meta: T["_meta"];
-      };
+// export type MaterializedLiveType<T extends LiveTypeAny> =
+//   keyof T["_meta"] extends never
+//     ? {
+//         value: T["_value"] extends Record<string, LiveTypeAny>
+//           ? {
+//               [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+//             }
+//           : T["_value"];
+//       }
+//     : {
+//         value: T["_value"] extends Record<string, LiveTypeAny>
+//           ? {
+//               [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+//             }
+//           : T["_value"];
+//         _meta: T["_meta"];
+//       };
 
-export type MaterializedLiveObject<T extends LiveObjectAny> =
-  MaterializedLiveType<T> & {
-    [K in keyof T["relations"]]: InferIndex<T["relations"][K]["entity"]>;
-  };
+export type MaterializedLiveType<T extends LiveTypeAny> = {
+  value: T["_value"] extends Record<string, LiveTypeAny>
+    ? {
+        [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
+      }
+    : T["_value"];
+  _meta: T["_meta"];
+};
+
+// export type MaterializedLiveObject<T extends LiveObjectAny> =
+//   MaterializedLiveType<T> & {
+//     [K in keyof T["relations"]]: InferIndex<T["relations"][K]["entity"]>;
+//   };
 
 export const inferValue = <T extends LiveTypeAny>(
-  type: MaterializedLiveType<T>
-): InferLiveType<T> => {
+  type?: MaterializedLiveType<T>
+): InferLiveType<T> | undefined => {
+  if (!type) return undefined;
+
   if (Array.isArray(type.value))
     return (type.value as any[]).map((v) => inferValue(v)) as InferLiveType<T>;
+
   if (typeof type.value !== "object") return type.value;
 
   return Object.fromEntries(

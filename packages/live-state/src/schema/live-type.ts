@@ -9,6 +9,15 @@ export type MutationType = "set"; // | "delete"
 //   _meta?: keyof Meta extends string ? Meta : never;
 // } = { value: Value; _meta?: keyof Meta extends string ? Meta : never },
 
+export type StorageFieldType = {
+  type: string;
+  nullable: boolean;
+  default?: any;
+  unique?: boolean;
+  index?: boolean;
+  references?: string;
+};
+
 export abstract class LiveType<
   Value = any,
   Meta extends LiveTypeMeta = LiveTypeMeta,
@@ -41,6 +50,8 @@ export abstract class LiveType<
     encodedMutation: DecodeInput,
     materializedShape?: MaterializedLiveType<LiveType<Value, Meta>>
   ): [MaterializedLiveType<LiveType<Value, Meta>>, DecodeInput | null];
+
+  abstract getStorageFieldType(): StorageFieldType;
 }
 
 export type LiveTypeAny = LiveType<any, LiveTypeMeta, any, any>;

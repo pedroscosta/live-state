@@ -6,6 +6,7 @@ import {
   ServerRejectMessage,
   clientMessageSchema,
 } from "../core/internals";
+import { LiveObjectAny, MaterializedLiveType } from "../schema";
 
 export type Subscription = {
   filters?: Record<string, any>;
@@ -76,10 +77,12 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                   type: "SYNC",
                   resource: resourceName,
                   data: Object.fromEntries(
-                    Object.entries(result.data ?? {}).map(([id, v]) => [
-                      id,
-                      v.value,
-                    ])
+                    Object.entries(
+                      (result.data ?? {}) as Record<
+                        string,
+                        MaterializedLiveType<LiveObjectAny>
+                      >
+                    ).map(([id, v]) => [id, v.value])
                   ),
                 } satisfies ServerBootstrapMessage)
               );

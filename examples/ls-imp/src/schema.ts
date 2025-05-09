@@ -5,21 +5,23 @@
 import {
   createRelations,
   createSchema,
+  id,
   number,
   object,
+  reference,
   string,
 } from "@live-state/sync";
 
 const group = object("groups", {
-  id: string(),
+  id: id(),
   name: string(),
 });
 
 const card = object("cards", {
-  id: string(),
+  id: id(),
   name: string(),
   counter: number(),
-  groupId: string(),
+  groupId: reference("groups.id"),
 });
 
 /*

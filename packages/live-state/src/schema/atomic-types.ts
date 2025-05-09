@@ -1,5 +1,11 @@
 import { MaterializedLiveType } from ".";
-import { LiveType, LiveTypeAny, LiveTypeMeta, MutationType } from "./live-type";
+import {
+  LiveType,
+  LiveTypeAny,
+  LiveTypeMeta,
+  MutationType,
+  StorageFieldType,
+} from "./live-type";
 
 class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
   T["_value"] | undefined,
@@ -7,13 +13,21 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
   T["_encodeInput"],
   T["_decodeInput"]
 > {
+  readonly inner: T;
+
+  constructor(inner: T) {
+    super();
+    this.inner = inner;
+  }
+
   encodeMutation(
     mutationType: MutationType,
     input: T["_value"] | undefined,
     timestamp: string
-  ): string {
-    throw new Error("Method not implemented.");
+  ): T["_decodeInput"] {
+    return this.inner.encodeMutation(mutationType, input, timestamp);
   }
+
   mergeMutation(
     mutationType: MutationType,
     encodedMutation: T["_decodeInput"],
@@ -38,7 +52,28 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
     >,
     T["_decodeInput"] | null,
   ] {
-    throw new Error("Method not implemented.");
+    return this.inner.mergeMutation(
+      mutationType,
+      encodedMutation,
+      materializedShape
+    ) as [
+      MaterializedLiveType<
+        LiveType<
+          T["_value"] | undefined,
+          T["_meta"],
+          T["_value"] | Partial<T["_value"] | undefined>,
+          T["_decodeInput"]
+        >
+      >,
+      T["_decodeInput"] | null,
+    ];
+  }
+
+  getStorageFieldType(): StorageFieldType {
+    return {
+      ...this.inner.getStorageFieldType(),
+      nullable: true,
+    };
   }
 }
 
@@ -46,27 +81,41 @@ type LiveAtomicTypeMeta = {
   timestamp: string;
 } & LiveTypeMeta;
 
-abstract class LiveAtomicType<
-  Value = any,
-  Meta extends LiveAtomicTypeMeta = LiveAtomicTypeMeta,
-  EncodeInput = Partial<Value> | Value,
-> extends LiveType<Value, Meta, EncodeInput> {
-  constructor() {
+class LiveAtomicType<Value> extends LiveType<
+  Value,
+  LiveAtomicTypeMeta,
+  Value,
+  { value: Value; _meta: LiveAtomicTypeMeta }
+> {
+  readonly storageType: string;
+  readonly convertFunc?: (value: any) => Value;
+  readonly isIndex: boolean;
+  readonly isUnique: boolean;
+  readonly defaultValue?: Value;
+  readonly foreignReference?: string;
+
+  constructor(
+    storageType: string,
+    convertFunc?: (value: any) => Value,
+    index?: boolean,
+    unique?: boolean,
+    defaultValue?: Value,
+    references?: string
+  ) {
     super();
-    this.optional = this.optional.bind(this);
+    this.storageType = storageType;
+    this.convertFunc = convertFunc;
+    this.isIndex = index ?? false;
+    this.isUnique = unique ?? false;
+    this.defaultValue = defaultValue;
+    this.foreignReference = references;
   }
 
-  optional(): OptionalLiveType<this> {
-    return new OptionalLiveType<this>();
-  }
-}
-
-export class LiveNumber extends LiveAtomicType<number> {
   encodeMutation(
     mutationType: MutationType,
-    input: Partial<number>,
+    input: Value,
     timestamp: string
-  ) {
+  ): { value: Value; _meta: LiveAtomicTypeMeta } {
     return {
       value: input,
       _meta: {
@@ -77,11 +126,28 @@ export class LiveNumber extends LiveAtomicType<number> {
 
   mergeMutation(
     mutationType: MutationType,
-    encodedMutation: { value: number; _meta: { timestamp: string } },
-    materializedShape?: MaterializedLiveType<LiveNumber>
+    encodedMutation: {
+      value: Value;
+      _meta: LiveAtomicTypeMeta;
+    },
+    materializedShape?: MaterializedLiveType<
+      LiveType<
+        Value,
+        LiveAtomicTypeMeta,
+        Value | Partial<Value>,
+        { value: Value; _meta: LiveAtomicTypeMeta }
+      >
+    >
   ): [
-    MaterializedLiveType<LiveNumber>,
-    { value: number; _meta: { timestamp: string } } | null,
+    MaterializedLiveType<
+      LiveType<
+        Value,
+        LiveAtomicTypeMeta,
+        Value | Partial<Value>,
+        { value: Value; _meta: LiveAtomicTypeMeta }
+      >
+    >,
+    { value: Value; _meta: LiveAtomicTypeMeta } | null,
   ] {
     if (
       materializedShape &&
@@ -93,11 +159,71 @@ export class LiveNumber extends LiveAtomicType<number> {
 
     return [
       {
-        value: Number(encodedMutation.value),
+        value: (this.convertFunc
+          ? this.convertFunc(encodedMutation.value)
+          : encodedMutation.value) as MaterializedLiveType<
+          LiveType<
+            Value,
+            LiveAtomicTypeMeta,
+            Value | Partial<Value>,
+            { value: Value; _meta: LiveAtomicTypeMeta }
+          >
+        >["value"],
         _meta: encodedMutation._meta,
       },
       encodedMutation,
     ];
+  }
+
+  getStorageFieldType(): StorageFieldType {
+    return {
+      type: this.storageType,
+      nullable: false,
+      index: this.isIndex,
+      unique: this.isUnique,
+      default: this.defaultValue,
+      references: this.foreignReference,
+    };
+  }
+
+  unique() {
+    return new LiveAtomicType<Value>(
+      this.storageType,
+      this.convertFunc,
+      this.isIndex,
+      true,
+      this.defaultValue
+    );
+  }
+
+  index() {
+    return new LiveAtomicType<Value>(
+      this.storageType,
+      this.convertFunc,
+      true,
+      this.isUnique,
+      this.defaultValue
+    );
+  }
+
+  default(value: Value) {
+    return new LiveAtomicType<Value>(
+      this.storageType,
+      this.convertFunc,
+      this.isIndex,
+      this.isUnique,
+      value
+    );
+  }
+
+  optional(): OptionalLiveType<this> {
+    return new OptionalLiveType<this>(this);
+  }
+}
+
+export class LiveNumber extends LiveAtomicType<number> {
+  private constructor() {
+    super("integer", (value) => Number(value));
   }
 
   static create() {
@@ -106,43 +232,24 @@ export class LiveNumber extends LiveAtomicType<number> {
 }
 
 export const number = LiveNumber.create;
-
 export class LiveString extends LiveAtomicType<string> {
-  encodeMutation(
-    mutationType: MutationType,
-    input: Partial<string>,
-    timestamp: string
-  ) {
-    return {
-      value: input,
-      _meta: {
-        timestamp,
-      },
-    };
-  }
-
-  mergeMutation(
-    mutationType: MutationType,
-    encodedMutation: { value: string; _meta: { timestamp: string } },
-    materializedShape?: MaterializedLiveType<LiveString>
-  ): [
-    MaterializedLiveType<LiveString>,
-    { value: string; _meta: { timestamp: string } } | null,
-  ] {
-    if (
-      materializedShape &&
-      materializedShape._meta.timestamp.localeCompare(
-        encodedMutation._meta.timestamp
-      ) >= 0
-    )
-      return [materializedShape, null];
-
-    return [encodedMutation, encodedMutation];
+  private constructor(reference?: string) {
+    super("varchar", undefined, undefined, undefined, undefined, reference);
   }
 
   static create() {
     return new LiveString();
   }
+
+  static createId() {
+    return new LiveString().index().unique();
+  }
+
+  static createReference(foreignField: `${string}.${string}`) {
+    return new LiveString(foreignField);
+  }
 }
 
 export const string = LiveString.create;
+export const id = LiveString.createId;
+export const reference = LiveString.createReference;
