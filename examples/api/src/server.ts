@@ -1,5 +1,5 @@
 import {
-  InMemoryStorage,
+  KyselyStorage,
   server,
   webSocketAdapter,
 } from "@live-state/sync/server";
@@ -8,10 +8,15 @@ import cors from "cors";
 import express from "express";
 import expressWs from "express-ws";
 import morgan from "morgan";
+import { Pool } from "pg";
 
 const lsServer = server({
   router: routerImpl,
-  storage: new InMemoryStorage(),
+  storage: new KyselyStorage(
+    new Pool({
+      connectionString: "postgresql://admin:admin@localhost:5432/live-state",
+    })
+  ),
   schema,
 });
 
