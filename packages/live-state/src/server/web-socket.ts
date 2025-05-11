@@ -1,6 +1,7 @@
+import cookie from "cookie";
 import { nanoid } from "nanoid";
 import WebSocket from "ws";
-import { AnyRouter, ClientId, Server } from ".";
+import { AnyRouter, Server } from ".";
 import {
   ServerBootstrapMessage,
   ServerRejectMessage,
@@ -13,8 +14,8 @@ export type Subscription = {
 };
 
 export const webSocketAdapter = (server: Server<AnyRouter>) => {
-  const connections: Record<ClientId, WebSocket> = {};
-  const subscriptions: Record<string, Record<ClientId, Subscription>> = {};
+  const connections: Record<string, WebSocket> = {};
+  const subscriptions: Record<string, Record<string, Subscription>> = {};
 
   server.subscribeToMutations((m) => {
     console.log("Mutation propagated:", m);
@@ -26,13 +27,24 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     );
   });
 
-  return (ws: WebSocket) => {
+  return (ws: WebSocket, request: any) => {
     const clientId = nanoid();
 
-    // TODO add middlewares and ability to refuse connection
+    // TODO add ability to refuse connection
+
+    const requestContext: {
+      headers: Record<string, any>;
+      cookies: Record<string, any>;
+    } = {
+      headers: request.headers,
+      cookies:
+        typeof request.headers.cookie === "string"
+          ? cookie.parse(request.headers.cookie)
+          : {},
+    };
 
     connections[clientId] = ws;
-    console.log("Client connected:", clientId);
+    console.log("Client connected:", clientId, request);
 
     ws.on("message", async (message) => {
       try {
@@ -61,6 +73,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             resources.map(async (resourceName) => {
               const result = await server.handleRequest({
                 req: {
+                  req: requestContext,
                   type: "FIND",
                   resourceName,
                   context: {}, // TODO provide context
@@ -95,6 +108,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             const result = await server
               .handleRequest({
                 req: {
+                  req: requestContext,
                   type: "SET",
                   resourceName: resource,
                   payload: parsedMessage.payload,

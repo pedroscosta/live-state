@@ -1,14 +1,20 @@
 import { nanoid } from "nanoid";
 import { MutationMessage } from "../core/internals";
-import { Schema } from "../schema";
-import { AnyRouter } from "./router";
+import { LiveObjectAny, Schema } from "../schema";
+import { AnyRouter, RouteResult } from "./router";
 import { Storage } from "./storage";
 
 export * from "./router";
 export * from "./storage";
 export * from "./web-socket";
 
+type InnerRequest = {
+  headers: Record<string, string>;
+  cookies: Record<string, string>;
+};
+
 type RequestBase = {
+  req: InnerRequest;
   resourceName: string;
   context: Record<string, any>;
   where?: Record<string, any>;
@@ -30,10 +36,20 @@ export type RequestType = Request["type"];
 
 export type MutationHandler = (mutation: MutationMessage) => void;
 
+export type NextFunction = (
+  req: Request
+) => Promise<RouteResult<LiveObjectAny>> | RouteResult<LiveObjectAny>;
+
+export type Middleware = (opts: {
+  req: Request;
+  next: NextFunction;
+}) => ReturnType<NextFunction>;
+
 export class Server<TRouter extends AnyRouter> {
   readonly router: TRouter;
   readonly storage: Storage;
   readonly schema: Schema<any>;
+  readonly middlewares: Set<Middleware> = new Set();
 
   private mutationSubscriptions: Set<MutationHandler> = new Set();
 
@@ -66,12 +82,20 @@ export class Server<TRouter extends AnyRouter> {
   }
 
   public async handleRequest(opts: { req: Request }) {
-    const result = await this.router.routes[
-      opts.req.resourceName
-    ]?.handleRequest({
-      req: opts.req,
-      db: this.storage,
-    });
+    if (!this.router.routes[opts.req.resourceName]) {
+      throw new Error("Invalid resource");
+    }
+
+    const result = await Array.from(this.middlewares.values()).reduceRight(
+      (next, middleware) => {
+        return (req) => middleware({ req, next });
+      },
+      (async (req) =>
+        this.router.routes[opts.req.resourceName]!.handleRequest({
+          req,
+          db: this.storage,
+        })) as NextFunction
+    )(opts.req);
 
     if (
       result &&
@@ -79,7 +103,6 @@ export class Server<TRouter extends AnyRouter> {
       result.acceptedValues &&
       Object.keys(result.acceptedValues).length > 0
     ) {
-      // TODO handle partial updates
       this.mutationSubscriptions.forEach((handler) => {
         handler({
           _id: opts.req.context.messageId ?? nanoid(),
@@ -92,6 +115,11 @@ export class Server<TRouter extends AnyRouter> {
     }
 
     return result;
+  }
+
+  public use(middleware: Middleware) {
+    this.middlewares.add(middleware);
+    return this;
   }
 }
 

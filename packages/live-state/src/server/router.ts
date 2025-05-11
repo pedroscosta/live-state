@@ -1,7 +1,7 @@
 import { FindRequest, Request, SetRequest, Storage } from ".";
 import { LiveObjectAny, MaterializedLiveType, Schema } from "../schema";
 
-export type RouteRecord = Record<string, Route<LiveObjectAny> | undefined>;
+export type RouteRecord = Record<string, Route<LiveObjectAny>>;
 
 export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
@@ -17,7 +17,7 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Partial<Record<keyof TSchema, Route<LiveObjectAny>>>,
+  TRoutes extends Record<keyof TSchema, Route<LiveObjectAny>>, // TODO Make this partial
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
@@ -25,7 +25,7 @@ export const router = <
 
 export type AnyRouter = Router<RouteRecord>;
 
-type RouteResult<TShape extends LiveObjectAny> = {
+export type RouteResult<TShape extends LiveObjectAny> = {
   data:
     | MaterializedLiveType<TShape>
     | Record<string, MaterializedLiveType<TShape>>;
