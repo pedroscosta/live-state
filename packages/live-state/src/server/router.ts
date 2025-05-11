@@ -1,7 +1,14 @@
-import { FindRequest, Request, SetRequest, Storage } from ".";
+import {
+  FindRequest,
+  Middleware,
+  NextFunction,
+  Request,
+  SetRequest,
+  Storage,
+} from ".";
 import { LiveObjectAny, MaterializedLiveType, Schema } from "../schema";
 
-export type RouteRecord = Record<string, Route<LiveObjectAny>>;
+export type RouteRecord = Record<string, AnyRoute>;
 
 export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
@@ -17,7 +24,7 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Record<keyof TSchema, Route<LiveObjectAny>>, // TODO Make this partial
+  TRoutes extends Record<keyof TSchema, AnyRoute>, // TODO Make this partial
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
@@ -32,11 +39,16 @@ export type RouteResult<TShape extends LiveObjectAny> = {
   acceptedValues: Record<string, any> | null;
 };
 
-export class Route<TShape extends LiveObjectAny> {
+export class Route<
+  TShape extends LiveObjectAny,
+  TMiddleware extends Middleware<RouteResult<TShape>>,
+> {
   readonly shape: TShape;
+  readonly middlewares: Set<TMiddleware>;
 
   public constructor(shape: TShape) {
     this.shape = shape;
+    this.middlewares = new Set();
   }
 
   private async handleFind(opts: {
@@ -91,19 +103,40 @@ export class Route<TShape extends LiveObjectAny> {
     req: Request;
     db: Storage;
   }): Promise<RouteResult<TShape>> {
-    switch (opts.req.type) {
-      case "FIND":
-        return this.handleFind(opts as { req: FindRequest; db: Storage });
-      case "SET":
-        return this.handleSet(opts as { req: SetRequest; db: Storage });
-      default:
-        throw new Error("Invalid request type");
-    }
+    const next = (req: Request) => {
+      switch (opts.req.type) {
+        case "FIND":
+          return this.handleFind({
+            req: req as FindRequest,
+            db: opts.db,
+          });
+        case "SET":
+          return this.handleSet({
+            req: req as SetRequest,
+            db: opts.db,
+          });
+        default:
+          throw new Error("Invalid request type");
+      }
+    };
+
+    return await Array.from(this.middlewares.values()).reduceRight(
+      (next, middleware) => {
+        return (req) => middleware({ req, next });
+      },
+      (async (req) => next(req)) as NextFunction<RouteResult<TShape>>
+    )(opts.req);
+  }
+
+  public use(middleware: TMiddleware) {
+    this.middlewares.add(middleware);
+    return this;
   }
 }
 
 export const routeFactory = () => {
-  return <T extends LiveObjectAny>(shape: T) => new Route<T>(shape);
+  return <T extends LiveObjectAny>(shape: T) =>
+    new Route<T, Middleware<RouteResult<T>>>(shape);
 };
 
-export type AnyRoute = Route<LiveObjectAny>;
+export type AnyRoute = Route<LiveObjectAny, Middleware<any>>;

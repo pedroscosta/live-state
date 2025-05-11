@@ -44,7 +44,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     };
 
     connections[clientId] = ws;
-    console.log("Client connected:", clientId, request);
+    console.log("Client connected:", clientId);
 
     ws.on("message", async (message) => {
       try {

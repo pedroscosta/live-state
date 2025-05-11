@@ -36,20 +36,18 @@ export type RequestType = Request["type"];
 
 export type MutationHandler = (mutation: MutationMessage) => void;
 
-export type NextFunction = (
-  req: Request
-) => Promise<RouteResult<LiveObjectAny>> | RouteResult<LiveObjectAny>;
+export type NextFunction<T> = (req: Request) => Promise<T> | T;
 
-export type Middleware = (opts: {
+export type Middleware<T> = (opts: {
   req: Request;
-  next: NextFunction;
-}) => ReturnType<NextFunction>;
+  next: NextFunction<T>;
+}) => ReturnType<NextFunction<T>>;
 
 export class Server<TRouter extends AnyRouter> {
   readonly router: TRouter;
   readonly storage: Storage;
   readonly schema: Schema<any>;
-  readonly middlewares: Set<Middleware> = new Set();
+  readonly middlewares: Set<Middleware<RouteResult<LiveObjectAny>>> = new Set();
 
   private mutationSubscriptions: Set<MutationHandler> = new Set();
 
@@ -94,7 +92,7 @@ export class Server<TRouter extends AnyRouter> {
         this.router.routes[opts.req.resourceName]!.handleRequest({
           req,
           db: this.storage,
-        })) as NextFunction
+        })) as NextFunction<RouteResult<LiveObjectAny>>
     )(opts.req);
 
     if (
@@ -117,7 +115,7 @@ export class Server<TRouter extends AnyRouter> {
     return result;
   }
 
-  public use(middleware: Middleware) {
+  public use(middleware: Middleware<RouteResult<LiveObjectAny>>) {
     this.middlewares.add(middleware);
     return this;
   }
