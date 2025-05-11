@@ -307,24 +307,6 @@ export const createRelations = <
   };
 };
 
-// export type MaterializedLiveType<T extends LiveTypeAny> =
-//   keyof T["_meta"] extends never
-//     ? {
-//         value: T["_value"] extends Record<string, LiveTypeAny>
-//           ? {
-//               [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
-//             }
-//           : T["_value"];
-//       }
-//     : {
-//         value: T["_value"] extends Record<string, LiveTypeAny>
-//           ? {
-//               [K in keyof T["_value"]]: MaterializedLiveType<T["_value"][K]>;
-//             }
-//           : T["_value"];
-//         _meta: T["_meta"];
-//       };
-
 export type MaterializedLiveType<T extends LiveTypeAny> = {
   value: T["_value"] extends Record<string, LiveTypeAny>
     ? {
@@ -333,11 +315,6 @@ export type MaterializedLiveType<T extends LiveTypeAny> = {
     : T["_value"];
   _meta: T["_meta"];
 };
-
-// export type MaterializedLiveObject<T extends LiveObjectAny> =
-//   MaterializedLiveType<T> & {
-//     [K in keyof T["relations"]]: InferIndex<T["relations"][K]["entity"]>;
-//   };
 
 export const inferValue = <T extends LiveTypeAny>(
   type?: MaterializedLiveType<T>
@@ -443,4 +420,10 @@ export const createSchema = <TRawSchema extends RawSchema>(
       return [[retVal.name, retVal]];
     })
   ) as Schema<TRawSchema>;
+};
+
+export type WhereClause<T extends LiveObjectAny> = {
+  [K in keyof T["fields"]]?: InferLiveType<T["fields"][K]>;
+} & {
+  [K in keyof T["relations"]]?: WhereClause<T["relations"][K]["entity"]>;
 };

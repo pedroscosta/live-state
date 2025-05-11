@@ -22,7 +22,7 @@ export function Board(): JSX.Element {
         onClick={() => {
           store.groups.insert({
             id: nanoid(),
-            name: "New Group",
+            name: `New Group ${Object.keys(groups ?? {}).length + 1}`,
           });
         }}
       >
