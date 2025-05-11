@@ -15,6 +15,7 @@ export type StorageFieldType = {
   default?: any;
   unique?: boolean;
   index?: boolean;
+  primary?: boolean;
   references?: string;
 };
 

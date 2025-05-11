@@ -1,8 +1,4 @@
-import {
-  KyselyStorage,
-  server,
-  webSocketAdapter,
-} from "@live-state/sync/server";
+import { SQLStorage, server, webSocketAdapter } from "@live-state/sync/server";
 import { routerImpl, schema } from "@repo/ls-impl";
 import cors from "cors";
 import express from "express";
@@ -12,7 +8,7 @@ import { Pool } from "pg";
 
 const lsServer = server({
   router: routerImpl,
-  storage: new KyselyStorage(
+  storage: new SQLStorage(
     new Pool({
       connectionString: "postgresql://admin:admin@localhost:5432/live-state",
     })

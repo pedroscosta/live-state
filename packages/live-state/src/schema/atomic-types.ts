@@ -93,6 +93,7 @@ class LiveAtomicType<Value> extends LiveType<
   readonly isUnique: boolean;
   readonly defaultValue?: Value;
   readonly foreignReference?: string;
+  readonly isPrimary: boolean;
 
   constructor(
     storageType: string,
@@ -100,7 +101,8 @@ class LiveAtomicType<Value> extends LiveType<
     index?: boolean,
     unique?: boolean,
     defaultValue?: Value,
-    references?: string
+    references?: string,
+    primary?: boolean
   ) {
     super();
     this.storageType = storageType;
@@ -109,6 +111,7 @@ class LiveAtomicType<Value> extends LiveType<
     this.isUnique = unique ?? false;
     this.defaultValue = defaultValue;
     this.foreignReference = references;
+    this.isPrimary = primary ?? false;
   }
 
   encodeMutation(
@@ -183,6 +186,7 @@ class LiveAtomicType<Value> extends LiveType<
       unique: this.isUnique,
       default: this.defaultValue,
       references: this.foreignReference,
+      primary: this.isPrimary,
     };
   }
 
@@ -192,7 +196,9 @@ class LiveAtomicType<Value> extends LiveType<
       this.convertFunc,
       this.isIndex,
       true,
-      this.defaultValue
+      this.defaultValue,
+      this.foreignReference,
+      this.isPrimary
     );
   }
 
@@ -202,7 +208,9 @@ class LiveAtomicType<Value> extends LiveType<
       this.convertFunc,
       true,
       this.isUnique,
-      this.defaultValue
+      this.defaultValue,
+      this.foreignReference,
+      this.isPrimary
     );
   }
 
@@ -212,7 +220,21 @@ class LiveAtomicType<Value> extends LiveType<
       this.convertFunc,
       this.isIndex,
       this.isUnique,
-      value
+      value,
+      this.foreignReference,
+      this.isPrimary
+    );
+  }
+
+  primary() {
+    return new LiveAtomicType<Value>(
+      this.storageType,
+      this.convertFunc,
+      this.isIndex,
+      this.isUnique,
+      this.defaultValue,
+      this.foreignReference,
+      true
     );
   }
 
@@ -242,7 +264,7 @@ export class LiveString extends LiveAtomicType<string> {
   }
 
   static createId() {
-    return new LiveString().index().unique();
+    return new LiveString().index().unique().primary();
   }
 
   static createReference(foreignField: `${string}.${string}`) {

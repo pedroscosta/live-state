@@ -71,7 +71,7 @@ export class InMemoryStorage extends Storage {
   }
 }
 
-export class KyselyStorage extends Storage {
+export class SQLStorage extends Storage {
   private db: Kysely<{ [x: string]: Selectable<any> }>;
 
   public constructor(pool: PostgresPool) {
@@ -81,29 +81,6 @@ export class KyselyStorage extends Storage {
         pool,
       }),
     });
-  }
-
-  private convertToMaterializedLiveType<T extends LiveObjectAny>(
-    value: Record<string, any>,
-    meta: Record<string, string> | undefined
-  ): MaterializedLiveType<T> {
-    return {
-      value: Object.fromEntries(
-        Object.entries(value).flatMap(([key, val]) => {
-          if (!meta) return [];
-
-          return [
-            [
-              key,
-              {
-                value: val,
-                _meta: { timestamp: meta?.[key] },
-              },
-            ],
-          ];
-        })
-      ) as unknown as MaterializedLiveType<T>["value"],
-    } as MaterializedLiveType<T>;
   }
 
   public async updateSchema(opts: Schema<any>): Promise<void> {
@@ -133,13 +110,40 @@ export class KyselyStorage extends Storage {
           await this.db.schema
             .alterTable(resourceName)
             .addColumn(columnName, storageFieldType.type as any, (c) => {
-              return storageFieldType.nullable ? c : c.notNull();
+              let builder = c;
+
+              if (storageFieldType.unique) {
+                builder = builder.unique();
+              }
+
+              if (!storageFieldType.nullable) {
+                builder = builder.notNull();
+              }
+
+              if (storageFieldType.references) {
+                builder = builder.references(storageFieldType.references);
+              }
+
+              if (storageFieldType.primary) {
+                builder = builder.primaryKey();
+              }
+
+              return builder;
             })
             .execute()
             .catch((e) => {
               console.error("Error adding column", columnName, e);
               throw e;
             });
+
+          if (storageFieldType.index) {
+            await this.db.schema
+              .createIndex(`${resourceName}_${columnName}_index`)
+              .on(resourceName)
+              .column(columnName)
+              .execute()
+              .catch((e) => {});
+          }
         } else if (tableColumn.dataType !== storageFieldType.type) {
           console.error(
             "Column type mismatch:",
@@ -151,38 +155,6 @@ export class KyselyStorage extends Storage {
           );
         }
 
-        if (storageFieldType.index) {
-          let indexBuilder = this.db.schema
-            .createIndex(`${resourceName}_${columnName}_index`)
-            .on(resourceName)
-            .column(columnName);
-
-          if (storageFieldType.unique) {
-            indexBuilder = indexBuilder.unique();
-          }
-
-          await indexBuilder.execute().catch((e) => {
-            // this is expected to fail if the index already exists
-          });
-        }
-
-        if (storageFieldType.references) {
-          const [referenceTable, referenceColumn] =
-            storageFieldType.references.split(".");
-          await this.db.schema
-            .alterTable(resourceName)
-            .addForeignKeyConstraint(
-              `${resourceName}_${columnName}_fk`,
-              [columnName],
-              referenceTable,
-              [referenceColumn]
-            )
-            .execute()
-            .catch((e) => {
-              // this is expected to fail if the index already exists
-            });
-        }
-
         const columnMeta = tableMeta?.columns.find(
           (column) => column.name === columnName
         );
@@ -190,35 +162,18 @@ export class KyselyStorage extends Storage {
         if (!columnMeta) {
           await this.db.schema
             .alterTable(tableMetaName)
-            .addColumn(columnName, "varchar")
+            .addColumn(columnName, "varchar", (c) => {
+              let builder = c;
+
+              if (storageFieldType.primary) {
+                builder = builder
+                  .primaryKey()
+                  .references(`${resourceName}.${columnName}`);
+              }
+
+              return builder;
+            })
             .execute();
-        }
-        if (storageFieldType.index) {
-          let indexBuilder = this.db.schema
-            .createIndex(`${tableMetaName}_${columnName}_index`)
-            .on(tableMetaName)
-            .column(columnName);
-
-          if (storageFieldType.unique) {
-            indexBuilder = indexBuilder.unique();
-          }
-
-          await indexBuilder.execute().catch((e) => {
-            // this is expected to fail if the index already exists
-          });
-
-          await this.db.schema
-            .alterTable(resourceName)
-            .addForeignKeyConstraint(
-              `${tableMetaName}_${columnName}_fk`,
-              [columnName],
-              resourceName,
-              [columnName]
-            )
-            .execute()
-            .catch((e) => {
-              // this is expected to fail if the index already exists
-            });
         }
       }
     }
@@ -339,5 +294,28 @@ export class KyselyStorage extends Storage {
     });
 
     return value;
+  }
+
+  private convertToMaterializedLiveType<T extends LiveObjectAny>(
+    value: Record<string, any>,
+    meta: Record<string, string> | undefined
+  ): MaterializedLiveType<T> {
+    return {
+      value: Object.fromEntries(
+        Object.entries(value).flatMap(([key, val]) => {
+          if (!meta) return [];
+
+          return [
+            [
+              key,
+              {
+                value: val,
+                _meta: { timestamp: meta?.[key] },
+              },
+            ],
+          ];
+        })
+      ) as unknown as MaterializedLiveType<T>["value"],
+    } as MaterializedLiveType<T>;
   }
 }
