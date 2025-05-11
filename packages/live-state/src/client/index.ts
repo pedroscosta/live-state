@@ -405,16 +405,12 @@ export type Client<TRouter extends AnyRouter> = {
   store: Observable<ClientState<TRouter>> & {
     [K in keyof TRouter["routes"]]: {
       insert: (
-        input: Simplify<
-          LiveObjectMutationInput<TRouter["routes"][K]["shape"]>
-        >["value"]
+        input: Simplify<LiveObjectMutationInput<TRouter["routes"][K]["shape"]>>
       ) => void;
       update: (
         id: string,
         value: Omit<
-          Simplify<
-            LiveObjectMutationInput<TRouter["routes"][K]["shape"]>
-          >["value"],
+          Simplify<LiveObjectMutationInput<TRouter["routes"][K]["shape"]>>,
           "id"
         >
       ) => void;
