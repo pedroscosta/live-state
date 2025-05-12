@@ -202,9 +202,6 @@ importers:
       kysely:
         specifier: ^0.28.2
         version: 0.28.2
-      nanoid:
-        specifier: ^5.0.9
-        version: 5.1.5
       ws:
         specifier: ^8.18.0
         version: 8.18.1
@@ -233,6 +230,9 @@ importers:
       typescript:
         specifier: 5.5.4
         version: 5.5.4
+      ulid:
+        specifier: ^3.0.0
+        version: 3.0.0
 
 packages:
 
@@ -1785,6 +1785,10 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  ulid@3.0.0:
+    resolution: {integrity: sha512-yvZYdXInnJve6LdlPIuYmURdS2NP41ZoF4QW7SXwbUKYt53+0eDAySO+rGSvM2O/ciuB/G+8N7GQrZ1mCJpuqw==}
+    hasBin: true
+
   undici-types@6.19.8:
     resolution: {integrity: sha512-ve2KP6f/JnbPBFyobGHuerC9g1FYGn/F8n1LWTwNxCEzd6IfqTwUQcNXgEtmmQ6DlRrC1hrSrBnCZPokRrDHjw==}
 
@@ -3266,6 +3270,8 @@ snapshots:
       mime-types: 2.1.35
 
   typescript@5.5.4: {}
+
+  ulid@3.0.0: {}
 
   undici-types@6.19.8: {}
 
