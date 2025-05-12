@@ -39,45 +39,54 @@ export type RouteResult<TShape extends LiveObjectAny> = {
   acceptedValues: Record<string, any> | null;
 };
 
+export type RequestHandler<
+  TResourceSchema extends LiveObjectAny,
+  TSchema extends Schema<any> = Schema<any>,
+> = (opts: {
+  req: Request;
+  db: Storage;
+  schema: TSchema;
+}) => Promise<RouteResult<TResourceSchema>>;
+
 export class Route<
-  TShape extends LiveObjectAny,
-  TMiddleware extends Middleware<RouteResult<TShape>>,
+  TResourceSchema extends LiveObjectAny,
+  TMiddleware extends Middleware<RouteResult<TResourceSchema>>,
 > {
-  readonly shape: TShape;
+  readonly _resourceSchema!: TResourceSchema;
+  readonly resourceName: TResourceSchema["name"];
   readonly middlewares: Set<TMiddleware>;
 
-  public constructor(shape: TShape) {
-    this.shape = shape;
+  public constructor(resourceName: TResourceSchema["name"]) {
+    this.resourceName = resourceName;
     this.middlewares = new Set();
   }
 
-  private async handleFind(opts: {
-    req: FindRequest;
-    db: Storage;
-  }): Promise<RouteResult<TShape>> {
+  private handleFind: RequestHandler<TResourceSchema> = async ({ req, db }) => {
     return {
-      data: await opts.db.find<TShape>(opts.req.resourceName, opts.req.where),
+      data: await db.find<TResourceSchema>(req.resourceName, req.where),
       acceptedValues: null,
     };
-  }
+  };
 
-  private async handleSet(opts: {
-    req: SetRequest;
-    db: Storage;
-  }): Promise<RouteResult<TShape>> {
-    if (!opts.req.payload) throw new Error("Payload is required");
-    if (!opts.req.resourceId) throw new Error("ResourceId is required");
+  private handleSet: RequestHandler<TResourceSchema> = async ({
+    req: _req,
+    db,
+    schema,
+  }) => {
+    const req = _req as SetRequest;
+    if (!req.payload) throw new Error("Payload is required");
+    if (!req.resourceId) throw new Error("ResourceId is required");
 
-    const target = await opts.db.findById<TShape>(
-      opts.req.resourceName,
-      opts.req.resourceId
+    const target = await db.findById<TResourceSchema>(
+      req.resourceName,
+      req.resourceId
     );
 
-    // Handle where clause in the stored data, in the payload and in the final result
+    // TODO Handle where clause in the stored data, in the payload and in the final result
 
-    const [newRecord, acceptedValues] = this.shape.mergeMutation(
+    const [newRecord, acceptedValues] = schema[this.resourceName].mergeMutation(
       "set",
-      opts.req.payload,
+      req.payload,
       target
     );
 
@@ -90,30 +99,33 @@ export class Route<
     }
 
     return {
-      data: await opts.db.upsert<TShape>(
-        opts.req.resourceName,
-        opts.req.resourceId,
+      data: await db.upsert<TResourceSchema>(
+        req.resourceName,
+        req.resourceId,
         newRecord
       ),
       acceptedValues,
     };
-  }
+  };
 
   public async handleRequest(opts: {
     req: Request;
     db: Storage;
-  }): Promise<RouteResult<TShape>> {
+    schema: Schema<any>;
+  }): Promise<RouteResult<TResourceSchema>> {
     const next = (req: Request) => {
       switch (opts.req.type) {
         case "FIND":
           return this.handleFind({
             req: req as FindRequest,
             db: opts.db,
+            schema: opts.schema,
           });
         case "SET":
           return this.handleSet({
             req: req as SetRequest,
             db: opts.db,
+            schema: opts.schema,
           });
         default:
           throw new Error("Invalid request type");
@@ -124,7 +136,7 @@ export class Route<
       (next, middleware) => {
         return (req) => middleware({ req, next });
       },
-      (async (req) => next(req)) as NextFunction<RouteResult<TShape>>
+      (async (req) => next(req)) as NextFunction<RouteResult<TResourceSchema>>
     )(opts.req);
   }
 
@@ -136,7 +148,7 @@ export class Route<
 
 export const routeFactory = () => {
   return <T extends LiveObjectAny>(shape: T) =>
-    new Route<T, Middleware<RouteResult<T>>>(shape);
+    new Route<T, Middleware<RouteResult<T>>>(shape.name);
 };
 
 export type AnyRoute = Route<LiveObjectAny, Middleware<any>>;

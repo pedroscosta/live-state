@@ -92,6 +92,7 @@ export class Server<TRouter extends AnyRouter> {
         this.router.routes[opts.req.resourceName]!.handleRequest({
           req,
           db: this.storage,
+          schema: this.schema,
         })) as NextFunction<RouteResult<LiveObjectAny>>
     )(opts.req);
 

@@ -31,8 +31,8 @@ export type RawObjPool = Record<
 export type ClientState<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]:
     | Record<
-        InferIndex<TRouter["routes"][K]["shape"]>,
-        InferLiveObject<TRouter["routes"][K]["shape"]>
+        InferIndex<TRouter["routes"][K]["_resourceSchema"]>,
+        InferLiveObject<TRouter["routes"][K]["_resourceSchema"]>
       >
     | undefined;
 };
@@ -405,12 +405,16 @@ export type Client<TRouter extends AnyRouter> = {
   store: Observable<ClientState<TRouter>> & {
     [K in keyof TRouter["routes"]]: {
       insert: (
-        input: Simplify<LiveObjectMutationInput<TRouter["routes"][K]["shape"]>>
+        input: Simplify<
+          LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
+        >
       ) => void;
       update: (
         id: string,
         value: Omit<
-          Simplify<LiveObjectMutationInput<TRouter["routes"][K]["shape"]>>,
+          Simplify<
+            LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
+          >,
           "id"
         >
       ) => void;
@@ -465,7 +469,9 @@ export const createClient = <TRouter extends AnyRouter>(
             if (lastSegment === "insert")
               return (
                 input: Simplify<
-                  LiveObjectMutationInput<TRouter["routes"][string]["shape"]>
+                  LiveObjectMutationInput<
+                    TRouter["routes"][string]["_resourceSchema"]
+                  >
                 >["value"]
               ) => {
                 const { id, ...rest } = input;
@@ -478,7 +484,7 @@ export const createClient = <TRouter extends AnyRouter>(
                   Omit<
                     Simplify<
                       LiveObjectMutationInput<
-                        TRouter["routes"][string]["shape"]
+                        TRouter["routes"][string]["_resourceSchema"]
                       >
                     >["value"],
                     "id"

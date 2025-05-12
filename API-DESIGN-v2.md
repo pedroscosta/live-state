@@ -106,6 +106,12 @@ A `RouteFactory` is a function that returns a `Route`.
 
 **Examples**
 
+This is an example of a `RouteFactory` declaration:
+
+```typescript
+export const routeFactory = createDefaultRouteFactory(schema);
+```
+
 This is an example of a `RouteFactory` declaration that extends the default route factory with a middleware:
 
 ```typescript
