@@ -121,22 +121,17 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           const { resource } = parsedMessage;
           console.log("Received mutation from client:", parsedMessage);
           try {
-            const result = await server
-              .handleRequest({
-                req: {
-                  ...requestContext,
-                  type: "MUTATE",
-                  resourceName: resource,
-                  input: parsedMessage.payload,
-                  context: { messageId: parsedMessage.id }, // TODO provide context
-                  resourceId: (parsedMessage as DefaultMutation).resourceId,
-                  procedure: (parsedMessage as GenericMutation).procedure,
-                },
-              })
-              .catch((e) => {
-                console.error("Error handling mutation from the client:", e);
-                return null;
-              });
+            const result = await server.handleRequest({
+              req: {
+                ...requestContext,
+                type: "MUTATE",
+                resourceName: resource,
+                input: parsedMessage.payload,
+                context: { messageId: parsedMessage.id }, // TODO provide context
+                resourceId: (parsedMessage as DefaultMutation).resourceId,
+                procedure: (parsedMessage as GenericMutation).procedure,
+              },
+            });
 
             if ((parsedMessage as GenericMutation).procedure) {
               reply({
