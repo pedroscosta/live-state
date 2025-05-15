@@ -32,47 +32,54 @@ export const router = <
 
 export type AnyRouter = Router<RouteRecord>;
 
-export type RouteResult<TShape extends LiveObjectAny> = {
-  data:
-    | MaterializedLiveType<TShape>
-    | Record<string, MaterializedLiveType<TShape>>;
+export type QueryResult<TShape extends LiveObjectAny> = {
+  data: Record<string, MaterializedLiveType<TShape>>;
+};
+
+export type MutationResult<TShape extends LiveObjectAny> = {
+  data: MaterializedLiveType<TShape>;
   acceptedValues: Record<string, any> | null;
 };
 
 export type RequestHandler<
   TResourceSchema extends LiveObjectAny,
+  TResult,
   TSchema extends Schema<any> = Schema<any>,
-> = (opts: {
-  req: Request;
-  db: Storage;
-  schema: TSchema;
-}) => Promise<RouteResult<TResourceSchema>>;
+> = (opts: { req: Request; db: Storage; schema: TSchema }) => Promise<TResult>;
 
 export class Route<
   TResourceSchema extends LiveObjectAny,
-  TMiddleware extends Middleware<RouteResult<TResourceSchema>>,
+  TMiddleware extends Middleware<any>,
+  TCustomMutations extends Record<string, RequestHandler<TResourceSchema, any>>,
 > {
   readonly _resourceSchema!: TResourceSchema;
   readonly resourceName: TResourceSchema["name"];
   readonly middlewares: Set<TMiddleware>;
+  readonly customMutations: TCustomMutations;
 
-  public constructor(resourceName: TResourceSchema["name"]) {
+  public constructor(
+    resourceName: TResourceSchema["name"],
+    customMutations?: TCustomMutations
+  ) {
     this.resourceName = resourceName;
     this.middlewares = new Set();
+    this.customMutations = customMutations ?? ({} as TCustomMutations);
   }
 
-  private handleFind: RequestHandler<TResourceSchema> = async ({ req, db }) => {
+  private handleFind: RequestHandler<
+    TResourceSchema,
+    QueryResult<TResourceSchema>
+  > = async ({ req, db }) => {
     return {
       data: await db.find<TResourceSchema>(req.resourceName, req.where),
       acceptedValues: null,
     };
   };
 
-  private handleSet: RequestHandler<TResourceSchema> = async ({
-    req: _req,
-    db,
-    schema,
-  }) => {
+  private handleSet: RequestHandler<
+    TResourceSchema,
+    MutationResult<TResourceSchema>
+  > = async ({ req: _req, db, schema }) => {
     const req = _req as SetRequest;
     if (!req.payload) throw new Error("Payload is required");
     if (!req.resourceId) throw new Error("ResourceId is required");
@@ -91,11 +98,7 @@ export class Route<
     );
 
     if (!acceptedValues) {
-      if (!target) throw new Error("Mutation rejected");
-      return {
-        data: target,
-        acceptedValues: null,
-      };
+      throw new Error("Mutation rejected");
     }
 
     return {
@@ -112,31 +115,39 @@ export class Route<
     req: Request;
     db: Storage;
     schema: Schema<any>;
-  }): Promise<RouteResult<TResourceSchema>> {
-    const next = (req: Request) => {
-      switch (opts.req.type) {
-        case "FIND":
+  }): Promise<any> {
+    const next = (req: Request) =>
+      (() => {
+        if (req.type === "QUERY") {
           return this.handleFind({
             req: req as FindRequest,
             db: opts.db,
             schema: opts.schema,
           });
-        case "SET":
-          return this.handleSet({
-            req: req as SetRequest,
-            db: opts.db,
-            schema: opts.schema,
-          });
-        default:
-          throw new Error("Invalid request type");
-      }
-    };
+        } else if (req.type === "MUTATE") {
+          if (!req.procedure) {
+            return this.handleSet({
+              req: req as SetRequest,
+              db: opts.db,
+              schema: opts.schema,
+            });
+          } else if (this.customMutations[req.procedure]) {
+            return this.customMutations[req.procedure]({
+              req: req as SetRequest,
+              db: opts.db,
+              schema: opts.schema,
+            });
+          }
+        }
+
+        throw new Error("Invalid request");
+      })();
 
     return await Array.from(this.middlewares.values()).reduceRight(
       (next, middleware) => {
         return (req) => middleware({ req, next });
       },
-      (async (req) => next(req)) as NextFunction<RouteResult<TResourceSchema>>
+      (async (req) => next(req)) as NextFunction<any>
     )(opts.req);
   }
 
@@ -144,11 +155,24 @@ export class Route<
     this.middlewares.add(middleware);
     return this;
   }
+
+  public withMutations(
+    mutations: Record<string, RequestHandler<TResourceSchema, any>>
+  ) {
+    return new Route<TResourceSchema, TMiddleware, typeof mutations>(
+      this.resourceName,
+      mutations
+    );
+  }
 }
 
 export const routeFactory = () => {
   return <T extends LiveObjectAny>(shape: T) =>
-    new Route<T, Middleware<RouteResult<T>>>(shape.name);
+    new Route<T, Middleware<any>, Record<string, never>>(shape.name);
 };
 
-export type AnyRoute = Route<LiveObjectAny, Middleware<any>>;
+export type AnyRoute = Route<
+  LiveObjectAny,
+  Middleware<any>,
+  Record<string, any>
+>;

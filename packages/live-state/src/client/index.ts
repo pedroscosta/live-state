@@ -1,9 +1,10 @@
-import { nanoid } from "nanoid";
 import {
   ClientMessage,
+  DefaultMutationMessage,
   MutationMessage,
   serverMessageSchema,
-} from "../core/internals";
+} from "../core/schemas/web-socket";
+import { generateId } from "../core/utils";
 import {
   InferIndex,
   InferLiveObject,
@@ -43,7 +44,8 @@ class InnerClient {
   public readonly schema: Schema<any>;
 
   private rawObjPool: RawObjPool = {} as RawObjPool;
-  private optimisticMutationStack: Record<string, MutationMessage[]> = {};
+  private optimisticMutationStack: Record<string, DefaultMutationMessage[]> =
+    {};
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
@@ -69,16 +71,16 @@ class InnerClient {
     this.ws.addEventListener("connectionChange", (e) => {
       if (e.open) {
         this.sendWsMessage({
-          _id: nanoid(),
+          id: generateId(),
           type: "SYNC",
-          // TODO lastSyncedAt
+          // TODO add lastSyncedAt
         });
 
         Object.entries(this.routeSubscriptions).forEach(
           ([routeName, count]) => {
             if (count > 0) {
               this.sendWsMessage({
-                _id: nanoid(),
+                id: generateId(),
                 type: "SUBSCRIBE",
                 resource: routeName,
               });
@@ -136,7 +138,9 @@ class InnerClient {
 
         Object.entries(data).forEach(([id, payload]) => {
           this.addMutation(resource, {
-            _id: id,
+            // this id is not used because only this client will see this mutation, so it can be any unique string
+            // since resource's ids are already unique, there is no need to generate a new id
+            id,
             type: "MUTATE",
             resource,
             resourceId: id,
@@ -161,7 +165,7 @@ class InnerClient {
       (this.routeSubscriptions[routeName] ?? 0) + 1;
 
     this.sendWsMessage({
-      _id: nanoid(),
+      id: generateId(),
       type: "SUBSCRIBE",
       resource: routeName,
     });
@@ -206,7 +210,7 @@ class InnerClient {
     >
   ) {
     const mutationMessage: MutationMessage = {
-      _id: nanoid(),
+      id: generateId(),
       type: "MUTATE",
       resource: routeName,
       payload: this.schema[routeName].encodeMutation(
@@ -228,7 +232,7 @@ class InnerClient {
 
   private addMutation(
     routeName: string,
-    mutation: MutationMessage,
+    mutation: DefaultMutationMessage,
     optimistic: boolean = false
   ) {
     const schema = this.schema[routeName];
@@ -246,7 +250,7 @@ class InnerClient {
       if (this.optimisticMutationStack[routeName])
         this.optimisticMutationStack[routeName] = this.optimisticMutationStack[
           routeName
-        ].filter((m) => m._id !== mutation._id);
+        ].filter((m) => m.id !== mutation.id);
     }
 
     if (!this.optimisticObjGraph.getNode(mutation.resourceId))

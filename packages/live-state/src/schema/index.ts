@@ -50,8 +50,9 @@ export type InferLiveObjectWithRelationalIds<T extends LiveObjectAny> =
         InferRelationalColumns<T["relations"]>
     : InferLiveObjectWithoutRelations<T>;
 
-export type LiveObjectMutationInput<TSchema extends LiveObjectAny> =
-  InferLiveObjectWithRelationalIds<TSchema>;
+export type LiveObjectMutationInput<TSchema extends LiveObjectAny> = Partial<
+  InferLiveObjectWithRelationalIds<TSchema>
+>;
 
 export class LiveObject<
   TName extends string,

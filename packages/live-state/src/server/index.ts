@@ -1,7 +1,6 @@
-import { nanoid } from "nanoid";
-import { MutationMessage } from "../core/internals";
-import { LiveObjectAny, Schema } from "../schema";
-import { AnyRouter, RouteResult } from "./router";
+import { RawMutationRequest } from "../core/schemas/core-protocol";
+import { Schema } from "../schema";
+import { AnyRouter } from "./router";
 import { Storage } from "./storage";
 
 export * from "./router";
@@ -15,17 +14,18 @@ type InnerRequest = {
 
 type RequestBase = {
   req: InnerRequest;
+  procedure?: string;
   resourceName: string;
   context: Record<string, any>;
   where?: Record<string, any>;
 };
 
 export type FindRequest = RequestBase & {
-  type: "FIND";
+  type: "QUERY";
 };
 
 export type SetRequest = RequestBase & {
-  type: "SET";
+  type: "MUTATE";
   resourceId: string;
   payload: Record<string, any>;
 };
@@ -34,7 +34,7 @@ export type Request = FindRequest | SetRequest;
 
 export type RequestType = Request["type"];
 
-export type MutationHandler = (mutation: MutationMessage) => void;
+export type MutationHandler = (mutation: RawMutationRequest) => void;
 
 export type NextFunction<T> = (req: Request) => Promise<T> | T;
 
@@ -47,7 +47,7 @@ export class Server<TRouter extends AnyRouter> {
   readonly router: TRouter;
   readonly storage: Storage;
   readonly schema: Schema<any>;
-  readonly middlewares: Set<Middleware<RouteResult<LiveObjectAny>>> = new Set();
+  readonly middlewares: Set<Middleware<any>> = new Set();
 
   private mutationSubscriptions: Set<MutationHandler> = new Set();
 
@@ -93,18 +93,18 @@ export class Server<TRouter extends AnyRouter> {
           req,
           db: this.storage,
           schema: this.schema,
-        })) as NextFunction<RouteResult<LiveObjectAny>>
+        })) as NextFunction<any>
     )(opts.req);
 
     if (
       result &&
-      opts.req.type === "SET" &&
+      opts.req.type === "MUTATE" &&
       result.acceptedValues &&
       Object.keys(result.acceptedValues).length > 0
     ) {
       this.mutationSubscriptions.forEach((handler) => {
         handler({
-          _id: opts.req.context.messageId ?? nanoid(),
+          id: opts.req.context.messageId,
           type: "MUTATE",
           resource: opts.req.resourceName,
           payload: result.acceptedValues ?? {},
@@ -116,7 +116,7 @@ export class Server<TRouter extends AnyRouter> {
     return result;
   }
 
-  public use(middleware: Middleware<RouteResult<LiveObjectAny>>) {
+  public use(middleware: Middleware<any>) {
     this.middlewares.add(middleware);
     return this;
   }

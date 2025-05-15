@@ -1,12 +1,16 @@
 import cookie from "cookie";
-import { nanoid } from "nanoid";
 import WebSocket from "ws";
 import { AnyRouter, Server } from ".";
 import {
-  ServerBootstrapMessage,
-  ServerRejectMessage,
+  DefaultMutation,
+  GenericMutation,
+} from "../core/schemas/core-protocol";
+import {
   clientMessageSchema,
-} from "../core/internals";
+  MutationMessage,
+  ServerMessage,
+} from "../core/schemas/web-socket";
+import { generateId } from "../core/utils";
 import { LiveObjectAny, MaterializedLiveType } from "../schema";
 
 export type Subscription = {
@@ -17,18 +21,32 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
   const connections: Record<string, WebSocket> = {};
   const subscriptions: Record<string, Record<string, Subscription>> = {};
 
-  server.subscribeToMutations((m) => {
+  server.subscribeToMutations((_m) => {
+    const m = _m as DefaultMutation;
+
+    if (!m.resourceId || !m.payload) return;
+
     console.log("Mutation propagated:", m);
+
     Object.entries(subscriptions[m.resource] ?? {}).forEach(
       ([clientId, sub]) => {
         // TODO handle subscription filters
-        connections[clientId]?.send(JSON.stringify(m));
+        connections[clientId]?.send(
+          JSON.stringify({
+            ...m,
+            id: m.id ?? generateId(),
+          } satisfies MutationMessage)
+        );
       }
     );
   });
 
   return (ws: WebSocket, request: any) => {
-    const clientId = nanoid();
+    const reply = (msg: ServerMessage) => {
+      ws.send(JSON.stringify(msg));
+    };
+
+    const clientId = generateId();
 
     // TODO add ability to refuse connection
 
@@ -74,7 +92,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               const result = await server.handleRequest({
                 req: {
                   req: requestContext,
-                  type: "FIND",
+                  type: "QUERY",
                   resourceName,
                   context: {}, // TODO provide context
                 },
@@ -84,21 +102,19 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 throw new Error("Invalid resource");
               }
 
-              ws.send(
-                JSON.stringify({
-                  _id: parsedMessage._id,
-                  type: "SYNC",
-                  resource: resourceName,
-                  data: Object.fromEntries(
-                    Object.entries(
-                      (result.data ?? {}) as Record<
-                        string,
-                        MaterializedLiveType<LiveObjectAny>
-                      >
-                    ).map(([id, v]) => [id, v.value])
-                  ),
-                } satisfies ServerBootstrapMessage)
-              );
+              reply({
+                id: parsedMessage.id,
+                type: "SYNC",
+                resource: resourceName,
+                data: Object.fromEntries(
+                  Object.entries(
+                    (result.data ?? {}) as Record<
+                      string,
+                      MaterializedLiveType<LiveObjectAny>
+                    >
+                  ).map(([id, v]) => [id, v.value])
+                ),
+              });
             })
           );
         } else if (parsedMessage.type === "MUTATE") {
@@ -109,11 +125,12 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               .handleRequest({
                 req: {
                   req: requestContext,
-                  type: "SET",
+                  type: "MUTATE",
                   resourceName: resource,
                   payload: parsedMessage.payload,
-                  context: { messageId: parsedMessage._id }, // TODO provide context
-                  resourceId: parsedMessage.resourceId,
+                  context: { messageId: parsedMessage.id }, // TODO provide context
+                  resourceId: (parsedMessage as DefaultMutation).resourceId,
+                  procedure: (parsedMessage as GenericMutation).procedure,
                 },
               })
               .catch((e) => {
@@ -121,27 +138,20 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 return null;
               });
 
-            if (
-              !result ||
-              !result.acceptedValues ||
-              Object.keys(result.acceptedValues).length === 0
-            ) {
-              ws.send(
-                JSON.stringify({
-                  _id: parsedMessage._id,
-                  type: "REJECT",
-                  resource,
-                } satisfies ServerRejectMessage)
-              );
+            if ((parsedMessage as GenericMutation).procedure) {
+              reply({
+                id: parsedMessage.id,
+                type: "REPLY",
+                data: result,
+              });
             }
           } catch (e) {
-            ws.send(
-              JSON.stringify({
-                _id: parsedMessage._id,
-                type: "REJECT",
-                resource,
-              } satisfies ServerRejectMessage)
-            );
+            reply({
+              id: parsedMessage.id,
+              type: "REJECT",
+              resource,
+              message: (e as Error).message,
+            });
             console.error("Error parsing mutation from the client:", e);
           }
         }
