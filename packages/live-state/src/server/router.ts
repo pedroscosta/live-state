@@ -1,12 +1,12 @@
+import { z, ZodTypeAny } from "zod";
+import { Middleware, NextFunction, Request, Storage } from ".";
 import {
-  FindRequest,
-  Middleware,
-  NextFunction,
-  Request,
-  SetRequest,
-  Storage,
-} from ".";
-import { LiveObjectAny, MaterializedLiveType, Schema } from "../schema";
+  LiveObjectAny,
+  LiveObjectMutationInput,
+  LiveTypeAny,
+  MaterializedLiveType,
+  Schema,
+} from "../schema";
 
 export type RouteRecord = Record<string, AnyRoute>;
 
@@ -42,15 +42,46 @@ export type MutationResult<TShape extends LiveObjectAny> = {
 };
 
 export type RequestHandler<
-  TResourceSchema extends LiveObjectAny,
+  TInput,
   TResult,
   TSchema extends Schema<any> = Schema<any>,
-> = (opts: { req: Request; db: Storage; schema: TSchema }) => Promise<TResult>;
+> = (opts: {
+  req: Request<TInput>;
+  db: Storage;
+  schema: TSchema;
+}) => Promise<TResult>;
+
+export type Mutation<
+  TInputValidator extends ZodTypeAny, // TODO use StandardSchema instead
+  THandler extends RequestHandler<z.infer<TInputValidator>, any, any>,
+> = {
+  inputValidator: TInputValidator;
+  handler: THandler;
+};
+
+const mutationCreator = <TInputValidator extends ZodTypeAny>(
+  validator?: TInputValidator
+) => {
+  return {
+    handler: <
+      THandler extends RequestHandler<z.infer<TInputValidator>, any, any>,
+    >(
+      handler: THandler
+    ) =>
+      ({
+        inputValidator: validator ?? z.undefined(),
+        handler,
+      }) as Mutation<TInputValidator, THandler>,
+  };
+};
 
 export class Route<
   TResourceSchema extends LiveObjectAny,
   TMiddleware extends Middleware<any>,
-  TCustomMutations extends Record<string, RequestHandler<TResourceSchema, any>>,
+  TCustomMutations extends Record<
+    string,
+    Mutation<any, RequestHandler<any, any>>
+  >,
 > {
   readonly _resourceSchema!: TResourceSchema;
   readonly resourceName: TResourceSchema["name"];
@@ -66,22 +97,19 @@ export class Route<
     this.customMutations = customMutations ?? ({} as TCustomMutations);
   }
 
-  private handleFind: RequestHandler<
-    TResourceSchema,
-    QueryResult<TResourceSchema>
-  > = async ({ req, db }) => {
-    return {
-      data: await db.find<TResourceSchema>(req.resourceName, req.where),
-      acceptedValues: null,
+  private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
+    async ({ req, db }) => {
+      return {
+        data: await db.find<TResourceSchema>(req.resourceName, req.where),
+        acceptedValues: null,
+      };
     };
-  };
 
   private handleSet: RequestHandler<
-    TResourceSchema,
+    LiveObjectMutationInput<TResourceSchema>,
     MutationResult<TResourceSchema>
-  > = async ({ req: _req, db, schema }) => {
-    const req = _req as SetRequest;
-    if (!req.payload) throw new Error("Payload is required");
+  > = async ({ req, db, schema }) => {
+    if (!req.input) throw new Error("Payload is required");
     if (!req.resourceId) throw new Error("ResourceId is required");
 
     const target = await db.findById<TResourceSchema>(
@@ -93,7 +121,7 @@ export class Route<
 
     const [newRecord, acceptedValues] = schema[this.resourceName].mergeMutation(
       "set",
-      req.payload,
+      req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
       target
     );
 
@@ -111,6 +139,8 @@ export class Route<
     };
   };
 
+  public handleCustomMutation(req: Request, db: Storage, schema: Schema<any>) {}
+
   public async handleRequest(opts: {
     req: Request;
     db: Storage;
@@ -120,20 +150,26 @@ export class Route<
       (() => {
         if (req.type === "QUERY") {
           return this.handleFind({
-            req: req as FindRequest,
+            req: req as Request<never>,
             db: opts.db,
             schema: opts.schema,
           });
         } else if (req.type === "MUTATE") {
           if (!req.procedure) {
             return this.handleSet({
-              req: req as SetRequest,
+              req: req as Request<LiveObjectMutationInput<TResourceSchema>>,
               db: opts.db,
               schema: opts.schema,
             });
           } else if (this.customMutations[req.procedure]) {
-            return this.customMutations[req.procedure]({
-              req: req as SetRequest,
+            const validInput = this.customMutations[
+              req.procedure
+            ].inputValidator.parse(req.input);
+
+            req.input = validInput;
+
+            return this.customMutations[req.procedure].handler({
+              req,
               db: opts.db,
               schema: opts.schema,
             });
@@ -156,12 +192,12 @@ export class Route<
     return this;
   }
 
-  public withMutations(
-    mutations: Record<string, RequestHandler<TResourceSchema, any>>
-  ) {
-    return new Route<TResourceSchema, TMiddleware, typeof mutations>(
+  public withMutations<
+    T extends Record<string, Mutation<any, RequestHandler<any, any>>>,
+  >(mutationFactory: (opts: { mutation: typeof mutationCreator }) => T) {
+    return new Route<TResourceSchema, TMiddleware, T>(
       this.resourceName,
-      mutations
+      mutationFactory({ mutation: mutationCreator })
     );
   }
 }

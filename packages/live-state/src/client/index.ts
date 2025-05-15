@@ -424,6 +424,13 @@ export type Client<TRouter extends AnyRouter> = {
       ) => void;
     };
   };
+  // & {
+  //   [K in keyof TRouter["routes"]]: {
+  //     [K2 in keyof TRouter["routes"][K]["customMutations"]]: Parameters<
+  //       TRouter["routes"][K]["customMutations"][K2]
+  //     >;
+  //   };
+  // };
 };
 
 export type ClientOptions = {

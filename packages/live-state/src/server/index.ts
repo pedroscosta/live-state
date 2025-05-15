@@ -7,30 +7,17 @@ export * from "./router";
 export * from "./storage";
 export * from "./web-socket";
 
-type InnerRequest = {
+export type Request<TInput = any> = {
   headers: Record<string, string>;
   cookies: Record<string, string>;
-};
-
-type RequestBase = {
-  req: InnerRequest;
-  procedure?: string;
   resourceName: string;
+  procedure?: string;
   context: Record<string, any>;
   where?: Record<string, any>;
+  type: "QUERY" | "MUTATE";
+  resourceId?: string;
+  input?: TInput;
 };
-
-export type FindRequest = RequestBase & {
-  type: "QUERY";
-};
-
-export type SetRequest = RequestBase & {
-  type: "MUTATE";
-  resourceId: string;
-  payload: Record<string, any>;
-};
-
-export type Request = FindRequest | SetRequest;
 
 export type RequestType = Request["type"];
 
@@ -102,13 +89,14 @@ export class Server<TRouter extends AnyRouter> {
       result.acceptedValues &&
       Object.keys(result.acceptedValues).length > 0
     ) {
+      // TODO refactor this to be called by the storage instead of the server
       this.mutationSubscriptions.forEach((handler) => {
         handler({
           id: opts.req.context.messageId,
           type: "MUTATE",
           resource: opts.req.resourceName,
           payload: result.acceptedValues ?? {},
-          resourceId: (opts.req as SetRequest).resourceId,
+          resourceId: opts.req.resourceId!,
         });
       });
     }

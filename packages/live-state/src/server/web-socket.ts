@@ -91,7 +91,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             resources.map(async (resourceName) => {
               const result = await server.handleRequest({
                 req: {
-                  req: requestContext,
+                  ...requestContext,
                   type: "QUERY",
                   resourceName,
                   context: {}, // TODO provide context
@@ -124,10 +124,10 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             const result = await server
               .handleRequest({
                 req: {
-                  req: requestContext,
+                  ...requestContext,
                   type: "MUTATE",
                   resourceName: resource,
-                  payload: parsedMessage.payload,
+                  input: parsedMessage.payload,
                   context: { messageId: parsedMessage.id }, // TODO provide context
                   resourceId: (parsedMessage as DefaultMutation).resourceId,
                   procedure: (parsedMessage as GenericMutation).procedure,
