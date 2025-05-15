@@ -1,5 +1,6 @@
 import { SQLStorage, server, webSocketAdapter } from "@live-state/sync/server";
-import { routerImpl, schema } from "@repo/ls-impl";
+import { routerImpl } from "@repo/ls-impl";
+import { schema } from "@repo/ls-impl/schema";
 import cors from "cors";
 import express from "express";
 import expressWs from "express-ws";

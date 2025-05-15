@@ -24,5 +24,3 @@ export const routerImpl = router({
 });
 
 export type Router = typeof routerImpl;
-
-export { schema };
