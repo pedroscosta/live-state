@@ -1,5 +1,6 @@
 {
   "name": "@live-state/monorepo",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -8,10 +9,14 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "release": "turbo --filter \"./packages/*\" build && bumpp && pnpm -r publish --access public --no-git-checks",
+    "bump": "bumpp"
   },
   "devDependencies": {
+    "bumpp": "^10.1.1",
     "prettier": "^3.2.5",
+    "tinyglobby": "^0.2.14",
     "turbo": "^2.3.3"
   },
   "packageManager": "pnpm@10.7.0",
