@@ -3,7 +3,7 @@
   "version": "0.0.1-alpha.1",
   "private": true,
   "scripts": {
-    "build": "turbo run build",
+    "build": "turbo --filter \"./packages/*\" build",
     "clean": "turbo run clean",
     "dev": "turbo run dev",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
