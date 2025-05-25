@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Client } from ".";
 import { AnyRouter } from "../server";
+import { Simplify } from "../utils";
 import { Observable } from "./observable";
 
 export const useLiveQuery = <T extends Observable<U>, U>(
@@ -8,7 +9,7 @@ export const useLiveQuery = <T extends Observable<U>, U>(
   opts?: {
     subscribeToRemote?: boolean;
   }
-): ReturnType<T["get"]> => {
+): Simplify<ReturnType<T["get"]>> => {
   const [slice, setSlice] = useState(() => observable.get());
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export const useLiveQuery = <T extends Observable<U>, U>(
     []
   );
 
-  return slice as ReturnType<T["get"]>;
+  return slice as Simplify<ReturnType<T["get"]>>;
 };
 
 export const SubscriptionProvider = ({

@@ -97,6 +97,7 @@ export class Route<
     this.customMutations = customMutations ?? ({} as TCustomMutations);
   }
 
+  // TODO handle this as a custom mutation
   private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
     async ({ req, db }) => {
       return {
@@ -105,6 +106,7 @@ export class Route<
       };
     };
 
+  // TODO handle this as a custom mutation
   private handleSet: RequestHandler<
     LiveObjectMutationInput<TResourceSchema>,
     MutationResult<TResourceSchema>
@@ -138,8 +140,6 @@ export class Route<
       acceptedValues,
     };
   };
-
-  public handleCustomMutation(req: Request, db: Storage, schema: Schema<any>) {}
 
   public async handleRequest(opts: {
     req: Request;

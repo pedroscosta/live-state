@@ -1,5 +1,6 @@
 export type ObservableHandler<T extends object> = {
   get?(target: T, p: string[]): any;
+  apply?(target: T, p: string[], argumentsList: any[]): any;
 };
 
 export const createObservable = <T extends object>(
@@ -25,13 +26,16 @@ export const createObservable = <T extends object>(
         anyTgt[segString] = createObservable(
           typeof anyTgt[segString] === "object"
             ? anyTgt[segString]
-            : Object.create(null),
+            : function () {},
           handler,
           [...parentPath, segment as string]
         );
       }
 
       return anyTgt[segString];
+    },
+    apply: (target, _thisArg, argumentsList) => {
+      return handler.apply?.(target, parentPath, argumentsList);
     },
   });
 };

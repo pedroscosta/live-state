@@ -1,10 +1,11 @@
+import { z } from "zod";
 import {
   ClientMessage,
   DefaultMutationMessage,
   MutationMessage,
   serverMessageSchema,
 } from "../core/schemas/web-socket";
-import { generateId } from "../core/utils";
+import { generateId, Promisify } from "../core/utils";
 import {
   InferIndex,
   InferLiveObject,
@@ -53,6 +54,11 @@ class InnerClient {
 
   // This is subscriptions count for each route
   private routeSubscriptions: Record<string, number> = {};
+
+  private replyHandlers: Record<
+    string,
+    { timeoutHandle: NodeJS.Timeout; handler: (data: any) => void }
+  > = {};
 
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
@@ -154,6 +160,13 @@ class InnerClient {
         //   parsedMessage._id,
         //   true
         // );
+      } else if (parsedMessage.type === "REPLY") {
+        const { id, data } = parsedMessage;
+
+        if (!this.replyHandlers[id]) return;
+
+        clearTimeout(this.replyHandlers[id].timeoutHandle);
+        this.replyHandlers[id].handler(data);
       }
     } catch (e) {
       console.error("Error parsing message from the server:", e);
@@ -224,6 +237,34 @@ class InnerClient {
     this.addMutation(routeName, mutationMessage, true);
 
     this.sendWsMessage(mutationMessage);
+  }
+
+  public genericMutate(routeName: string, procedure: string, payload: any) {
+    if (!this.ws || !this.ws.connected())
+      throw new Error("WebSocket not connected");
+
+    const mutationMessage: MutationMessage = {
+      id: generateId(),
+      type: "MUTATE",
+      resource: routeName,
+      procedure,
+      payload,
+    };
+
+    this.sendWsMessage(mutationMessage);
+
+    return new Promise((resolve, reject) => {
+      this.replyHandlers[mutationMessage.id] = {
+        timeoutHandle: setTimeout(() => {
+          delete this.replyHandlers[mutationMessage.id];
+          reject(new Error("Reply timeout"));
+        }, 5000),
+        handler: (data: any) => {
+          delete this.replyHandlers[mutationMessage.id];
+          resolve(data);
+        },
+      };
+    });
   }
 
   private sendWsMessage(message: ClientMessage) {
@@ -408,6 +449,7 @@ export type Client<TRouter extends AnyRouter> = {
   };
   store: Observable<ClientState<TRouter>> & {
     [K in keyof TRouter["routes"]]: {
+      // TODO handle these as custom mutations
       insert: (
         input: Simplify<
           LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
@@ -423,14 +465,17 @@ export type Client<TRouter extends AnyRouter> = {
         >
       ) => void;
     };
+  } & {
+    [K in keyof TRouter["routes"]]: {
+      [K2 in keyof TRouter["routes"][K]["customMutations"]]: (
+        input: z.infer<
+          TRouter["routes"][K]["customMutations"][K2]["inputValidator"]
+        >
+      ) => Promisify<
+        ReturnType<TRouter["routes"][K]["customMutations"][K2]["handler"]>
+      >;
+    };
   };
-  // & {
-  //   [K in keyof TRouter["routes"]]: {
-  //     [K2 in keyof TRouter["routes"][K]["customMutations"]]: Parameters<
-  //       TRouter["routes"][K]["customMutations"][K2]
-  //     >;
-  //   };
-  // };
 };
 
 export type ClientOptions = {
@@ -458,55 +503,35 @@ export const createClient = <TRouter extends AnyRouter>(
         };
       },
     },
-    store: createObservable(
-      {},
-      {
-        get: (_, path) => {
-          const selector = path.slice(0, -1);
-          const lastSegment = path[path.length - 1];
+    store: createObservable(() => {}, {
+      apply: (_, path, argumentsList) => {
+        const selector = path.slice(0, -1);
+        const lastSegment = path[path.length - 1];
 
-          if (lastSegment === "get") {
-            return () => ogClient.get(selector);
-          }
-          if (lastSegment === "subscribe")
-            return (callback: () => void) => {
-              const remove = ogClient.subscribeToSlice(selector, callback);
-              return remove;
-            };
-          if (lastSegment === "subscribeToRemote")
-            return ogClient.subscribeToRemote.bind(ogClient, selector[0]);
+        if (lastSegment === "get") return ogClient.get(selector);
 
-          if (selector.length === 1) {
-            if (lastSegment === "insert")
-              return (
-                input: Simplify<
-                  LiveObjectMutationInput<
-                    TRouter["routes"][string]["_resourceSchema"]
-                  >
-                >["value"]
-              ) => {
-                const { id, ...rest } = input;
-                ogClient.mutate(selector[0], id, rest);
-              };
-            if (lastSegment === "update")
-              return (
-                id: string,
-                input: Partial<
-                  Omit<
-                    Simplify<
-                      LiveObjectMutationInput<
-                        TRouter["routes"][string]["_resourceSchema"]
-                      >
-                    >["value"],
-                    "id"
-                  >
-                >
-              ) => {
-                ogClient.mutate(selector[0], id, input);
-              };
-          }
-        },
-      }
-    ) as unknown as Client<TRouter>["store"],
+        if (lastSegment === "subscribe")
+          return ogClient.subscribeToSlice(selector, argumentsList[0]);
+
+        if (lastSegment === "subscribeToRemote")
+          return ogClient.subscribeToRemote(selector[0]);
+
+        if (lastSegment === "insert") {
+          const { id, ...rest } = argumentsList[0];
+          return ogClient.mutate(selector[0], id, rest);
+        }
+
+        if (lastSegment === "update") {
+          const [id, input] = argumentsList;
+          return ogClient.mutate(selector[0], id, input);
+        }
+
+        return ogClient.genericMutate(
+          selector[0],
+          lastSegment,
+          argumentsList[0]
+        );
+      },
+    }) as unknown as Client<TRouter>["store"],
   };
 };
