@@ -3,6 +3,7 @@ import { Schema } from "../schema";
 import { AnyRouter } from "./router";
 import { Storage } from "./storage";
 
+export * from "./adapters/express";
 export * from "./router";
 export * from "./storage";
 export * from "./web-socket";
