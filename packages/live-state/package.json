@@ -61,6 +61,11 @@
       "types": "./src/client/index.ts",
       "import": "./dist/client.js",
       "require": "./dist/client.js"
+    },
+    "./client/fetch": {
+      "types": "./src/client/fetch-client.ts",
+      "import": "./dist/fetch-client.js",
+      "require": "./dist/fetch-client.js"
     }
   },
   "peerDependencies": {
