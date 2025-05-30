@@ -1,7 +1,10 @@
-import type { ClientOptions, ClientState } from ".";
+import { stringify } from "qs";
+import type { ClientOptions } from ".";
 import {
+  InferLiveObject,
   inferValue,
   LiveObjectAny,
+  WhereClause,
   type LiveObjectMutationInput,
   type LiveTypeAny,
   type MaterializedLiveType,
@@ -10,12 +13,18 @@ import type { AnyRouter } from "../server";
 import { Simplify } from "../utils";
 import { createObservable } from "./observable";
 
-type Getters<T> = {
-  [K in keyof T]: { get: () => Promise<Simplify<T[K]>> };
+type GetOptions<T extends LiveObjectAny> = {
+  headers?: Record<string, string>;
+  where?: WhereClause<T>;
 };
 
-type FetchClient<TRouter extends AnyRouter> = Getters<ClientState<TRouter>> & {
+type FetchClient<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
+    get: (
+      opts?: GetOptions<TRouter["routes"][K]["_resourceSchema"]>
+    ) => Promise<
+      Simplify<InferLiveObject<TRouter["routes"][K]["_resourceSchema"]>>
+    >;
     upsert: (
       input: Simplify<
         LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
@@ -33,8 +42,20 @@ export const createClient = <TRouter extends AnyRouter>(
 
       const [resource, method] = path;
 
-      if (method === "get")
-        return fetch(`${opts.url}/${resource}`).then(async (res) =>
+      if (method === "get") {
+        const where = argumentsList[0] as
+          | GetOptions<TRouter["routes"][string]["_resourceSchema"]>
+          | undefined;
+
+        const query: Record<string, any> = {};
+
+        if (where?.where) {
+          query.where = where.where;
+        }
+
+        return fetch(
+          `${opts.url}/${resource}${Object.keys(query).length > 0 ? `?${stringify(query)}` : ""}`
+        ).then(async (res) =>
           Object.fromEntries(
             Object.entries((await res.json()) ?? {}).map(([k, v]) => [
               k,
@@ -42,6 +63,7 @@ export const createClient = <TRouter extends AnyRouter>(
             ])
           )
         );
+      }
 
       if (method === "upsert") {
         const { id, ...rest } = argumentsList[0];
