@@ -1,4 +1,4 @@
-import { SQLStorage, server, webSocketAdapter } from "@live-state/sync/server";
+import { SQLStorage, expressAdapter, server } from "@live-state/sync/server";
 import { routerImpl } from "@repo/ls-impl";
 import { schema } from "@repo/ls-impl/schema";
 import cors from "cors";
@@ -25,15 +25,11 @@ export const createServer = (): ReturnType<typeof expressWs>["app"] => {
     .use(morgan("dev"))
     .use(express.urlencoded({ extended: true }))
     .use(express.json())
-    .use(cors())
-    .get("/message/:name", (req, res) => {
-      return res.json({ message: `hello ${req.params.name}` });
-    })
-    .get("/status", (_, res) => {
-      return res.json({ ok: true });
-    });
+    .use(cors());
 
-  app.ws("/ws", webSocketAdapter(lsServer));
+  expressAdapter(app, lsServer);
+
+  // app.ws("/ws", webSocketAdapter(lsServer));
 
   return app;
 };

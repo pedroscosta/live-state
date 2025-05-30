@@ -1,17 +1,17 @@
 import cookie from "cookie";
 import WebSocket from "ws";
-import { AnyRouter, Server } from ".";
+import { AnyRouter, Server } from "../";
 import {
   DefaultMutation,
   GenericMutation,
-} from "../core/schemas/core-protocol";
+} from "../../core/schemas/core-protocol";
 import {
   clientMessageSchema,
   MutationMessage,
   ServerMessage,
-} from "../core/schemas/web-socket";
-import { generateId } from "../core/utils";
-import { LiveObjectAny, MaterializedLiveType } from "../schema";
+} from "../../core/schemas/web-socket";
+import { generateId } from "../../core/utils";
+import { LiveObjectAny, MaterializedLiveType } from "../../schema";
 
 export type Subscription = {
   filters?: Record<string, any>;
