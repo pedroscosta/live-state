@@ -39,23 +39,3 @@ export const createObservable = <T extends object>(
     },
   });
 };
-
-export type Observable<T> = {
-  [K in keyof T]: Observable<T[K]>;
-} & {
-  get: () => T;
-  subscribe: (callback: (value: T) => void) => () => void;
-  subscribeToRemote: () => () => void;
-};
-
-// export type Observable<T> = {
-//   get: () => T;
-// } & {
-//   [K in keyof T]: {
-//     get: () => T[K];
-//   } & (Exclude<T[K], undefined> extends Array<infer U>
-//     ? Observable<T[K]>
-//     : Exclude<T[K], undefined> extends Record<string, any>
-//       ? Observable<T[K]>
-//       : {});
-// };

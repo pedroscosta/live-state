@@ -4,6 +4,7 @@ import { useLiveQuery } from "@live-state/sync/client";
 import { nanoid } from "nanoid";
 import { memo } from "react";
 import { Button } from "../../components/ui/button";
+import { client } from "../../lib/fetch-client";
 import { Group } from "./group";
 import { store } from "./live-client";
 
@@ -17,17 +18,40 @@ export function Board(): JSX.Element {
       {Object.values(groups ?? {}).map((group) => (
         <MemoItem key={group.id} groupId={group.id} />
       ))}
-      <Button
-        className="w-sm"
-        onClick={() => {
-          store.groups.insert({
-            id: nanoid(),
-            name: `New Group ${Object.keys(groups ?? {}).length + 1}`,
-          });
-        }}
-      >
-        Add Group
-      </Button>
+      <div className="flex flex-col gap-6">
+        <Button
+          className="w-sm"
+          onClick={() => {
+            store.groups.insert({
+              id: nanoid(),
+              name: `New Group ${Object.keys(groups ?? {}).length + 1}`,
+            });
+          }}
+        >
+          Add Group
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            client.groups.upsert({
+              id: nanoid(),
+              name: `New Group ${Object.keys(groups ?? {}).length + 1} (fetch)`,
+            });
+          }}
+        >
+          Add Group (fetch)
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            client.groups
+              .get({ where: { name: "New Group" } })
+              .then((res) => console.log(res));
+          }}
+        >
+          Get Groups
+        </Button>
+      </div>
     </div>
   );
 }
