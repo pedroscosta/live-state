@@ -12,6 +12,7 @@
 
 # 0.0.1-alpha.4:
 
+- [ ] uWebSocket adapter
 - [ ] Client storage
 - [ ] Improve subscription boundary
 
