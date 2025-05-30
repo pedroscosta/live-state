@@ -32,7 +32,7 @@ const baseMutationSchema = z.object({
 
 export const genericMutationSchema = baseMutationSchema.extend({
   procedure: z.string(),
-  payload: z.any(),
+  payload: z.any().optional(),
 });
 
 export type GenericMutation = z.infer<typeof genericMutationSchema>;

@@ -5,6 +5,7 @@
 
 # 0.0.1-alpha.3:
 
+- [X] HTTP transport layer
 - [ ] Add boolean, enums and timestamp atomic types
 - [ ] Fetch client
 - [ ] Broadcast mutations from the storage instead of the server + transactional support

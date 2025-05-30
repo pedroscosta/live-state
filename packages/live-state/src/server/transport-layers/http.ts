@@ -1,15 +1,18 @@
 import cookie from "cookie";
 import qs from "qs";
 import { AnyRouter, Server } from "..";
-import { httpQuerySchema } from "../../core/schemas/http";
+import { DefaultMutation } from "../../core/schemas/core-protocol";
+import {
+  httpDefaultMutationSchema,
+  httpGenericMutationSchema,
+  HttpMutation,
+  httpQuerySchema,
+} from "../../core/schemas/http";
 
 export const httpTransportLayer = (
   server: Server<AnyRouter>
 ): ((request: Request) => Promise<Response>) => {
   return async (request: Request) => {
-    console.log("[HTTP] request received", request);
-    console.log("[HTTP] request headers", request.headers);
-
     const headers =
       typeof (request.headers as any).getSetCookie === "function"
         ? Object.fromEntries(request.headers)
@@ -23,12 +26,15 @@ export const httpTransportLayer = (
       cookies: headers.cookie ? cookie.parse(headers.cookie) : {},
     };
 
+    const url = new URL(request.url);
+    const segments = url.pathname.split("/");
+
     if (request.method === "GET") {
-      const searchParams = new URL(request.url).searchParams;
+      const resource = segments[segments.length - 1];
+
+      const searchParams = url.searchParams;
 
       const rawParsedQs = qs.parse(searchParams.toString());
-
-      console.debug("[HTTP] parsed qs", rawParsedQs);
 
       const {
         success,
@@ -42,9 +48,6 @@ export const httpTransportLayer = (
           { status: 400 }
         );
       }
-
-      const splitUrl = request.url.split("/");
-      const resource = splitUrl[splitUrl.length - 1];
 
       const result = await server.handleRequest({
         req: {
@@ -65,6 +68,67 @@ export const httpTransportLayer = (
     }
 
     if (request.method === "POST") {
+      try {
+        const procedure = segments[segments.length - 1];
+        const resource = segments[segments.length - 2];
+
+        const rawBody = request.body ? await request.json() : {};
+
+        let body: HttpMutation;
+
+        if (procedure === "set") {
+          const { success, data, error } =
+            httpDefaultMutationSchema.safeParse(rawBody);
+          if (!success) {
+            return Response.json(
+              {
+                message: "Invalid mutation",
+                code: "INVALID_REQUEST",
+                details: error,
+              },
+              { status: 400 }
+            );
+          }
+          body = data;
+        } else {
+          const { success, data, error } =
+            httpGenericMutationSchema.safeParse(rawBody);
+          if (!success) {
+            return Response.json(
+              {
+                message: "Invalid mutation",
+                code: "INVALID_REQUEST",
+                details: error,
+              },
+              { status: 400 }
+            );
+          }
+          body = data;
+        }
+
+        console.log("[HTTP] mutation result", rawBody, body);
+
+        const result = await server.handleRequest({
+          req: {
+            ...requestContext,
+            type: "MUTATE",
+            resourceName: resource,
+            input: body.payload,
+            context: {}, // TODO provide context
+            resourceId: (body as DefaultMutation).resourceId,
+            procedure: procedure !== "set" ? procedure : undefined,
+          },
+        });
+
+        return Response.json(result);
+      } catch (e) {
+        console.error("Error parsing mutation from the client:", e);
+
+        return Response.json(
+          { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },
+          { status: 500 }
+        );
+      }
     }
 
     return Response.json(
