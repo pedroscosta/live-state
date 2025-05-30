@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { Client } from ".";
+import { Client, ObservableClientState } from ".";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
-import { Observable } from "./observable";
 
-export const useLiveQuery = <T extends Observable<U>, U>(
+export const useLiveQuery = <T extends ObservableClientState<U>, U>(
   observable: T,
   opts?: {
     subscribeToRemote?: boolean;

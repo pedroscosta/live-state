@@ -20,7 +20,7 @@ import {
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
 import { GraphNode, ObjectGraph } from "./obj-graph";
-import { createObservable, Observable } from "./observable";
+import { createObservable } from "./observable";
 import { WebSocketClient } from "./web-socket";
 
 export * from "./react";
@@ -442,12 +442,20 @@ class InnerClient {
   }
 }
 
+export type ObservableClientState<T> = {
+  [K in keyof T]: ObservableClientState<T[K]>;
+} & {
+  get: () => T;
+  subscribe: (callback: (value: T) => void) => () => void;
+  subscribeToRemote: () => () => void;
+};
+
 export type Client<TRouter extends AnyRouter> = {
   client: {
     ws: WebSocketClient;
     subscribeToRemote: (resourceType?: string[]) => () => void;
   };
-  store: Observable<ClientState<TRouter>> & {
+  store: ObservableClientState<ClientState<TRouter>> & {
     [K in keyof TRouter["routes"]]: {
       // TODO handle these as custom mutations
       insert: (
