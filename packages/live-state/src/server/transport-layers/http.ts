@@ -61,7 +61,13 @@ export const httpTransportLayer = (
       });
 
       if (!result || !result.data) {
-        throw new Error("Invalid resource");
+        return Response.json(
+          {
+            message: "Invalid resource",
+            code: "INVALID_RESOURCE",
+          },
+          { status: 400 }
+        );
       }
 
       return Response.json(result.data);
