@@ -1,5 +1,6 @@
 import { stringify } from "qs";
 import type { ClientOptions } from ".";
+import { consumeGeneratable } from "../core/utils";
 import {
   InferLiveObject,
   inferValue,
@@ -42,6 +43,8 @@ export const createClient = <TRouter extends AnyRouter>(
 
       const [resource, method] = path;
 
+      const headers = consumeGeneratable(opts.credentials);
+
       if (method === "get") {
         const where = argumentsList[0] as
           | GetOptions<TRouter["routes"][string]["_resourceSchema"]>
@@ -54,7 +57,10 @@ export const createClient = <TRouter extends AnyRouter>(
         }
 
         return fetch(
-          `${opts.url}/${resource}${Object.keys(query).length > 0 ? `?${stringify(query)}` : ""}`
+          `${opts.url}/${resource}${Object.keys(query).length > 0 ? `?${stringify(query)}` : ""}`,
+          {
+            headers,
+          }
         ).then(async (res) =>
           Object.fromEntries(
             Object.entries((await res.json()) ?? {}).map(([k, v]) => [
@@ -70,6 +76,7 @@ export const createClient = <TRouter extends AnyRouter>(
         return fetch(`${opts.url}/${resource}/set`, {
           method: "POST",
           headers: {
+            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -86,6 +93,7 @@ export const createClient = <TRouter extends AnyRouter>(
       return fetch(`${opts.url}/${resource}/${method}`, {
         method: "POST",
         headers: {
+          ...headers,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(argumentsList[0]),

@@ -5,7 +5,7 @@ import {
   MutationMessage,
   serverMessageSchema,
 } from "../core/schemas/web-socket";
-import { generateId, Promisify } from "../core/utils";
+import { Generatable, generateId, Promisify } from "../core/utils";
 import {
   InferIndex,
   InferLiveObject,
@@ -63,11 +63,13 @@ class InnerClient {
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
     this.schema = opts.schema;
+
     this.ws = new WebSocketClient({
       url: opts.url,
       autoConnect: true,
       autoReconnect: true,
       reconnectTimeout: 5000,
+      credentials: opts.credentials,
     });
 
     this.ws.addEventListener("message", (e) => {
@@ -489,6 +491,7 @@ export type Client<TRouter extends AnyRouter> = {
 export type ClientOptions = {
   url: string;
   schema: Schema<any>;
+  credentials?: Generatable<Record<string, string>>;
 };
 
 export const createClient = <TRouter extends AnyRouter>(
