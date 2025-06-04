@@ -43,7 +43,7 @@ export const createClient = <TRouter extends AnyRouter>(
 
       const [resource, method] = path;
 
-      const headers = consumeGeneratable(opts.credentials);
+      const headers = consumeGeneratable(opts.credentials) ?? {};
 
       if (method === "get") {
         const where = argumentsList[0] as
