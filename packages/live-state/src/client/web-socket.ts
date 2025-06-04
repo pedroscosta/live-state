@@ -1,3 +1,8 @@
+import { stringify } from "qs";
+
+import { ClientOptions } from ".";
+import { consumeGeneratable } from "../core/utils";
+
 export type WebSocketClientEventMap = WebSocketEventMap & {
   connectionChange: {
     open: boolean;
@@ -15,6 +20,7 @@ export class WebSocketClient {
   private eventListeners: Map<string, Set<Function>> = new Map();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private intentionallyDisconnected: boolean = false;
+  private credentials?: ClientOptions["credentials"];
 
   constructor(options: {
     url: string;
@@ -22,12 +28,14 @@ export class WebSocketClient {
     autoReconnect?: boolean;
     reconnectTimeout?: number;
     reconnectLimit?: number;
+    credentials?: ClientOptions["credentials"];
   }) {
     this.url = options.url;
     this.autoConnect = options.autoConnect ?? false;
     this.autoReconnect = options.autoReconnect ?? false;
     this.reconnectTimeout = options.reconnectTimeout ?? 5000;
     this.reconnectLimit = options.reconnectLimit;
+    this.credentials = options.credentials;
 
     if (this.autoConnect) {
       this.connect();
@@ -48,7 +56,11 @@ export class WebSocketClient {
     }
 
     this.intentionallyDisconnected = false;
-    this.ws = new WebSocket(this.url);
+    const credentials = consumeGeneratable(this.credentials);
+
+    this.ws = new WebSocket(
+      this.url + (credentials ? `?${stringify(credentials)}` : "")
+    );
 
     this.ws.addEventListener("open", this.handleOpen.bind(this));
     this.ws.addEventListener("close", this.handleClose.bind(this));
