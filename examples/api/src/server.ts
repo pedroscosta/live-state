@@ -29,7 +29,5 @@ export const createServer = (): ReturnType<typeof expressWs>["app"] => {
 
   expressAdapter(app, lsServer);
 
-  // app.ws("/ws", webSocketAdapter(lsServer));
-
   return app;
 };
