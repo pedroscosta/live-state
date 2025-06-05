@@ -46,7 +46,7 @@ export class WebSocketClient {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  public connect(): void {
+  public async connect(): Promise<void> {
     if (
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN ||
@@ -56,7 +56,7 @@ export class WebSocketClient {
     }
 
     this.intentionallyDisconnected = false;
-    const credentials = consumeGeneratable(this.credentials);
+    const credentials = await consumeGeneratable(this.credentials);
 
     this.ws = new WebSocket(
       this.url + (credentials ? `?${stringify(credentials)}` : "")

@@ -38,12 +38,12 @@ export const createClient = <TRouter extends AnyRouter>(
   opts: ClientOptions
 ): FetchClient<TRouter> => {
   return createObservable(() => {}, {
-    apply: (_, path, argumentsList) => {
+    apply: async (_, path, argumentsList) => {
       if (path.length > 2) throw new Error("Trying to access invalid property");
 
       const [resource, method] = path;
 
-      const headers = consumeGeneratable(opts.credentials) ?? {};
+      const headers = (await consumeGeneratable(opts.credentials)) ?? {};
 
       if (method === "get") {
         const where = argumentsList[0] as
