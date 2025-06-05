@@ -1,4 +1,5 @@
 import cookie from "cookie";
+import { parse } from "qs";
 import WebSocket from "ws";
 import { AnyRouter, Server } from "../";
 import {
@@ -41,14 +42,13 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     );
   });
 
+  // TODO make this adapter agnostic
   return (ws: WebSocket, request: any) => {
     const reply = (msg: ServerMessage) => {
       ws.send(JSON.stringify(msg));
     };
 
     const clientId = generateId();
-
-    // TODO add ability to refuse connection
 
     const requestContext: {
       headers: Record<string, any>;
@@ -60,6 +60,15 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           ? cookie.parse(request.headers.cookie)
           : {},
     };
+
+    const parsedQs = parse(request.url.split("?")[1]) as Record<string, any>;
+
+    const initialContext = server.contextProvider?.({
+      transport: "WEBSOCKET",
+      headers: requestContext.headers,
+      cookies: requestContext.cookies,
+      query: parsedQs,
+    });
 
     connections[clientId] = ws;
     console.log("Client connected:", clientId);
@@ -94,7 +103,8 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                   ...requestContext,
                   type: "QUERY",
                   resourceName,
-                  context: {}, // TODO provide context
+                  context: (await initialContext) ?? {},
+                  query: parsedQs,
                 },
               });
 
@@ -127,9 +137,13 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 type: "MUTATE",
                 resourceName: resource,
                 input: parsedMessage.payload,
-                context: { messageId: parsedMessage.id }, // TODO provide context
+                context: {
+                  messageId: parsedMessage.id,
+                  ...((await initialContext) ?? {}),
+                },
                 resourceId: (parsedMessage as DefaultMutation).resourceId,
                 procedure: (parsedMessage as GenericMutation).procedure,
+                query: parsedQs,
               },
             });
 
@@ -159,6 +173,9 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     ws.on("close", () => {
       console.log("Connection closed", clientId);
       delete connections[clientId];
+      for (const subs of Object.values(subscriptions)) {
+        delete subs[clientId];
+      }
     });
   };
 };

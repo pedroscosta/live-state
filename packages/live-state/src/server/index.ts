@@ -7,9 +7,10 @@ export * from "./adapters/express";
 export * from "./router";
 export * from "./storage";
 
-export type Request<TInput = any> = {
+export type ParsedRequest<TInput = any> = {
   headers: Record<string, string>;
   cookies: Record<string, string>;
+  query: Record<string, string>;
   resourceName: string;
   procedure?: string;
   context: Record<string, any>;
@@ -19,14 +20,20 @@ export type Request<TInput = any> = {
   input?: TInput;
 };
 
-export type RequestType = Request["type"];
+export type ContextProvider = (
+  req: Pick<ParsedRequest, "headers" | "cookies" | "query"> & {
+    transport: "HTTP" | "WEBSOCKET";
+  }
+) => Record<string, any>;
+
+export type RequestType = ParsedRequest["type"];
 
 export type MutationHandler = (mutation: RawMutationRequest) => void;
 
-export type NextFunction<T> = (req: Request) => Promise<T> | T;
+export type NextFunction<T> = (req: ParsedRequest) => Promise<T> | T;
 
-export type Middleware<T> = (opts: {
-  req: Request;
+export type Middleware<T = any> = (opts: {
+  req: ParsedRequest;
   next: NextFunction<T>;
 }) => ReturnType<NextFunction<T>>;
 
@@ -36,24 +43,32 @@ export class Server<TRouter extends AnyRouter> {
   readonly schema: Schema<any>;
   readonly middlewares: Set<Middleware<any>> = new Set();
 
+  contextProvider?: ContextProvider;
+
   private mutationSubscriptions: Set<MutationHandler> = new Set();
 
   private constructor(opts: {
     router: TRouter;
     storage: Storage;
     schema: Schema<any>;
+    middlewares?: Middleware<any>[];
+    contextProvider?: ContextProvider;
   }) {
     this.router = opts.router;
     this.storage = opts.storage;
     this.schema = opts.schema;
+    opts.middlewares?.forEach((middleware) => this.middlewares.add(middleware));
 
     this.storage.updateSchema(this.schema);
+    this.contextProvider = opts.contextProvider;
   }
 
   public static create<TRouter extends AnyRouter>(opts: {
     router: TRouter;
     storage: Storage;
     schema: Schema<any>;
+    middlewares?: Middleware<any>[];
+    contextProvider?: ContextProvider;
   }) {
     return new Server<TRouter>(opts);
   }
@@ -66,7 +81,7 @@ export class Server<TRouter extends AnyRouter> {
     };
   }
 
-  public async handleRequest(opts: { req: Request }) {
+  public async handleRequest(opts: { req: ParsedRequest }) {
     if (!this.router.routes[opts.req.resourceName]) {
       throw new Error("Invalid resource");
     }
@@ -106,6 +121,11 @@ export class Server<TRouter extends AnyRouter> {
 
   public use(middleware: Middleware<any>) {
     this.middlewares.add(middleware);
+    return this;
+  }
+
+  public context(contextProvider: ContextProvider) {
+    this.contextProvider = contextProvider;
     return this;
   }
 }

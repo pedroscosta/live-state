@@ -1,5 +1,5 @@
 import { z, ZodTypeAny } from "zod";
-import { Middleware, NextFunction, Request, Storage } from ".";
+import { Middleware, NextFunction, ParsedRequest, Storage } from ".";
 import {
   LiveObjectAny,
   LiveObjectMutationInput,
@@ -46,7 +46,7 @@ export type RequestHandler<
   TResult,
   TSchema extends Schema<any> = Schema<any>,
 > = (opts: {
-  req: Request<TInput>;
+  req: ParsedRequest<TInput>;
   db: Storage;
   schema: TSchema;
 }) => Promise<TResult>;
@@ -142,22 +142,24 @@ export class Route<
   };
 
   public async handleRequest(opts: {
-    req: Request;
+    req: ParsedRequest;
     db: Storage;
     schema: Schema<any>;
   }): Promise<any> {
-    const next = (req: Request) =>
+    const next = (req: ParsedRequest) =>
       (() => {
         if (req.type === "QUERY") {
           return this.handleFind({
-            req: req as Request<never>,
+            req: req as ParsedRequest<never>,
             db: opts.db,
             schema: opts.schema,
           });
         } else if (req.type === "MUTATE") {
           if (!req.procedure) {
             return this.handleSet({
-              req: req as Request<LiveObjectMutationInput<TResourceSchema>>,
+              req: req as ParsedRequest<
+                LiveObjectMutationInput<TResourceSchema>
+              >,
               db: opts.db,
               schema: opts.schema,
             });

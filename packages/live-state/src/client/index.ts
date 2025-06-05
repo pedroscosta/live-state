@@ -5,7 +5,7 @@ import {
   MutationMessage,
   serverMessageSchema,
 } from "../core/schemas/web-socket";
-import { Generatable, generateId, Promisify } from "../core/utils";
+import { Awaitable, Generatable, generateId, Promisify } from "../core/utils";
 import {
   InferIndex,
   InferLiveObject,
@@ -491,7 +491,7 @@ export type Client<TRouter extends AnyRouter> = {
 export type ClientOptions = {
   url: string;
   schema: Schema<any>;
-  credentials?: Generatable<Record<string, string>>;
+  credentials?: Generatable<Awaitable<Record<string, string>>>;
 };
 
 export const createClient = <TRouter extends AnyRouter>(

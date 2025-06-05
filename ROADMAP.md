@@ -7,7 +7,7 @@
 
 - [X] HTTP transport layer
 - [X] Fetch client
-- [ ] Global middlewares
+- [X] Context providers
 - [ ] Add boolean, enums and timestamp atomic types
 
 # 0.0.1-alpha.4:
