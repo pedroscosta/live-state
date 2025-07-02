@@ -8,6 +8,7 @@
 - [X] HTTP transport layer
 - [X] Fetch client
 - [X] Context providers
+- [X] Add middlewares to route factory
 - [ ] Add boolean, enums and timestamp atomic types
 
 # 0.0.1-alpha.4:

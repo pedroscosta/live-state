@@ -188,9 +188,10 @@ export class Route<
       (async (req) => next(req)) as NextFunction<any>
     )(opts.req);
   }
-
-  public use(middleware: TMiddleware) {
-    this.middlewares.add(middleware);
+  public use(...middlewares: TMiddleware[]) {
+    for (const middleware of middlewares) {
+      this.middlewares.add(middleware);
+    }
     return this;
   }
 
@@ -204,10 +205,29 @@ export class Route<
   }
 }
 
-export const routeFactory = () => {
-  return <T extends LiveObjectAny>(shape: T) =>
-    new Route<T, Middleware<any>, Record<string, never>>(shape.name);
-};
+export class RouteFactory {
+  private middlewares: Middleware<any>[];
+
+  private constructor(middlewares: Middleware<any>[] = []) {
+    this.middlewares = middlewares;
+  }
+
+  createBasicRoute<T extends LiveObjectAny>(shape: T) {
+    return new Route<T, Middleware<any>, Record<string, never>>(shape.name).use(
+      ...this.middlewares
+    );
+  }
+
+  use(...middlewares: Middleware<any>[]) {
+    return new RouteFactory([...this.middlewares, ...middlewares]);
+  }
+
+  static create() {
+    return new RouteFactory();
+  }
+}
+
+export const routeFactory = RouteFactory.create;
 
 export type AnyRoute = Route<
   LiveObjectAny,
