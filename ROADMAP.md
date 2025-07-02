@@ -9,7 +9,8 @@
 - [X] Fetch client
 - [X] Context providers
 - [X] Add middlewares to route factory
-- [ ] Add boolean, enums and timestamp atomic types
+- [X] Add boolean, enums and timestamp atomic types
+- [ ] Mutation side effects
 
 # 0.0.1-alpha.4:
 
@@ -20,9 +21,9 @@
 
 # 0.0.1:
 
+- [ ] Add default expression support (e.g. `now()`, `uuid()`, etc)
 - [ ] Add documentation
 - [ ] Add tests (needs to be added before 0.0.1)
 
 # Post 0.0.1:
 
-- [ ] Mutation side effects
