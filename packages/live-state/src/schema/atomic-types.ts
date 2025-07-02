@@ -275,3 +275,39 @@ export class LiveString extends LiveAtomicType<string> {
 export const string = LiveString.create;
 export const id = LiveString.createId;
 export const reference = LiveString.createReference;
+// TODO add enum support
+
+export class LiveBoolean extends LiveAtomicType<boolean> {
+  private constructor() {
+    super("boolean", (value) => {
+      if (typeof value === "string") {
+        return value.toLowerCase() === "true";
+      }
+
+      return !!value;
+    });
+  }
+
+  static create() {
+    return new LiveBoolean();
+  }
+}
+
+export const boolean = LiveBoolean.create;
+
+export class LiveTimestamp extends LiveAtomicType<Date> {
+  private constructor() {
+    super("timestamp", (value) => {
+      if (typeof value === "string") {
+        return new Date(value);
+      }
+      return value;
+    });
+  }
+
+  static create() {
+    return new LiveTimestamp();
+  }
+}
+
+export const timestamp = LiveTimestamp.create;
