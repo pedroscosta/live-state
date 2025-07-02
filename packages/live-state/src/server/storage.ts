@@ -147,6 +147,10 @@ export class SQLStorage extends Storage {
                 builder = builder.primaryKey();
               }
 
+              if (storageFieldType.default) {
+                builder = builder.defaultTo(storageFieldType.default);
+              }
+
               return builder;
             })
             .execute()
