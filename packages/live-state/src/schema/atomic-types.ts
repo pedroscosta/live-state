@@ -275,6 +275,7 @@ export class LiveString extends LiveAtomicType<string> {
 export const string = LiveString.create;
 export const id = LiveString.createId;
 export const reference = LiveString.createReference;
+// TODO add enum support
 
 export class LiveBoolean extends LiveAtomicType<boolean> {
   private constructor() {
@@ -293,26 +294,6 @@ export class LiveBoolean extends LiveAtomicType<boolean> {
 }
 
 export const boolean = LiveBoolean.create;
-
-// TODO re-implement this
-// export class LiveEnum<T extends string> extends LiveAtomicType<T> {
-//   private constructor(private readonly values: readonly T[]) {
-//     super("varchar", (value) => {
-//       if (!values.includes(value as T)) {
-//         throw new Error(
-//           `Invalid enum value: ${value}. Expected one of: ${values.join(", ")}`
-//         );
-//       }
-//       return value as T;
-//     });
-//   }
-
-//   static create<T extends string>(values: readonly T[]) {
-//     return new LiveEnum<T>(values);
-//   }
-// }
-
-// export const enum_of = LiveEnum.create;
 
 export class LiveTimestamp extends LiveAtomicType<Date> {
   private constructor() {
