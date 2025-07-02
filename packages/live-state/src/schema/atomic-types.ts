@@ -278,7 +278,13 @@ export const reference = LiveString.createReference;
 
 export class LiveBoolean extends LiveAtomicType<boolean> {
   private constructor() {
-    super("boolean", (value) => Boolean(value));
+    super("boolean", (value) => {
+      if (typeof value === "string") {
+        return value.toLowerCase() === "true";
+      }
+
+      return !!value;
+    });
   }
 
   static create() {
