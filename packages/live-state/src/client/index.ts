@@ -296,7 +296,7 @@ class InnerClient {
         ].filter((m) => m.id !== mutation.id);
     }
 
-    if (!this.optimisticObjGraph.getNode(mutation.resourceId))
+    if (!this.optimisticObjGraph.hasNode(mutation.resourceId))
       this.optimisticObjGraph.createNode(
         mutation.resourceId,
         routeName as string,
@@ -348,6 +348,7 @@ class InnerClient {
       } as MaterializedLiveType<LiveTypeAny>;
 
     if (Object.keys(schema.relations).length > 0) {
+      // This maps the column name to the relation name (if it's a `one` relation)
       const schemaRelationalFields = Object.fromEntries(
         Object.entries(schema.relations).flatMap(([k, r]) =>
           r.type === "one" ? [[r.relationalColumn as string, k]] : []
@@ -369,7 +370,18 @@ class InnerClient {
 
         if (!acceptedValue) return;
 
-        // TODO Handle if objects arrive out of order by creating the other node if it doesn't exist
+        if (!this.optimisticObjGraph.hasNode(acceptedValue.value)) {
+          const otherNodeType =
+            schema.relations[schemaRelationalFields[k]].entity.name;
+
+          this.optimisticObjGraph.createNode(
+            acceptedValue.value,
+            otherNodeType,
+            Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
+              r.type === "many" ? [r.foreignColumn] : []
+            )
+          );
+        }
 
         this.optimisticObjGraph.createLink(
           mutation.resourceId,
