@@ -13,6 +13,7 @@ export const useLiveQuery = <T extends ObservableClientState<U>, U>(
 
   useEffect(() => {
     if (opts?.subscribeToRemote) {
+      // TODO: Is this still needed?
       return observable.subscribeToRemote();
     }
   }, [opts?.subscribeToRemote]);

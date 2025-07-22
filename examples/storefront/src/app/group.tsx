@@ -10,8 +10,6 @@ const MemoItem = memo(Card);
 export const Group = ({ groupId }: { groupId: string }) => {
   const group = useLiveQuery(store.groups[groupId]);
 
-  store.groups.customMutatorTest("test").then((res) => console.log(res));
-
   return (
     <div className="flex flex-col gap-4 border p-4 w-sm shrink-0">
       <h2 className="">{group.name}</h2>
