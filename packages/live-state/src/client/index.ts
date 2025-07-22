@@ -402,6 +402,29 @@ class InnerClient {
       value: {
         ...obj.value,
         ...Object.fromEntries(
+          Array.from(node.references.entries()).map(([k, v]) => {
+            const otherNode = this.optimisticObjGraph.getNode(v);
+
+            if (!otherNode) return [k, undefined];
+
+            const [relationName, relation] =
+              Object.entries(this.schema[resourceType].relations).find(
+                (r) => r[1].relationalColumn === k || r[1].foreignColumn === k
+              ) ?? [];
+
+            const otherNodeType = relation?.entity.name;
+
+            if (!otherNodeType || !relation) return [k, undefined];
+
+            return [
+              relationName,
+              this.optimisticRawObjPool[otherNodeType]?.[
+                (otherNode as GraphNode).id
+              ],
+            ];
+          })
+        ),
+        ...Object.fromEntries(
           Array.from(node.referencedBy.entries()).map(([k, v]) => {
             const isMany = v instanceof Set;
 
@@ -427,15 +450,16 @@ class InnerClient {
 
             return [
               relationName,
-              {
-                value: isMany
-                  ? (otherNode as GraphNode[]).map(
+              isMany
+                ? {
+                    value: (otherNode as GraphNode[]).map(
                       (v) => this.optimisticRawObjPool[otherNodeType]?.[v.id]
-                    )
-                  : this.optimisticRawObjPool[otherNodeType]?.[
-                      (otherNode as GraphNode).id
-                    ],
-              },
+                    ),
+                  }
+                : this.optimisticRawObjPool[otherNodeType]?.[
+                    (otherNode as GraphNode).id
+                  ],
+              ,
             ];
           })
         ),
