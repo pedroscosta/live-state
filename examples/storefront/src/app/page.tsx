@@ -5,6 +5,7 @@ import { SubscriptionProvider } from "@live-state/sync/client";
 import { useSyncExternalStore } from "react";
 import { Board } from "./board";
 import { client } from "./live-client";
+import { DndProvider } from "./dnd-context";
 
 export default function Store(): JSX.Element {
   const isConnected = useSyncExternalStore(
@@ -19,18 +20,20 @@ export default function Store(): JSX.Element {
 
   return (
     <SubscriptionProvider client={client}>
-      <header className="w-full h-16 flex items-center justify-end gap-2 p-2 border-b">
-        <div className="flex items-center gap-2">
-          Connected
-          <Switch
-            checked={isConnected}
-            onCheckedChange={(v) =>
-              v ? client.ws.connect() : client.ws.disconnect()
-            }
-          />
-        </div>
-      </header>
-      <Board />
+      <DndProvider>
+        <header className="w-full h-16 flex items-center justify-end gap-2 p-2 border-b">
+          <div className="flex items-center gap-2">
+            Connected
+            <Switch
+              checked={isConnected}
+              onCheckedChange={(v) =>
+                v ? client.ws.connect() : client.ws.disconnect()
+              }
+            />
+          </div>
+        </header>
+        <Board />
+      </DndProvider>
     </SubscriptionProvider>
   );
 }
