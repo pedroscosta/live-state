@@ -97,7 +97,7 @@ class InnerClient {
         );
 
         Object.values(this.optimisticMutationStack).forEach((mutations) => {
-          mutations.forEach((m) => this.sendWsMessage(m));
+          if (mutations) mutations.forEach((m) => this.sendWsMessage(m));
         });
       }
     });
@@ -284,32 +284,17 @@ class InnerClient {
 
     if (!schema) throw new Error("Schema not found");
 
+    const prevValue =
+      this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
+
     if (optimistic) {
-      this.optimisticMutationStack[routeName] ??= [];
-      this.optimisticMutationStack[routeName].push(mutation);
+      (this.optimisticMutationStack[routeName] ??= []).push(mutation);
     } else {
       this.optimisticMutationStack[routeName] = this.optimisticMutationStack?.[
         routeName
       ]?.filter((m) => m.id !== mutation.id);
-    }
 
-    if (!this.optimisticObjGraph.hasNode(mutation.resourceId))
-      this.optimisticObjGraph.createNode(
-        mutation.resourceId,
-        routeName as string,
-        Object.values(schema.relations).flatMap((k) =>
-          k.type === "many" ? [k.foreignColumn] : []
-        )
-      );
-
-    this.optimisticRawObjPool[routeName] ??= {};
-
-    const prevValue =
-      this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
-
-    if (!optimistic) {
-      this.rawObjPool[routeName] ??= {};
-      this.rawObjPool[routeName][mutation.resourceId] = {
+      (this.rawObjPool[routeName] ??= {})[mutation.resourceId] = {
         value: {
           ...(
             this.schema[routeName].mergeMutation(
@@ -328,7 +313,7 @@ class InnerClient {
 
     const rawValue = this.rawObjPool[routeName]?.[mutation.resourceId];
 
-    const reducedResult = (
+    const newOptimisticValue = (
       this.optimisticMutationStack[routeName] ?? []
     ).reduce((acc, mut) => {
       if (mut.resourceId !== mutation.resourceId) return acc;
@@ -340,10 +325,23 @@ class InnerClient {
       )[0];
     }, rawValue);
 
-    if (reducedResult)
-      this.optimisticRawObjPool[routeName][mutation.resourceId] = {
-        value: { ...reducedResult.value, id: { value: mutation.resourceId } },
+    if (newOptimisticValue) {
+      (this.optimisticRawObjPool[routeName] ??= {})[mutation.resourceId] = {
+        value: {
+          ...newOptimisticValue.value,
+          id: { value: mutation.resourceId },
+        },
       } as MaterializedLiveType<LiveTypeAny>;
+    }
+
+    if (!this.optimisticObjGraph.hasNode(mutation.resourceId))
+      this.optimisticObjGraph.createNode(
+        mutation.resourceId,
+        routeName as string,
+        Object.values(schema.relations).flatMap((k) =>
+          k.type === "many" ? [k.foreignColumn] : []
+        )
+      );
 
     if (Object.keys(schema.relations).length > 0) {
       // This maps the column name to the relation name (if it's a `one` relation)
@@ -475,7 +473,6 @@ class InnerClient {
                 : this.optimisticRawObjPool[otherNodeType]?.[
                     (otherNode as GraphNode).id
                   ],
-              ,
             ];
           })
         ),
@@ -550,6 +547,7 @@ export const createClient = <TRouter extends AnyRouter>(
         }
 
         return () => {
+          console.log("Removing listeners", removeListeners);
           removeListeners.forEach((remove) => remove());
         };
       },
