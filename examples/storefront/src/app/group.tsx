@@ -4,16 +4,33 @@ import { memo } from "react";
 import { Button } from "../../components/ui/button";
 import { Card } from "./card";
 import { store } from "./live-client";
+import { useDroppable } from "@dnd-kit/core";
+import { CSS } from '@dnd-kit/utilities';
 
 const MemoItem = memo(Card);
 
 export const Group = ({ groupId }: { groupId: string }) => {
   const group = useLiveQuery(store.groups[groupId]);
+  
+  const { setNodeRef, isOver } = useDroppable({
+    id: groupId,
+    data: {
+      type: 'group',
+      groupId: groupId
+    },
+  });
 
-  store.groups.customMutatorTest("test").then((res) => console.log(res));
+  const groupStyle = {
+    backgroundColor: isOver ? 'rgba(0, 0, 0, 0.05)' : 'transparent',
+    transition: 'background-color 0.2s ease',
+  };
 
   return (
-    <div className="flex flex-col gap-4 border p-4 w-sm shrink-0">
+    <div 
+      ref={setNodeRef}
+      className="flex flex-col gap-4 border p-4 w-sm shrink-0 rounded-lg"
+      style={groupStyle}
+    >
       <h2 className="">{group.name}</h2>
       {Object.values(group.cards ?? {}).map((card) => (
         <MemoItem key={card.id} cardId={card.id} />
