@@ -14,6 +14,7 @@
 # 0.0.1-alpha.4:
 
 - [ ] Client storage
+- [ ] Add populate field to fetch client
 
 # 0.0.1:
 
