@@ -24,7 +24,10 @@ type FetchClient<TRouter extends AnyRouter> = {
     get: (
       opts?: GetOptions<TRouter["routes"][K]["_resourceSchema"]>
     ) => Promise<
-      Simplify<InferLiveObject<TRouter["routes"][K]["_resourceSchema"]>>
+      Record<
+        string,
+        Simplify<InferLiveObject<TRouter["routes"][K]["_resourceSchema"]>>
+      >
     >;
     upsert: (
       input: Simplify<
