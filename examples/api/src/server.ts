@@ -11,7 +11,7 @@ const lsServer = server({
   router: routerImpl,
   storage: new SQLStorage(
     new Pool({
-      connectionString: "postgresql://admin:admin@localhost:5432/live-state",
+      connectionString: "postgresql://admin:admin@localhost:5442/live-state",
     })
   ),
   schema,
