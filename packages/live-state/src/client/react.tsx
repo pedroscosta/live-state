@@ -1,22 +1,13 @@
 import { useEffect, useState } from "react";
-import { Client, ObservableClientState } from ".";
+import { Client } from ".";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
+import { DeepSubscribable } from "./types";
 
-export const useLiveQuery = <T extends ObservableClientState<U>, U>(
-  observable: T,
-  opts?: {
-    subscribeToRemote?: boolean;
-  }
+export const useLiveQuery = <T extends DeepSubscribable<U>, U>(
+  observable: T
 ): Simplify<ReturnType<T["get"]>> => {
   const [slice, setSlice] = useState(() => observable.get());
-
-  useEffect(() => {
-    if (opts?.subscribeToRemote) {
-      // TODO: Is this still needed?
-      return observable.subscribeToRemote();
-    }
-  }, [opts?.subscribeToRemote]);
 
   useEffect(
     () =>
