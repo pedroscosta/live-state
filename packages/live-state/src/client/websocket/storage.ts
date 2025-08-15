@@ -1,0 +1,59 @@
+import { IDBPDatabase, openDB } from "idb";
+import { LiveObjectAny, MaterializedLiveType, Schema } from "../../schema";
+
+const META_KEY = "__meta";
+
+export class KVStorage {
+  private db?: IDBPDatabase<
+    Record<string, MaterializedLiveType<LiveObjectAny>>
+  >;
+
+  public async init(schema: Schema<any>) {
+    this.db = await openDB("live-state", 1, {
+      upgrade(db) {
+        Object.keys(schema).forEach((k) => db.createObjectStore(k));
+        db.createObjectStore(META_KEY);
+      },
+    });
+  }
+
+  public async get(
+    resourceType: string
+  ): Promise<MaterializedLiveType<LiveObjectAny>[]> {
+    if ((this.db as any).getAllRecords)
+      return (this.db as any).getAllRecords(resourceType);
+
+    const [allValues, allKeys] = await Promise.all([
+      this.db!.getAll(resourceType),
+      this.db!.getAllKeys(resourceType),
+    ]);
+
+    return Object.fromEntries(allValues.map((v, i) => [allKeys[i], v]));
+  }
+
+  public getOne(resourceType: string, id: string) {
+    return this.db!.get(resourceType, id) as Promise<
+      MaterializedLiveType<LiveObjectAny> | undefined
+    >;
+  }
+
+  public set(
+    resourceType: string,
+    id: string,
+    value: MaterializedLiveType<LiveObjectAny>
+  ) {
+    return this.db!.put(resourceType, value, id);
+  }
+
+  public delete(resourceType: string, id: string) {
+    return this.db!.delete(resourceType, id);
+  }
+
+  public getMeta(key: string) {
+    return this.db!.get(META_KEY, key) as Promise<any>;
+  }
+
+  public setMeta(key: string, value: any) {
+    return this.db!.put(META_KEY, value, key);
+  }
+}
