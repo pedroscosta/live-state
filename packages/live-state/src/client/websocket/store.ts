@@ -9,6 +9,7 @@ import {
   Schema,
 } from "../../schema";
 import { GraphNode, ObjectGraph } from "../obj-graph";
+import { KVStorage } from "./storage";
 
 type RawObjPool = Record<
   string,
@@ -23,7 +24,21 @@ export class OptimisticStore {
 
   private resourceTypeSubscriptions: Record<string, Set<() => void>> = {};
 
-  public constructor(public readonly schema: Schema<any>) {}
+  private kvStorage: KVStorage;
+
+  public constructor(public readonly schema: Schema<any>) {
+    this.kvStorage = new KVStorage();
+    this.kvStorage.init(this.schema).then(() => {
+      console.log("KVStorage initialized");
+      Object.entries(this.schema).forEach(([k, v]) => {
+        this.kvStorage.get(k).then((data) => {
+          console.log("Loading data from storage:", k, data);
+          if (!data || Object.keys(data).length === 0) return;
+          this.loadConsolidatedState(k, data as any);
+        });
+      });
+    });
+  }
 
   public get(resourceType: string) {
     return Object.fromEntries(
@@ -159,7 +174,9 @@ export class OptimisticStore {
         routeName
       ]?.filter((m) => m.id !== mutation.id);
 
-      (this.rawObjPool[routeName] ??= {})[mutation.resourceId] = {
+      this.rawObjPool[routeName] ??= {};
+
+      const newRawValue = {
         value: {
           ...(
             this.schema[routeName].mergeMutation(
@@ -174,6 +191,14 @@ export class OptimisticStore {
           id: { value: mutation.resourceId },
         },
       } as MaterializedLiveType<LiveObjectAny>;
+
+      this.rawObjPool[routeName][mutation.resourceId] = newRawValue;
+
+      const storedPayload = newRawValue.value;
+
+      delete storedPayload.id;
+
+      this.kvStorage.set(routeName, mutation.resourceId, storedPayload as any);
     }
 
     const rawValue = this.rawObjPool[routeName]?.[mutation.resourceId];
@@ -263,5 +288,22 @@ export class OptimisticStore {
     );
 
     this.optimisticObjGraph.notifySubscribers(mutation.resourceId);
+  }
+
+  public loadConsolidatedState(
+    resourceType: string,
+    data: Record<string, DefaultMutationMessage["payload"]>
+  ) {
+    Object.entries(data).forEach(([id, payload]) => {
+      this.addMutation(resourceType, {
+        // this id is not used because only this client will see this mutation, so it can be any unique string
+        // since resource's ids are already unique, there is no need to generate a new id
+        id,
+        type: "MUTATE",
+        resource: resourceType,
+        resourceId: id,
+        payload,
+      });
+    });
   }
 }

@@ -115,17 +115,7 @@ class InnerClient {
 
         console.log("Syncing resource:", data, parsedMessage);
 
-        Object.entries(data).forEach(([id, payload]) => {
-          this.store.addMutation(resource, {
-            // this id is not used because only this client will see this mutation, so it can be any unique string
-            // since resource's ids are already unique, there is no need to generate a new id
-            id,
-            type: "MUTATE",
-            resource,
-            resourceId: id,
-            payload,
-          });
-        });
+        this.store.loadConsolidatedState(resource, data);
       } else if (parsedMessage.type === "REJECT") {
         // TODO handle reject
         // this.removeOptimisticMutation(
