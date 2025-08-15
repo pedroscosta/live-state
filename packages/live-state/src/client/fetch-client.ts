@@ -2,13 +2,14 @@ import { stringify } from "qs";
 import type { ClientOptions } from ".";
 import { consumeGeneratable } from "../core/utils";
 import {
-  InferLiveObject,
+  type IncludeClause,
+  type InferLiveObject,
   inferValue,
-  LiveObjectAny,
-  WhereClause,
+  type LiveObjectAny,
   type LiveObjectMutationInput,
   type LiveTypeAny,
   type MaterializedLiveType,
+  type WhereClause,
 } from "../schema";
 import type { AnyRouter } from "../server";
 import { Simplify } from "../utils";
@@ -17,6 +18,7 @@ import { createObservable } from "./observable";
 type GetOptions<T extends LiveObjectAny> = {
   headers?: Record<string, string>;
   where?: WhereClause<T>;
+  include?: IncludeClause<T>;
 };
 
 type FetchClient<TRouter extends AnyRouter> = {
@@ -57,6 +59,10 @@ export const createClient = <TRouter extends AnyRouter>(
 
         if (where?.where) {
           query.where = where.where;
+        }
+
+        if (where?.include) {
+          query.include = where.include;
         }
 
         return fetch(
