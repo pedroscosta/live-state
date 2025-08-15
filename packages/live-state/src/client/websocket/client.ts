@@ -2,7 +2,6 @@ import { z } from "zod";
 import { ClientOptions } from "..";
 import {
   ClientMessage,
-  DefaultMutationMessage,
   MutationMessage,
   serverMessageSchema,
 } from "../../core/schemas/web-socket";
@@ -10,25 +9,15 @@ import { generateId, Promisify } from "../../core/utils";
 import {
   InferIndex,
   InferLiveObject,
-  inferValue,
   LiveObjectAny,
   LiveObjectMutationInput,
-  LiveString,
-  LiveTypeAny,
-  MaterializedLiveType,
-  Schema,
 } from "../../schema";
 import { AnyRouter } from "../../server";
 import { Simplify } from "../../utils";
-import { GraphNode, ObjectGraph } from "../obj-graph";
 import { createObservable } from "../observable";
 import { DeepSubscribable } from "../types";
 import { WebSocketClient } from "../web-socket";
-
-type RawObjPool = Record<
-  string,
-  Record<string, MaterializedLiveType<LiveObjectAny> | undefined> | undefined
->;
+import { OptimisticStore } from "./store";
 
 type ClientState<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]:
@@ -42,15 +31,7 @@ type ClientState<TRouter extends AnyRouter> = {
 class InnerClient {
   public readonly url: string;
   public readonly ws: WebSocketClient;
-  public readonly schema: Schema<any>;
-
-  private rawObjPool: RawObjPool = {} as RawObjPool;
-  private optimisticMutationStack: Record<string, DefaultMutationMessage[]> =
-    {};
-  private optimisticObjGraph: ObjectGraph = new ObjectGraph();
-  private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
-
-  private resourceTypeSubscriptions: Record<string, Set<() => void>> = {};
+  public readonly store: OptimisticStore;
 
   // This is subscriptions count for each route
   private routeSubscriptions: Record<string, number> = {};
@@ -62,7 +43,8 @@ class InnerClient {
 
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
-    this.schema = opts.schema;
+
+    this.store = new OptimisticStore(opts.schema);
 
     this.ws = new WebSocketClient({
       url: opts.url,
@@ -96,9 +78,11 @@ class InnerClient {
           }
         );
 
-        Object.values(this.optimisticMutationStack).forEach((mutations) => {
-          if (mutations) mutations.forEach((m) => this.sendWsMessage(m));
-        });
+        Object.values(this.store.optimisticMutationStack).forEach(
+          (mutations) => {
+            if (mutations) mutations.forEach((m) => this.sendWsMessage(m));
+          }
+        );
       }
     });
   }
@@ -106,22 +90,9 @@ class InnerClient {
   public get(path: string[]) {
     if (path.length === 0) throw new Error("Path must not be empty");
 
-    if (path.length === 1) {
-      return Object.fromEntries(
-        Object.entries(this.optimisticRawObjPool[path[0]] ?? {}).map(
-          ([k, v]) => [k, inferValue(v)]
-        )
-      );
-    }
-
-    const fullObject = this.getFullObject(path[0], path[1]);
-
-    if (!fullObject)
-      throw new Error(
-        "Object of type " + path[0] + " not found with id " + path[1]
-      );
-
-    return inferValue(fullObject);
+    return path.length === 1
+      ? this.store.get(path[0])
+      : this.store.getOne(path[0], path[1]);
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
@@ -135,7 +106,7 @@ class InnerClient {
         const { resource } = parsedMessage;
 
         try {
-          this.addMutation(resource, parsedMessage);
+          this.store.addMutation(resource, parsedMessage);
         } catch (e) {
           console.error("Error parsing mutation from the server:", e);
         }
@@ -145,7 +116,7 @@ class InnerClient {
         console.log("Syncing resource:", data, parsedMessage);
 
         Object.entries(data).forEach(([id, payload]) => {
-          this.addMutation(resource, {
+          this.store.addMutation(resource, {
             // this id is not used because only this client will see this mutation, so it can be any unique string
             // since resource's ids are already unique, there is no need to generate a new id
             id,
@@ -194,27 +165,8 @@ class InnerClient {
     };
   }
 
-  public subscribeToSlice(path: string[], listener: () => void) {
-    if (path.length === 1) {
-      if (!this.resourceTypeSubscriptions[path[0]])
-        this.resourceTypeSubscriptions[path[0]] = new Set();
-
-      this.resourceTypeSubscriptions[path[0]].add(listener);
-
-      return () => {
-        this.resourceTypeSubscriptions[path[0]].delete(listener);
-      };
-    }
-
-    if (path.length === 2) {
-      const node = this.optimisticObjGraph.getNode(path[1]);
-
-      if (!node) throw new Error("Node not found");
-
-      return this.optimisticObjGraph.subscribe(path[1], listener);
-    }
-
-    throw new Error("Not implemented");
+  public subscribeToStore(path: string[], listener: () => void) {
+    this.store.subscribe(path, listener);
   }
 
   public mutate(
@@ -228,7 +180,7 @@ class InnerClient {
       id: generateId(),
       type: "MUTATE",
       resource: routeName,
-      payload: this.schema[routeName].encodeMutation(
+      payload: this.store.schema[routeName].encodeMutation(
         "set",
         payload as LiveObjectMutationInput<LiveObjectAny>,
         new Date().toISOString()
@@ -236,7 +188,7 @@ class InnerClient {
       resourceId,
     };
 
-    this.addMutation(routeName, mutationMessage, true);
+    this.store.addMutation(routeName, mutationMessage, true);
 
     this.sendWsMessage(mutationMessage);
   }
@@ -272,219 +224,12 @@ class InnerClient {
   private sendWsMessage(message: ClientMessage) {
     if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
   }
-
-  private addMutation(
-    routeName: string,
-    mutation: DefaultMutationMessage,
-    optimistic: boolean = false
-  ) {
-    const schema = this.schema[routeName];
-
-    console.log("Adding mutation", mutation);
-
-    if (!schema) throw new Error("Schema not found");
-
-    const prevValue =
-      this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
-
-    if (optimistic) {
-      (this.optimisticMutationStack[routeName] ??= []).push(mutation);
-    } else {
-      this.optimisticMutationStack[routeName] = this.optimisticMutationStack?.[
-        routeName
-      ]?.filter((m) => m.id !== mutation.id);
-
-      (this.rawObjPool[routeName] ??= {})[mutation.resourceId] = {
-        value: {
-          ...(
-            this.schema[routeName].mergeMutation(
-              "set",
-              mutation.payload as Record<
-                string,
-                MaterializedLiveType<LiveTypeAny>
-              >,
-              this.rawObjPool[routeName][mutation.resourceId]
-            )[0] as MaterializedLiveType<LiveTypeAny>
-          ).value,
-          id: { value: mutation.resourceId },
-        },
-      } as MaterializedLiveType<LiveObjectAny>;
-    }
-
-    const rawValue = this.rawObjPool[routeName]?.[mutation.resourceId];
-
-    const newOptimisticValue = (
-      this.optimisticMutationStack[routeName] ?? []
-    ).reduce((acc, mut) => {
-      if (mut.resourceId !== mutation.resourceId) return acc;
-
-      return this.schema[routeName].mergeMutation(
-        "set",
-        mut.payload as Record<string, MaterializedLiveType<LiveTypeAny>>,
-        acc
-      )[0];
-    }, rawValue);
-
-    if (newOptimisticValue) {
-      (this.optimisticRawObjPool[routeName] ??= {})[mutation.resourceId] = {
-        value: {
-          ...newOptimisticValue.value,
-          id: { value: mutation.resourceId },
-        },
-      } as MaterializedLiveType<LiveTypeAny>;
-    }
-
-    if (!this.optimisticObjGraph.hasNode(mutation.resourceId))
-      this.optimisticObjGraph.createNode(
-        mutation.resourceId,
-        routeName as string,
-        Object.values(schema.relations).flatMap((k) =>
-          k.type === "many" ? [k.foreignColumn] : []
-        )
-      );
-
-    if (Object.keys(schema.relations).length > 0) {
-      // This maps the column name to the relation name (if it's a `one` relation)
-      const schemaRelationalFields = Object.fromEntries(
-        Object.entries(schema.relations).flatMap(([k, r]) =>
-          r.type === "one" ? [[r.relationalColumn as string, k]] : []
-        )
-      );
-
-      Object.entries(mutation.payload).forEach(([k, v]) => {
-        if (!v || !schemaRelationalFields[k]) return;
-
-        const prevRelation = prevValue?.value[
-          k as keyof (typeof prevValue)["value"]
-        ] as MaterializedLiveType<LiveString> | undefined;
-
-        const [, updatedRelation] = schema.relations[
-          schemaRelationalFields[k]
-        ].mergeMutation(
-          "set",
-          v as { value: string; _meta: { timestamp: string } },
-          prevRelation
-        );
-
-        if (!updatedRelation) return;
-
-        if (!this.optimisticObjGraph.hasNode(updatedRelation.value)) {
-          const otherNodeType =
-            schema.relations[schemaRelationalFields[k]].entity.name;
-
-          this.optimisticObjGraph.createNode(
-            updatedRelation.value,
-            otherNodeType,
-            Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
-              r.type === "many" ? [r.foreignColumn] : []
-            )
-          );
-        }
-
-        if (prevRelation?.value) {
-          this.optimisticObjGraph.removeLink(mutation.resourceId, k);
-        }
-
-        this.optimisticObjGraph.createLink(
-          mutation.resourceId,
-          updatedRelation.value,
-          k
-        );
-      });
-    }
-
-    this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
-      listener()
-    );
-
-    this.optimisticObjGraph.notifySubscribers(mutation.resourceId);
-  }
-
-  private getFullObject(
-    resourceType: string,
-    id: string
-  ): MaterializedLiveType<LiveObjectAny> | undefined {
-    const node = this.optimisticObjGraph.getNode(id);
-
-    if (!node) return;
-
-    const obj = this.optimisticRawObjPool[resourceType]?.[id];
-
-    if (!obj) return;
-
-    return {
-      value: {
-        ...obj.value,
-        ...Object.fromEntries(
-          Array.from(node.references.entries()).map(([k, v]) => {
-            const otherNode = this.optimisticObjGraph.getNode(v);
-
-            if (!otherNode) return [k, undefined];
-
-            const [relationName, relation] =
-              Object.entries(this.schema[resourceType].relations).find(
-                (r) => r[1].relationalColumn === k || r[1].foreignColumn === k
-              ) ?? [];
-
-            const otherNodeType = relation?.entity.name;
-
-            if (!otherNodeType || !relation) return [k, undefined];
-
-            return [
-              relationName,
-              this.optimisticRawObjPool[otherNodeType]?.[
-                (otherNode as GraphNode).id
-              ],
-            ];
-          })
-        ),
-        ...Object.fromEntries(
-          Array.from(node.referencedBy.entries()).map(([k, v]) => {
-            const isMany = v instanceof Set;
-
-            const otherNode = isMany
-              ? Array.from(v.values()).flatMap((v) => {
-                  const node = this.optimisticObjGraph.getNode(v);
-
-                  return node ? [node] : [];
-                })
-              : this.optimisticObjGraph.getNode(v);
-
-            if (!otherNode) return [k, undefined];
-
-            const [relationName, relation] =
-              Object.entries(this.schema[resourceType].relations).find(
-                (r) => r[1].relationalColumn === k || r[1].foreignColumn === k
-              ) ?? [];
-
-            const otherNodeType = relation?.entity.name;
-
-            if (!otherNodeType || !relation)
-              return [k, isMany ? [] : undefined];
-
-            return [
-              relationName,
-              isMany
-                ? {
-                    value: (otherNode as GraphNode[]).map(
-                      (v) => this.optimisticRawObjPool[otherNodeType]?.[v.id]
-                    ),
-                  }
-                : this.optimisticRawObjPool[otherNodeType]?.[
-                    (otherNode as GraphNode).id
-                  ],
-            ];
-          })
-        ),
-      },
-    } as MaterializedLiveType<LiveObjectAny>;
-  }
 }
 
 export type Client<TRouter extends AnyRouter> = {
   client: {
     ws: WebSocketClient;
-    subscribeToRemote: (resourceType?: string[]) => () => void;
+    subscribe: (resourceType?: string[]) => () => void;
   };
   store: DeepSubscribable<ClientState<TRouter>> & {
     [K in keyof TRouter["routes"]]: {
@@ -525,10 +270,10 @@ export const createClient = <TRouter extends AnyRouter>(
   return {
     client: {
       ws: ogClient.ws,
-      subscribeToRemote: (resourceType?: string[]) => {
+      subscribe: (resourceType?: string[]) => {
         const removeListeners: (() => void)[] = [];
 
-        for (const rt of resourceType ?? Object.keys(ogClient.schema)) {
+        for (const rt of resourceType ?? Object.keys(ogClient.store.schema)) {
           removeListeners.push(ogClient.subscribeToRemote(rt));
         }
 
@@ -546,7 +291,7 @@ export const createClient = <TRouter extends AnyRouter>(
         if (lastSegment === "get") return ogClient.get(selector);
 
         if (lastSegment === "subscribe")
-          return ogClient.subscribeToSlice(selector, argumentsList[0]);
+          return ogClient.subscribeToStore(selector, argumentsList[0]);
 
         if (lastSegment === "subscribeToRemote")
           return ogClient.subscribeToRemote(selector[0]);

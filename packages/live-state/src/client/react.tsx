@@ -29,7 +29,7 @@ export const SubscriptionProvider = ({
   client: Client<AnyRouter>["client"];
 }) => {
   useEffect(() => {
-    client.subscribeToRemote();
+    client.subscribe();
   }, []);
 
   return <>{children}</>;
