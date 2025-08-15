@@ -1,5 +1,7 @@
 import { Kysely, PostgresDialect, PostgresPool, Selectable } from "kysely";
+import { jsonArrayFrom } from "kysely/helpers/postgres";
 import {
+  IncludeClause,
   LiveObjectAny,
   LiveTypeAny,
   MaterializedLiveType,
@@ -17,7 +19,8 @@ export abstract class Storage {
 
   public abstract find<T extends LiveObjectAny>(
     resourceName: string,
-    where?: Record<string, any>
+    where?: Record<string, any>,
+    include?: Record<string, any>
   ): Promise<Record<string, MaterializedLiveType<T>>>;
 
   public abstract upsert<T extends LiveObjectAny>(
@@ -49,9 +52,11 @@ export class InMemoryStorage extends Storage {
 
   public async find<T extends LiveObjectAny>(
     resourceName: string,
-    where?: Record<string, any>
+    where?: Record<string, any>,
+    include?: Record<string, any>
   ): Promise<Record<string, MaterializedLiveType<T>>> {
     // TODO implement where conditions
+    // TODO implement include conditions
 
     return (this.storage[resourceName] ?? {}) as Record<
       string,
@@ -85,6 +90,7 @@ type SimpleKyselyQueryInterface = {
   ) => SimpleKyselyQueryInterface;
   executeTakeFirst: () => Promise<Record<string, any>>;
   execute: () => Promise<Record<string, any>[]>;
+  select: (eb: (eb: any) => any) => SimpleKyselyQueryInterface;
 };
 
 export class SQLStorage extends Storage {
@@ -225,15 +231,18 @@ export class SQLStorage extends Storage {
 
   public async find<T extends LiveObjectAny>(
     resourceName: string,
-    where?: WhereClause<T>
+    where?: WhereClause<T>,
+    include?: IncludeClause<T>
   ): Promise<Record<string, MaterializedLiveType<T>>> {
-    const query = this.applyWhere(
+    let query = this.applyWhere(
       resourceName,
       this.db
         .selectFrom(resourceName)
         .selectAll(resourceName) as unknown as SimpleKyselyQueryInterface,
       where
     );
+
+    query = this.applyInclude(resourceName, query, include);
 
     const rawResult = await query.execute();
 
@@ -381,6 +390,54 @@ export class SQLStorage extends Storage {
         );
         query = this.applyWhere(otherResourceName, query, val);
       }
+    }
+
+    return query;
+  }
+
+  private applyInclude<T extends LiveObjectAny>(
+    resourceName: string,
+    query: SimpleKyselyQueryInterface,
+    include?: IncludeClause<T>
+  ) {
+    if (!include) return query;
+
+    if (!this.schema) throw new Error("Schema not initialized");
+
+    const resourceSchema = this.schema[resourceName];
+
+    if (!resourceSchema) throw new Error(`Resource not found: ${resourceName}`);
+
+    for (const [key, val] of Object.entries(include)) {
+      if (!resourceSchema.relations[key])
+        throw new Error(
+          `Relation ${key} not found in resource ${resourceName}`
+        );
+
+      const relation = resourceSchema.relations[key];
+      const otherResourceName = relation.entity.name;
+
+      const otherColumnName =
+        relation.type === "one" ? "id" : relation.foreignColumn;
+
+      const selfColumn =
+        relation.type === "one" ? relation.relationalColumn : "id";
+
+      query = query.select((eb) =>
+        jsonArrayFrom(
+          eb
+            .selectFrom(otherResourceName)
+            .selectAll(otherResourceName)
+            .whereRef(
+              `${otherResourceName}.${otherColumnName}`,
+              "=",
+              `${resourceName}.${selfColumn}`
+            )
+        ).as(key)
+      );
+
+      // TODO support deep include
+      // query = this.applyInclude(otherResourceName, query, val);
     }
 
     return query;

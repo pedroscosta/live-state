@@ -68,7 +68,7 @@ export const httpTransportLayer = (
             resourceName: resource,
             context: initialContext,
             where: parsedQs.where,
-            // include: parsedQs.include, // TODO support include
+            include: parsedQs.include,
             query: rawParsedQs as Record<string, any>,
           },
         });

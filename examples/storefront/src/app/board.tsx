@@ -45,7 +45,7 @@ export function Board(): JSX.Element {
           className="w-sm"
           onClick={() => {
             client.groups
-              .get({ where: { name: "New Group" } })
+              .get({ where: { name: "New Group" }, include: { cards: true } })
               .then((res) => console.log(res));
           }}
         >

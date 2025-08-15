@@ -428,3 +428,7 @@ export type WhereClause<T extends LiveObjectAny> = {
 } & {
   [K in keyof T["relations"]]?: WhereClause<T["relations"][K]["entity"]>;
 };
+
+export type IncludeClause<T extends LiveObjectAny> = {
+  [K in keyof T["relations"]]?: boolean;
+};

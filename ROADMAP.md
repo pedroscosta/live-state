@@ -13,6 +13,7 @@
 
 # 0.0.1-alpha.4:
 
+- [X] Add `include` field to fetch client
 - [ ] Client storage
 
 # 0.0.1:
@@ -27,4 +28,4 @@
 - [ ] uWebSocket adapter
 - [ ] Add default expression support (e.g. `now()`, `uuid()`, etc)
 - [ ] Mutation lifecycle hooks
-- [ ] Row level security
+- [ ] Row level security (policies for each resource lifecycle step)
