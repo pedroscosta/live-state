@@ -101,7 +101,11 @@ export class Route<
   private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
     async ({ req, db }) => {
       return {
-        data: await db.find<TResourceSchema>(req.resourceName, req.where),
+        data: await db.find<TResourceSchema>(
+          req.resourceName,
+          req.where,
+          req.include
+        ),
         acceptedValues: null,
       };
     };

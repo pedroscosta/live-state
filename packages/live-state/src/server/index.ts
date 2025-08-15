@@ -15,6 +15,7 @@ export type ParsedRequest<TInput = any> = {
   procedure?: string;
   context: Record<string, any>;
   where?: Record<string, any>;
+  include?: Record<string, any>;
   type: "QUERY" | "MUTATE";
   resourceId?: string;
   input?: TInput;
@@ -131,5 +132,3 @@ export class Server<TRouter extends AnyRouter> {
 }
 
 export const server = Server.create;
-
-////////////////////////////// TESTING
