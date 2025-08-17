@@ -8,16 +8,12 @@ on:
       - reopened
 
 permissions:
-  pull-requests: read
-  statuses: write
+  pull-requests: write
 
 jobs:
   main:
     name: Validate PR title
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-      statuses: write
     steps:
       - uses: amannn/action-semantic-pull-request@v6
         id: lint_pr_title
