@@ -15,10 +15,20 @@ export const routerImpl = router({
     groups: publicRoute
       .createBasicRoute(schema.groups)
       .withMutations(({ mutation }) => ({
-        customMutatorTest: mutation(z.string()).handler(async ({ req }) => {
+        hello: mutation(z.string()).handler(async ({ req }) => {
           return {
             message: `Hello ${req.input}`,
           };
+        }),
+        customFind: mutation().handler(async ({ req, db }) => {
+          return db.find("cards", undefined, {
+            group: true,
+          });
+        }),
+        customFindOne: mutation(z.string()).handler(async ({ req, db }) => {
+          return db.findById("cards", req.input!, {
+            group: true,
+          });
         }),
       })),
     cards: publicRoute.createBasicRoute(schema.cards),
