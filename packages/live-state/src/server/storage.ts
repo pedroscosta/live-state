@@ -1,5 +1,5 @@
 import { Kysely, PostgresDialect, PostgresPool, Selectable } from "kysely";
-import { jsonArrayFrom } from "kysely/helpers/postgres";
+import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
 import {
   IncludeClause,
   LiveObjectAny,
@@ -14,7 +14,8 @@ export abstract class Storage {
 
   public abstract findById<T extends LiveObjectAny>(
     resourceName: string,
-    id: string
+    id: string,
+    include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined>;
 
   public abstract find<T extends LiveObjectAny>(
@@ -210,23 +211,29 @@ export class SQLStorage extends Storage {
 
   public async findById<T extends LiveObjectAny>(
     resourceName: string,
-    id: string
+    id: string,
+    include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined> {
-    const rawValue = await this.db
+    let query = (await this.db
       .selectFrom(resourceName)
       .where("id", "=", id)
       .selectAll(resourceName)
-      .executeTakeFirst();
+      .select((eb) =>
+        jsonObjectFrom(
+          eb
+            .selectFrom(`${resourceName}_meta`)
+            .selectAll(`${resourceName}_meta`)
+            .whereRef(`${resourceName}_meta.id`, "=", `${resourceName}.id`)
+        ).as("_meta")
+      )) as unknown as SimpleKyselyQueryInterface;
 
-    const metaValue = await this.db
-      .selectFrom(`${resourceName}_meta`)
-      .where("id", "=", id)
-      .selectAll(`${resourceName}_meta`)
-      .executeTakeFirst();
+    query = this.applyInclude(resourceName, query, include);
 
-    if (!rawValue || !metaValue) return;
+    const rawValue = await query.executeTakeFirst();
 
-    return this.convertToMaterializedLiveType(rawValue, metaValue);
+    if (!rawValue) return;
+
+    return this.convertToMaterializedLiveType(rawValue);
   }
 
   public async find<T extends LiveObjectAny>(
@@ -234,13 +241,19 @@ export class SQLStorage extends Storage {
     where?: WhereClause<T>,
     include?: IncludeClause<T>
   ): Promise<Record<string, MaterializedLiveType<T>>> {
-    let query = this.applyWhere(
-      resourceName,
-      this.db
-        .selectFrom(resourceName)
-        .selectAll(resourceName) as unknown as SimpleKyselyQueryInterface,
-      where
-    );
+    let query = this.db
+      .selectFrom(resourceName)
+      .selectAll(resourceName)
+      .select((eb) =>
+        jsonObjectFrom(
+          eb
+            .selectFrom(`${resourceName}_meta`)
+            .selectAll(`${resourceName}_meta`)
+            .whereRef(`${resourceName}_meta.id`, "=", `${resourceName}.id`)
+        ).as("_meta")
+      ) as unknown as SimpleKyselyQueryInterface;
+
+    query = this.applyWhere(resourceName, query, where);
 
     query = this.applyInclude(resourceName, query, include);
 
@@ -255,27 +268,9 @@ export class SQLStorage extends Storage {
 
     if (Object.keys(rawValues).length === 0) return {};
 
-    const metaValues: Record<
-      string,
-      Record<string, string>
-    > = Object.fromEntries(
-      (
-        await this.db
-          .selectFrom(`${resourceName}_meta`)
-          .selectAll()
-          .where("id", "in", Object.keys(rawValues))
-          .execute()
-      ).map((v) => {
-        const { id, ...rest } = v;
-        return [id, rest];
-      })
-    );
-
     const value = Object.entries(rawValues).reduce(
       (acc, [id, value]) => {
-        if (!metaValues[id]) return acc;
-
-        acc[id] = this.convertToMaterializedLiveType(value, metaValues[id]);
+        acc[id] = this.convertToMaterializedLiveType(value);
         return acc;
       },
       {} as Record<string, MaterializedLiveType<T>>
@@ -335,26 +330,38 @@ export class SQLStorage extends Storage {
   }
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
-    value: Record<string, any>,
-    meta: Record<string, string> | undefined
+    value: Record<string, any>
   ): MaterializedLiveType<T> {
-    return {
-      value: Object.fromEntries(
-        Object.entries(value).flatMap(([key, val]) => {
-          if (!meta) return [];
+    if (!value._meta) throw new Error("Missing _meta");
 
-          return [
-            [
-              key,
-              {
-                value: val,
-                _meta: { timestamp: meta?.[key] },
-              },
-            ],
-          ];
-        })
-      ) as unknown as MaterializedLiveType<T>["value"],
-    } as MaterializedLiveType<T>;
+    return {
+      value: Object.entries(value).reduce((acc, [key, val]) => {
+        if (key === "_meta") return acc;
+
+        if (key === "id") {
+          acc[key] = {
+            value: val,
+          };
+        } else if (typeof val === "object") {
+          acc[key] = {
+            ...this.convertToMaterializedLiveType(val),
+            _meta: { timestamp: value._meta[key] },
+          };
+        } else if (Array.isArray(val)) {
+          acc[key] = {
+            value: val.map((v) => this.convertToMaterializedLiveType(v)),
+            _meta: { timestamp: value._meta[key] },
+          };
+        } else {
+          acc[key] = {
+            value: val,
+            _meta: { timestamp: value._meta[key] },
+          };
+        }
+
+        return acc;
+      }, {} as any),
+    } as unknown as MaterializedLiveType<T>;
   }
 
   private applyWhere<T extends LiveObjectAny>(
@@ -423,16 +430,32 @@ export class SQLStorage extends Storage {
       const selfColumn =
         relation.type === "one" ? relation.relationalColumn : "id";
 
+      const aggFunc = relation.type === "one" ? jsonObjectFrom : jsonArrayFrom;
+
       query = query.select((eb) =>
-        jsonArrayFrom(
-          eb
-            .selectFrom(otherResourceName)
-            .selectAll(otherResourceName)
-            .whereRef(
-              `${otherResourceName}.${otherColumnName}`,
-              "=",
-              `${resourceName}.${selfColumn}`
-            )
+        (
+          aggFunc(
+            eb
+              .selectFrom(otherResourceName)
+              .selectAll(otherResourceName)
+              .whereRef(
+                `${otherResourceName}.${otherColumnName}`,
+                "=",
+                `${resourceName}.${selfColumn}`
+              )
+              .select((eb: any) =>
+                jsonObjectFrom(
+                  eb
+                    .selectFrom(`${otherResourceName}_meta`)
+                    .selectAll(`${otherResourceName}_meta`)
+                    .whereRef(
+                      `${otherResourceName}_meta.id`,
+                      "=",
+                      `${otherResourceName}.id`
+                    )
+                ).as("_meta")
+              )
+          ) as ReturnType<typeof jsonObjectFrom>
         ).as(key)
       );
 
