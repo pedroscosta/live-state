@@ -14,7 +14,7 @@
 # 0.0.1-alpha.4:
 
 - [X] Add `include` field to fetch client
-- [ ] Client storage
+- [X] Client storage
 
 # 0.0.1:
 
