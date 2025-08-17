@@ -26,17 +26,28 @@ export class OptimisticStore {
 
   private kvStorage: KVStorage;
 
-  public constructor(public readonly schema: Schema<any>) {
+  public constructor(
+    public readonly schema: Schema<any>,
+    afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void
+  ) {
     this.kvStorage = new KVStorage();
+
     this.kvStorage.init(this.schema).then(() => {
-      console.log("KVStorage initialized");
-      Object.entries(this.schema).forEach(([k, v]) => {
-        this.kvStorage.get(k).then((data) => {
-          console.log("Loading data from storage:", k, data);
+      this.kvStorage
+        .getMeta("mutationStack")
+        .then((data) => {
           if (!data || Object.keys(data).length === 0) return;
-          this.loadConsolidatedState(k, data as any);
+          this.optimisticMutationStack = data as any;
+          afterLoadMutations?.(this.optimisticMutationStack);
+        })
+        .then(() => {
+          Object.entries(this.schema).forEach(([k, v]) => {
+            this.kvStorage.get(k).then((data) => {
+              if (!data || Object.keys(data).length === 0) return;
+              this.loadConsolidatedState(k, data as any);
+            });
+          });
         });
-      });
     });
   }
 
@@ -173,6 +184,8 @@ export class OptimisticStore {
       this.optimisticMutationStack[routeName] = this.optimisticMutationStack?.[
         routeName
       ]?.filter((m) => m.id !== mutation.id);
+
+      this.kvStorage.setMeta("mutationStack", this.optimisticMutationStack);
 
       this.rawObjPool[routeName] ??= {};
 

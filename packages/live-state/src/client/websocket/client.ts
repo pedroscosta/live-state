@@ -44,7 +44,11 @@ class InnerClient {
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
 
-    this.store = new OptimisticStore(opts.schema);
+    this.store = new OptimisticStore(opts.schema, (stack) => {
+      Object.values(stack)
+        ?.flat()
+        ?.forEach((m) => this.sendWsMessage(m));
+    });
 
     this.ws = new WebSocketClient({
       url: opts.url,
