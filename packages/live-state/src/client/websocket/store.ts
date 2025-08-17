@@ -34,19 +34,22 @@ export class OptimisticStore {
 
     this.kvStorage.init(this.schema).then(() => {
       this.kvStorage
-        .getMeta("mutationStack")
+        .getMeta<typeof this.optimisticMutationStack>("mutationStack")
         .then((data) => {
           if (!data || Object.keys(data).length === 0) return;
-          this.optimisticMutationStack = data as any;
+          this.optimisticMutationStack = data;
           afterLoadMutations?.(this.optimisticMutationStack);
         })
         .then(() => {
           Object.entries(this.schema).forEach(([k, v]) => {
             this.kvStorage.get(k).then((data) => {
               if (!data || Object.keys(data).length === 0) return;
-              this.loadConsolidatedState(k, data as any);
+              this.loadConsolidatedState(k, data);
             });
           });
+        })
+        .catch((e) => {
+          console.error("Failed to load state from storage", e);
         });
     });
   }

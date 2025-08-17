@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ClientOptions } from "..";
 import {
   ClientMessage,
+  DefaultMutationMessage,
   MutationMessage,
   serverMessageSchema,
 } from "../../core/schemas/web-socket";
@@ -119,7 +120,10 @@ class InnerClient {
 
         console.log("Syncing resource:", data, parsedMessage);
 
-        this.store.loadConsolidatedState(resource, data);
+        this.store.loadConsolidatedState(
+          resource,
+          data as Record<string, DefaultMutationMessage["payload"]>
+        );
       } else if (parsedMessage.type === "REJECT") {
         // TODO handle reject
         // this.removeOptimisticMutation(

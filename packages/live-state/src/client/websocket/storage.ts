@@ -1,12 +1,11 @@
 import { IDBPDatabase, openDB } from "idb";
-import { LiveObjectAny, MaterializedLiveType, Schema } from "../../schema";
+import { DefaultMutationMessage } from "../../core/schemas/web-socket";
+import { Schema } from "../../schema";
 
 const META_KEY = "__meta";
 
 export class KVStorage {
-  private db?: IDBPDatabase<
-    Record<string, MaterializedLiveType<LiveObjectAny>>
-  >;
+  private db?: IDBPDatabase<Record<string, DefaultMutationMessage["payload"]>>;
 
   public async init(schema: Schema<any>) {
     this.db = await openDB("live-state", 1, {
@@ -19,7 +18,7 @@ export class KVStorage {
 
   public async get(
     resourceType: string
-  ): Promise<MaterializedLiveType<LiveObjectAny>[]> {
+  ): Promise<Record<string, DefaultMutationMessage["payload"]>> {
     if ((this.db as any).getAllRecords)
       return (this.db as any).getAllRecords(resourceType);
 
@@ -33,14 +32,14 @@ export class KVStorage {
 
   public getOne(resourceType: string, id: string) {
     return this.db!.get(resourceType, id) as Promise<
-      MaterializedLiveType<LiveObjectAny> | undefined
+      DefaultMutationMessage["payload"] | undefined
     >;
   }
 
   public set(
     resourceType: string,
     id: string,
-    value: MaterializedLiveType<LiveObjectAny>
+    value: DefaultMutationMessage["payload"]
   ) {
     return this.db!.put(resourceType, value, id);
   }
@@ -49,11 +48,11 @@ export class KVStorage {
     return this.db!.delete(resourceType, id);
   }
 
-  public getMeta(key: string) {
-    return this.db!.get(META_KEY, key) as Promise<any>;
+  public getMeta<T = unknown>(key: string) {
+    return this.db!.get(META_KEY, key) as Promise<T | undefined>;
   }
 
-  public setMeta(key: string, value: any) {
+  public setMeta<T>(key: string, value: T) {
     return this.db!.put(META_KEY, value, key);
   }
 }
