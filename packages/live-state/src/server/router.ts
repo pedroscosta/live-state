@@ -101,7 +101,7 @@ export class Route<
   private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
     async ({ req, db }) => {
       return {
-        data: await db.find<TResourceSchema>(
+        data: await db.rawFind<TResourceSchema>(
           req.resourceName,
           req.where,
           req.include
@@ -118,7 +118,7 @@ export class Route<
     if (!req.input) throw new Error("Payload is required");
     if (!req.resourceId) throw new Error("ResourceId is required");
 
-    const target = await db.findById<TResourceSchema>(
+    const target = await db.rawFindById<TResourceSchema>(
       req.resourceName,
       req.resourceId
     );
@@ -136,7 +136,7 @@ export class Route<
     }
 
     return {
-      data: await db.upsert<TResourceSchema>(
+      data: await db.rawUpsert<TResourceSchema>(
         req.resourceName,
         req.resourceId,
         newRecord

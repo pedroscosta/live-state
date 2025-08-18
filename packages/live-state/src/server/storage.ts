@@ -10,21 +10,25 @@ import {
 } from "../schema";
 
 export abstract class Storage {
+  /** @internal */
   public abstract updateSchema(opts: Schema<any>): Promise<void>;
 
-  public abstract findById<T extends LiveObjectAny>(
+  /** @internal */
+  public abstract rawFindById<T extends LiveObjectAny>(
     resourceName: string,
     id: string,
     include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined>;
 
-  public abstract find<T extends LiveObjectAny>(
+  /** @internal */
+  public abstract rawFind<T extends LiveObjectAny>(
     resourceName: string,
     where?: Record<string, any>,
     include?: Record<string, any>
   ): Promise<Record<string, MaterializedLiveType<T>>>;
 
-  public abstract upsert<T extends LiveObjectAny>(
+  /** @internal */
+  public abstract rawUpsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>
@@ -60,6 +64,7 @@ export class SQLStorage extends Storage {
     });
   }
 
+  /** @internal */
   public async updateSchema(opts: Schema<any>): Promise<void> {
     this.schema = opts;
 
@@ -162,7 +167,8 @@ export class SQLStorage extends Storage {
     }
   }
 
-  public async findById<T extends LiveObjectAny>(
+  /** @internal */
+  public async rawFindById<T extends LiveObjectAny>(
     resourceName: string,
     id: string,
     include?: IncludeClause<T>
@@ -189,7 +195,8 @@ export class SQLStorage extends Storage {
     return this.convertToMaterializedLiveType(rawValue);
   }
 
-  public async find<T extends LiveObjectAny>(
+  /** @internal */
+  public async rawFind<T extends LiveObjectAny>(
     resourceName: string,
     where?: WhereClause<T>,
     include?: IncludeClause<T>
@@ -232,7 +239,8 @@ export class SQLStorage extends Storage {
     return value;
   }
 
-  public async upsert<T extends LiveObjectAny>(
+  /** @internal */
+  public async rawUpsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>
