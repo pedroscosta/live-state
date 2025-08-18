@@ -20,15 +20,26 @@ export const routerImpl = router({
             message: `Hello ${req.input}`,
           };
         }),
-        customFind: mutation().handler(async ({ req, db }) => {
-          return db.find("cards", undefined, {
-            group: true,
-          });
-        }),
+        customFind: mutation(z.string().optional()).handler(
+          async ({ req, db }) => {
+            return db.find(schema.groups, {
+              where: {
+                ...(req.input ? { id: req.input } : {}),
+              },
+              include: {
+                cards: true,
+              },
+            });
+          }
+        ),
         customFindOne: mutation(z.string()).handler(async ({ req, db }) => {
-          return db.findById("cards", req.input!, {
-            group: true,
+          const result = await db.findOne(schema.cards, req.input!, {
+            include: {
+              group: true,
+            },
           });
+
+          return result;
         }),
       })),
     cards: publicRoute.createBasicRoute(schema.cards),
