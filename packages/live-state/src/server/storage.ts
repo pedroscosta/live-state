@@ -37,6 +37,14 @@ export abstract class Storage {
     include?: Record<string, any>
   ): Promise<Record<string, MaterializedLiveType<T>>>;
 
+  public abstract find<T extends LiveObjectAny>(
+    resource: T,
+    options?: {
+      where?: WhereClause<T>;
+      include?: IncludeClause<T>;
+    }
+  ): Promise<Record<string, InferLiveObject<T>>>;
+
   /** @internal */
   public abstract rawUpsert<T extends LiveObjectAny>(
     resourceName: string,
@@ -267,6 +275,26 @@ export class SQLStorage extends Storage {
     return value;
   }
 
+  public async find<T extends LiveObjectAny>(
+    resource: T,
+    options?: {
+      where?: WhereClause<T>;
+      include?: IncludeClause<T>;
+    }
+  ): Promise<Record<string, InferLiveObject<T>>> {
+    const rawResult = await this.rawFind(
+      resource.name,
+      options?.where,
+      options?.include
+    );
+
+    return Object.fromEntries(
+      Object.entries(rawResult).map(([id, value]) => {
+        return [id, inferValue(value) as InferLiveObject<T>];
+      })
+    );
+  }
+
   /** @internal */
   public async rawUpsert<T extends LiveObjectAny>(
     resourceName: string,
@@ -331,14 +359,15 @@ export class SQLStorage extends Storage {
           acc[key] = {
             value: val,
           };
-        } else if (typeof val === "object") {
-          acc[key] = {
-            ...this.convertToMaterializedLiveType(val),
-            _meta: { timestamp: value._meta[key] },
-          };
         } else if (Array.isArray(val)) {
           acc[key] = {
             value: val.map((v) => this.convertToMaterializedLiveType(v)),
+            _meta: { timestamp: value._meta[key] },
+          };
+        } else if (typeof val === "object") {
+          console.log(val);
+          acc[key] = {
+            ...this.convertToMaterializedLiveType(val),
             _meta: { timestamp: value._meta[key] },
           };
         } else {
