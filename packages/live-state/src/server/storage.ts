@@ -2,6 +2,8 @@ import { Kysely, PostgresDialect, PostgresPool, Selectable } from "kysely";
 import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
 import {
   IncludeClause,
+  InferLiveObject,
+  inferValue,
   LiveObjectAny,
   LiveTypeAny,
   MaterializedLiveType,
@@ -19,6 +21,14 @@ export abstract class Storage {
     id: string,
     include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined>;
+
+  public abstract findOne<T extends LiveObjectAny>(
+    resource: T,
+    id: string,
+    options?: {
+      include?: IncludeClause<T>;
+    }
+  ): Promise<InferLiveObject<T> | undefined>;
 
   /** @internal */
   public abstract rawFind<T extends LiveObjectAny>(
@@ -193,6 +203,24 @@ export class SQLStorage extends Storage {
     if (!rawValue) return;
 
     return this.convertToMaterializedLiveType(rawValue);
+  }
+
+  public async findOne<T extends LiveObjectAny>(
+    resource: T,
+    id: string,
+    options?: {
+      include?: IncludeClause<T>;
+    }
+  ): Promise<InferLiveObject<T> | undefined> {
+    const rawValue = await this.rawFindById(
+      resource.name,
+      id,
+      options?.include
+    );
+
+    if (!rawValue) return;
+
+    return inferValue(rawValue) as InferLiveObject<T>;
   }
 
   /** @internal */
