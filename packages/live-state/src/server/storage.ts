@@ -80,6 +80,32 @@ export abstract class Storage {
       )
     )! as InferLiveObject<T>;
   }
+
+  public async update<T extends LiveObjectAny>(
+    resource: T,
+    resourceId: string,
+    value: LiveObjectMutationInput<T>
+  ): Promise<InferLiveObject<T>> {
+    const now = new Date().toISOString();
+
+    const { id, ...rest } = value;
+
+    return inferValue(
+      await this.rawUpsert(resource.name, resourceId, {
+        value: Object.fromEntries(
+          Object.entries(rest).map(([k, v]) => [
+            k,
+            {
+              value: v,
+              _meta: {
+                timestamp: now,
+              },
+            },
+          ])
+        ),
+      } as unknown as MaterializedLiveType<T>)
+    )! as InferLiveObject<T>;
+  }
 }
 
 type SimpleKyselyQueryInterface = {

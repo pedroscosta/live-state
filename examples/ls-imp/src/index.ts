@@ -48,6 +48,11 @@ export const routerImpl = router({
             name: req.input,
           });
         }),
+        customUpdate: mutation(z.string()).handler(async ({ req, db }) => {
+          return db.update(schema.groups, req.input!, {
+            name: "Updated",
+          });
+        }),
       })),
     cards: publicRoute.createBasicRoute(schema.cards),
   },
