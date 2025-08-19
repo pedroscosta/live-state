@@ -5,11 +5,13 @@ import {
   InferLiveObject,
   inferValue,
   LiveObjectAny,
+  LiveObjectMutationInput,
   LiveTypeAny,
   MaterializedLiveType,
   Schema,
   WhereClause,
 } from "../schema";
+import { Simplify } from "../utils";
 
 export abstract class Storage {
   /** @internal */
@@ -51,6 +53,33 @@ export abstract class Storage {
     resourceId: string,
     value: MaterializedLiveType<T>
   ): Promise<MaterializedLiveType<T>>;
+
+  public async insert<T extends LiveObjectAny>(
+    resource: T,
+    value: Simplify<LiveObjectMutationInput<T>>
+  ): Promise<InferLiveObject<T>> {
+    const now = new Date().toISOString();
+
+    return inferValue(
+      await this.rawUpsert(
+        resource.name,
+        value.id as string,
+        {
+          value: Object.fromEntries(
+            Object.entries(value).map(([k, v]) => [
+              k,
+              {
+                value: v,
+                _meta: {
+                  timestamp: now,
+                },
+              },
+            ])
+          ),
+        } as unknown as MaterializedLiveType<T>
+      )
+    )! as InferLiveObject<T>;
+  }
 }
 
 type SimpleKyselyQueryInterface = {
@@ -312,8 +341,10 @@ export class SQLStorage extends Storage {
       const metaValues: Record<string, string> = {};
 
       for (const [key, val] of Object.entries(value.value)) {
+        const metaVal = val._meta?.timestamp;
+        if (!metaVal) continue;
         values[key] = val.value;
-        metaValues[key] = val._meta.timestamp;
+        metaValues[key] = metaVal;
       }
 
       if (exists) {
@@ -365,7 +396,6 @@ export class SQLStorage extends Storage {
             _meta: { timestamp: value._meta[key] },
           };
         } else if (typeof val === "object") {
-          console.log(val);
           acc[key] = {
             ...this.convertToMaterializedLiveType(val),
             _meta: { timestamp: value._meta[key] },

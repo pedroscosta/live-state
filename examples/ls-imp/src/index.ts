@@ -1,6 +1,7 @@
 import { routeFactory, router } from "@live-state/sync/server";
 import { z } from "zod";
 
+import { generateId } from "../../../packages/live-state/src/core/utils";
 import { schema } from "./schema";
 
 /*
@@ -40,6 +41,12 @@ export const routerImpl = router({
           });
 
           return result;
+        }),
+        customInsert: mutation(z.string()).handler(async ({ req, db }) => {
+          return db.insert(schema.groups, {
+            id: generateId(),
+            name: req.input,
+          });
         }),
       })),
     cards: publicRoute.createBasicRoute(schema.cards),
