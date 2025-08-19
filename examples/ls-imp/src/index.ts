@@ -1,6 +1,7 @@
 import { routeFactory, router } from "@live-state/sync/server";
 import { z } from "zod";
 
+import { generateId } from "../../../packages/live-state/src/core/utils";
 import { schema } from "./schema";
 
 /*
@@ -20,14 +21,36 @@ export const routerImpl = router({
             message: `Hello ${req.input}`,
           };
         }),
-        customFind: mutation().handler(async ({ req, db }) => {
-          return db.find("cards", undefined, {
-            group: true,
+        customFind: mutation(z.string().optional()).handler(
+          async ({ req, db }) => {
+            return db.find(schema.groups, {
+              where: {
+                ...(req.input ? { id: req.input } : {}),
+              },
+              include: {
+                cards: true,
+              },
+            });
+          }
+        ),
+        customFindOne: mutation(z.string()).handler(async ({ req, db }) => {
+          const result = await db.findOne(schema.cards, req.input!, {
+            include: {
+              group: true,
+            },
+          });
+
+          return result;
+        }),
+        customInsert: mutation(z.string()).handler(async ({ req, db }) => {
+          return db.insert(schema.groups, {
+            id: generateId(),
+            name: req.input,
           });
         }),
-        customFindOne: mutation(z.string()).handler(async ({ req, db }) => {
-          return db.findById("cards", req.input!, {
-            group: true,
+        customUpdate: mutation(z.string()).handler(async ({ req, db }) => {
+          return db.update(schema.groups, req.input!, {
+            name: "Updated",
           });
         }),
       })),

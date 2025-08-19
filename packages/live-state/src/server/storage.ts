@@ -2,79 +2,109 @@ import { Kysely, PostgresDialect, PostgresPool, Selectable } from "kysely";
 import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
 import {
   IncludeClause,
+  InferLiveObject,
+  inferValue,
   LiveObjectAny,
+  LiveObjectMutationInput,
   LiveTypeAny,
   MaterializedLiveType,
   Schema,
   WhereClause,
 } from "../schema";
+import { Simplify } from "../utils";
 
 export abstract class Storage {
+  /** @internal */
   public abstract updateSchema(opts: Schema<any>): Promise<void>;
 
-  public abstract findById<T extends LiveObjectAny>(
+  /** @internal */
+  public abstract rawFindById<T extends LiveObjectAny>(
     resourceName: string,
     id: string,
     include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined>;
 
-  public abstract find<T extends LiveObjectAny>(
+  public abstract findOne<T extends LiveObjectAny>(
+    resource: T,
+    id: string,
+    options?: {
+      include?: IncludeClause<T>;
+    }
+  ): Promise<InferLiveObject<T> | undefined>;
+
+  /** @internal */
+  public abstract rawFind<T extends LiveObjectAny>(
     resourceName: string,
     where?: Record<string, any>,
     include?: Record<string, any>
   ): Promise<Record<string, MaterializedLiveType<T>>>;
 
-  public abstract upsert<T extends LiveObjectAny>(
+  public abstract find<T extends LiveObjectAny>(
+    resource: T,
+    options?: {
+      where?: WhereClause<T>;
+      include?: IncludeClause<T>;
+    }
+  ): Promise<Record<string, InferLiveObject<T>>>;
+
+  /** @internal */
+  public abstract rawUpsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>
   ): Promise<MaterializedLiveType<T>>;
-}
 
-export class InMemoryStorage extends Storage {
-  private storage: Record<string, Record<string, any>> = {};
+  public async insert<T extends LiveObjectAny>(
+    resource: T,
+    value: Simplify<LiveObjectMutationInput<T>>
+  ): Promise<InferLiveObject<T>> {
+    const now = new Date().toISOString();
 
-  public async updateSchema(opts: Schema<any>): Promise<void> {
-    this.storage = Object.entries(opts).reduce(
-      (acc, [_, entity]) => {
-        acc[entity.name] = {};
-        return acc;
-      },
-      {} as typeof this.storage
-    );
+    return inferValue(
+      await this.rawUpsert(
+        resource.name,
+        value.id as string,
+        {
+          value: Object.fromEntries(
+            Object.entries(value).map(([k, v]) => [
+              k,
+              {
+                value: v,
+                _meta: {
+                  timestamp: now,
+                },
+              },
+            ])
+          ),
+        } as unknown as MaterializedLiveType<T>
+      )
+    )! as InferLiveObject<T>;
   }
 
-  public async findById<T extends LiveObjectAny>(
-    resourceName: string,
-    id: string
-  ): Promise<MaterializedLiveType<T> | undefined> {
-    return this.storage[resourceName]?.[id] as MaterializedLiveType<T>;
-  }
-
-  public async find<T extends LiveObjectAny>(
-    resourceName: string,
-    where?: Record<string, any>,
-    include?: Record<string, any>
-  ): Promise<Record<string, MaterializedLiveType<T>>> {
-    // TODO implement where conditions
-    // TODO implement include conditions
-
-    return (this.storage[resourceName] ?? {}) as Record<
-      string,
-      MaterializedLiveType<T>
-    >;
-  }
-
-  public async upsert<T extends LiveObjectAny>(
-    resourceName: string,
+  public async update<T extends LiveObjectAny>(
+    resource: T,
     resourceId: string,
-    value: MaterializedLiveType<T>
-  ): Promise<MaterializedLiveType<T>> {
-    this.storage[resourceName] ??= {};
+    value: LiveObjectMutationInput<T>
+  ): Promise<InferLiveObject<T>> {
+    const now = new Date().toISOString();
 
-    this.storage[resourceName][resourceId] = value;
+    const { id, ...rest } = value;
 
-    return value;
+    return inferValue(
+      await this.rawUpsert(resource.name, resourceId, {
+        value: Object.fromEntries(
+          Object.entries(rest).map(([k, v]) => [
+            k,
+            {
+              value: v,
+              _meta: {
+                timestamp: now,
+              },
+            },
+          ])
+        ),
+      } as unknown as MaterializedLiveType<T>)
+    )! as InferLiveObject<T>;
   }
 }
 
@@ -107,6 +137,7 @@ export class SQLStorage extends Storage {
     });
   }
 
+  /** @internal */
   public async updateSchema(opts: Schema<any>): Promise<void> {
     this.schema = opts;
 
@@ -209,7 +240,8 @@ export class SQLStorage extends Storage {
     }
   }
 
-  public async findById<T extends LiveObjectAny>(
+  /** @internal */
+  public async rawFindById<T extends LiveObjectAny>(
     resourceName: string,
     id: string,
     include?: IncludeClause<T>
@@ -236,7 +268,26 @@ export class SQLStorage extends Storage {
     return this.convertToMaterializedLiveType(rawValue);
   }
 
-  public async find<T extends LiveObjectAny>(
+  public async findOne<T extends LiveObjectAny>(
+    resource: T,
+    id: string,
+    options?: {
+      include?: IncludeClause<T>;
+    }
+  ): Promise<InferLiveObject<T> | undefined> {
+    const rawValue = await this.rawFindById(
+      resource.name,
+      id,
+      options?.include
+    );
+
+    if (!rawValue) return;
+
+    return inferValue(rawValue) as InferLiveObject<T>;
+  }
+
+  /** @internal */
+  public async rawFind<T extends LiveObjectAny>(
     resourceName: string,
     where?: WhereClause<T>,
     include?: IncludeClause<T>
@@ -279,7 +330,28 @@ export class SQLStorage extends Storage {
     return value;
   }
 
-  public async upsert<T extends LiveObjectAny>(
+  public async find<T extends LiveObjectAny>(
+    resource: T,
+    options?: {
+      where?: WhereClause<T>;
+      include?: IncludeClause<T>;
+    }
+  ): Promise<Record<string, InferLiveObject<T>>> {
+    const rawResult = await this.rawFind(
+      resource.name,
+      options?.where,
+      options?.include
+    );
+
+    return Object.fromEntries(
+      Object.entries(rawResult).map(([id, value]) => {
+        return [id, inferValue(value) as InferLiveObject<T>];
+      })
+    );
+  }
+
+  /** @internal */
+  public async rawUpsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>
@@ -295,8 +367,10 @@ export class SQLStorage extends Storage {
       const metaValues: Record<string, string> = {};
 
       for (const [key, val] of Object.entries(value.value)) {
+        const metaVal = val._meta?.timestamp;
+        if (!metaVal) continue;
         values[key] = val.value;
-        metaValues[key] = val._meta.timestamp;
+        metaValues[key] = metaVal;
       }
 
       if (exists) {
@@ -342,14 +416,14 @@ export class SQLStorage extends Storage {
           acc[key] = {
             value: val,
           };
-        } else if (typeof val === "object") {
-          acc[key] = {
-            ...this.convertToMaterializedLiveType(val),
-            _meta: { timestamp: value._meta[key] },
-          };
         } else if (Array.isArray(val)) {
           acc[key] = {
             value: val.map((v) => this.convertToMaterializedLiveType(v)),
+            _meta: { timestamp: value._meta[key] },
+          };
+        } else if (typeof val === "object") {
+          acc[key] = {
+            ...this.convertToMaterializedLiveType(val),
             _meta: { timestamp: value._meta[key] },
           };
         } else {

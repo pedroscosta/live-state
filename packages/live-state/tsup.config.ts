@@ -10,6 +10,7 @@ export default defineConfig((options: Options) => [
     format: ["cjs", "esm"],
     minify: process.env.NODE_ENV === "production",
     treeshake: true,
+    clean: process.env.NODE_ENV === "production",
     ...options,
   },
   {
@@ -23,6 +24,7 @@ export default defineConfig((options: Options) => [
     format: ["esm"],
     minify: process.env.NODE_ENV === "production",
     treeshake: true,
+    clean: process.env.NODE_ENV === "production",
     ...options,
   },
 ]);
