@@ -184,11 +184,10 @@ export class OptimisticStore {
     if (optimistic) {
       (this.optimisticMutationStack[routeName] ??= []).push(mutation);
     } else {
-      this.optimisticMutationStack[routeName] = this.optimisticMutationStack?.[
-        routeName
-      ]?.filter((m) => m.id !== mutation.id);
-
-      this.kvStorage.setMeta("mutationStack", this.optimisticMutationStack);
+      this.optimisticMutationStack[routeName] =
+        this.optimisticMutationStack?.[routeName]?.filter(
+          (m) => m.id !== mutation.id
+        ) ?? [];
 
       this.rawObjPool[routeName] ??= {};
 
@@ -216,6 +215,8 @@ export class OptimisticStore {
 
       this.kvStorage.set(routeName, mutation.resourceId, storedPayload as any);
     }
+
+    this.kvStorage.setMeta("mutationStack", this.optimisticMutationStack);
 
     const rawValue = this.rawObjPool[routeName]?.[mutation.resourceId];
 
