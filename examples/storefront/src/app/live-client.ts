@@ -5,6 +5,7 @@ import { schema } from "@repo/ls-impl/schema";
 export const { store, client } = createClient<Router>({
   url: "ws://localhost:5001/ws",
   schema,
+  storage: {
+    name: "storefront",
+  },
 });
-
-// export const { useLiveData, useSubscribe } = reactiveClient(client);

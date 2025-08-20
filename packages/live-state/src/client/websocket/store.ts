@@ -28,11 +28,12 @@ export class OptimisticStore {
 
   public constructor(
     public readonly schema: Schema<any>,
+    storageName: string,
     afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void
   ) {
     this.kvStorage = new KVStorage();
 
-    this.kvStorage.init(this.schema).then(() => {
+    this.kvStorage.init(this.schema, storageName).then(() => {
       this.kvStorage
         .getMeta<typeof this.optimisticMutationStack>("mutationStack")
         .then((data) => {

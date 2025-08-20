@@ -7,10 +7,10 @@ const META_KEY = "__meta";
 export class KVStorage {
   private db?: IDBPDatabase<Record<string, DefaultMutationMessage["payload"]>>;
 
-  public async init(schema: Schema<any>) {
+  public async init(schema: Schema<any>, name: string) {
     if (typeof window === "undefined") return;
 
-    this.db = await openDB("live-state", 1, {
+    this.db = await openDB(name, 1, {
       upgrade(db) {
         Object.keys(schema).forEach((k) => db.createObjectStore(k));
         db.createObjectStore(META_KEY);
