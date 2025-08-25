@@ -18,6 +18,15 @@ export class KVStorage {
 
     const schemaHash = await hash(schema);
 
+    const objectHashes: Record<string, string> = Object.fromEntries(
+      await Promise.all(
+        Object.entries(schema).map(async ([key, value]) => [
+          key,
+          await hash(value),
+        ])
+      )
+    );
+
     const metaDb = await openDB("live-state-databases", 1, {
       upgrade(db) {
         if (!db.objectStoreNames.contains(DATABASES_KEY))
@@ -26,19 +35,30 @@ export class KVStorage {
     });
 
     const databaseInfo = (
-      await this.getAll<{ schemaHash: string }>(metaDb, DATABASES_KEY)
+      await this.getAll<{
+        schemaHash: string;
+        objectHashes: Record<string, string>;
+      }>(metaDb, DATABASES_KEY)
     )?.[name];
 
     if (databaseInfo?.schemaHash !== schemaHash) {
       dbVersion++;
     }
 
-    await metaDb.put(DATABASES_KEY, { schemaHash }, name);
+    await metaDb.put(DATABASES_KEY, { schemaHash, objectHashes }, name);
 
     this.db = await openDB(name, dbVersion, {
       upgrade(db) {
         [...Object.keys(schema), META_KEY].forEach((k) => {
-          if (!db.objectStoreNames.contains(k)) db.createObjectStore(k);
+          if (
+            !db.objectStoreNames.contains(k) ||
+            databaseInfo?.objectHashes[k] !== objectHashes[k]
+          ) {
+            if (databaseInfo?.objectHashes[k] !== objectHashes[k])
+              db.deleteObjectStore(k);
+
+            db.createObjectStore(k);
+          }
         });
       },
     });
