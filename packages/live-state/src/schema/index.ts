@@ -105,9 +105,11 @@ export class LiveObject<
           ...(materializedShape?.value ?? {}),
           ...Object.fromEntries(
             Object.entries(encodedMutations).map(([key, value]) => {
-              const [newValue, acceptedValue] = (
-                this.fields[key] ?? this.relations[key]
-              ).mergeMutation(
+              const field = this.fields[key] ?? this.relations[key];
+
+              if (!field) return [key, value];
+
+              const [newValue, acceptedValue] = field.mergeMutation(
                 mutationType,
                 value,
                 materializedShape?.value[
@@ -335,7 +337,7 @@ export const inferValue = <T extends LiveTypeAny>(
   if (Array.isArray(type.value))
     return (type.value as any[]).map((v) => inferValue(v)) as InferLiveType<T>;
 
-  if (typeof type.value !== "object") return type.value;
+  if (typeof type.value !== "object" || type.value === null) return type.value;
 
   return Object.fromEntries(
     Object.entries(type.value).map(([key, value]) => [
