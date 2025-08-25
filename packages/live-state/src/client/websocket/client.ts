@@ -42,14 +42,18 @@ class InnerClient {
     { timeoutHandle: NodeJS.Timeout; handler: (data: any) => void }
   > = {};
 
-  public constructor(opts: ClientOptions) {
+  public constructor(opts: ClientOptions & { storage: { name: string } }) {
     this.url = opts.url;
 
-    this.store = new OptimisticStore(opts.schema, (stack) => {
-      Object.values(stack)
-        ?.flat()
-        ?.forEach((m) => this.sendWsMessage(m));
-    });
+    this.store = new OptimisticStore(
+      opts.schema,
+      opts.storage.name,
+      (stack) => {
+        Object.values(stack)
+          ?.flat()
+          ?.forEach((m) => this.sendWsMessage(m));
+      }
+    );
 
     this.ws = new WebSocketClient({
       url: opts.url,
@@ -261,7 +265,7 @@ export type Client<TRouter extends AnyRouter> = {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
-  opts: ClientOptions
+  opts: ClientOptions & { storage: { name: string } }
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
 

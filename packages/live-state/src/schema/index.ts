@@ -237,6 +237,16 @@ export class Relation<
     };
   }
 
+  toJSON() {
+    return {
+      entityName: this.entity.name,
+      type: this.type,
+      required: this.required,
+      relationalColumn: this.relationalColumn,
+      foreignColumn: this.foreignColumn,
+    };
+  }
+
   static createOneFactory<TOriginEntity extends LiveObjectAny>() {
     return <
       TEntity extends LiveObjectAny,
