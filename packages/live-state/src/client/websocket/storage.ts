@@ -45,21 +45,23 @@ export class KVStorage {
       dbVersion++;
     }
 
-    await metaDb.put(DATABASES_KEY, { schemaHash, objectHashes }, name);
-
     this.db = await openDB(name, dbVersion, {
-      upgrade(db) {
+      async upgrade(db) {
         [...Object.keys(schema), META_KEY].forEach((k) => {
-          if (
-            !db.objectStoreNames.contains(k) ||
-            databaseInfo?.objectHashes[k] !== objectHashes[k]
-          ) {
-            if (databaseInfo?.objectHashes[k] !== objectHashes[k])
-              db.deleteObjectStore(k);
+          if (databaseInfo?.objectHashes[k] !== objectHashes[k])
+            db.deleteObjectStore(k);
 
-            db.createObjectStore(k);
-          }
+          if (!db.objectStoreNames.contains(k)) db.createObjectStore(k);
         });
+        await metaDb.put(DATABASES_KEY, { schemaHash, objectHashes }, name);
+      },
+      blocking() {
+        // TODO: properly handle this
+        window.location.reload();
+      },
+      blocked() {
+        // TODO: properly handle this
+        window.location.reload();
       },
     });
   }
@@ -109,8 +111,8 @@ export class KVStorage {
     if ((db as any).getAllRecords) return (db as any).getAllRecords(storeName);
 
     const [allValues, allKeys] = await Promise.all([
-      db!.getAll(storeName),
-      db!.getAllKeys(storeName),
+      db.getAll(storeName),
+      db.getAllKeys(storeName),
     ]);
 
     return Object.fromEntries(
