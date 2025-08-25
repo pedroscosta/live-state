@@ -168,7 +168,7 @@ export class Relation<
 > extends LiveType<
   InferIndex<TEntity>,
   {
-    timestamp: string;
+    timestamp: string | null;
   } & LiveTypeMeta
 > {
   public readonly entity: TEntity;
@@ -222,6 +222,8 @@ export class Relation<
 
     if (
       materializedShape &&
+      materializedShape._meta.timestamp &&
+      encodedMutation._meta.timestamp &&
       materializedShape._meta.timestamp.localeCompare(
         encodedMutation._meta.timestamp
       ) >= 0
