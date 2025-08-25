@@ -78,7 +78,7 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
 }
 
 type LiveAtomicTypeMeta = {
-  timestamp: string;
+  timestamp: string | null;
 } & LiveTypeMeta;
 
 class LiveAtomicType<Value> extends LiveType<
@@ -154,6 +154,8 @@ class LiveAtomicType<Value> extends LiveType<
   ] {
     if (
       materializedShape &&
+      materializedShape._meta.timestamp &&
+      encodedMutation._meta.timestamp &&
       materializedShape._meta.timestamp.localeCompare(
         encodedMutation._meta.timestamp
       ) >= 0
