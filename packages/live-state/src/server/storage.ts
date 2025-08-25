@@ -419,17 +419,17 @@ export class SQLStorage extends Storage {
         } else if (Array.isArray(val)) {
           acc[key] = {
             value: val.map((v) => this.convertToMaterializedLiveType(v)),
-            _meta: { timestamp: value._meta[key] },
+            _meta: { timestamp: value?._meta?.[key] },
           };
-        } else if (typeof val === "object") {
+        } else if (typeof val === "object" && val !== null) {
           acc[key] = {
             ...this.convertToMaterializedLiveType(val),
-            _meta: { timestamp: value._meta[key] },
+            _meta: { timestamp: value?._meta?.[key] },
           };
         } else {
           acc[key] = {
             value: val,
-            _meta: { timestamp: value._meta[key] },
+            _meta: { timestamp: value?._meta?.[key] },
           };
         }
 

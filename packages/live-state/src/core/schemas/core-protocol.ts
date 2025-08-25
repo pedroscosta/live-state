@@ -12,8 +12,10 @@ export type RawQueryRequest = z.infer<typeof querySchema>;
 export const defaultPayloadSchema = z
   .record(
     z.object({
-      value: z.string().or(z.number()).or(z.boolean()).or(z.date()),
-      _meta: z.object({ timestamp: z.string().optional() }).optional(),
+      value: z.string().or(z.number()).or(z.boolean()).or(z.date()).nullable(),
+      _meta: z
+        .object({ timestamp: z.string().optional().nullable() })
+        .optional(),
     })
   )
   .superRefine((v, ctx) => {
