@@ -247,7 +247,7 @@ export class OptimisticStore {
         mutation.resourceId,
         routeName as string,
         Object.values(schema.relations).flatMap((k) =>
-          k.type === "many" ? [k.foreignColumn] : []
+          k.type === "many" ? [k.entity.name] : []
         )
       );
 
@@ -284,7 +284,7 @@ export class OptimisticStore {
             updatedRelation.value,
             otherNodeType,
             Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
-              r.type === "many" ? [r.foreignColumn] : []
+              r.type === "many" ? [r.entity.name] : []
             )
           );
         }
