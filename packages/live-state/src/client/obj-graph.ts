@@ -73,7 +73,7 @@ export class ObjectGraph {
    * Creates a link between two nodes
    * @param sourceNodeId The ID of the source node
    * @param targetNodeId The ID of the target node
-   * @param linkName The name of the link (it's the name of the column that originates the link)
+   * @param linkName The name of the link (it's the type of the node that originates the link -- i.e. the 'one' side of the relation)
    */
   createLink(
     sourceNodeId: string,
