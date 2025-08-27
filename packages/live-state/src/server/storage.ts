@@ -421,7 +421,11 @@ export class SQLStorage extends Storage {
             value: val.map((v) => this.convertToMaterializedLiveType(v)),
             _meta: { timestamp: value?._meta?.[key] },
           };
-        } else if (typeof val === "object" && val !== null) {
+        } else if (
+          typeof val === "object" &&
+          val !== null &&
+          !(val instanceof Date)
+        ) {
           acc[key] = {
             ...this.convertToMaterializedLiveType(val),
             _meta: { timestamp: value?._meta?.[key] },
