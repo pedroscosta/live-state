@@ -339,7 +339,12 @@ export const inferValue = <T extends LiveTypeAny>(
   if (Array.isArray(type.value))
     return (type.value as any[]).map((v) => inferValue(v)) as InferLiveType<T>;
 
-  if (typeof type.value !== "object" || type.value === null) return type.value;
+  if (
+    typeof type.value !== "object" ||
+    type.value === null ||
+    type.value instanceof Date
+  )
+    return type.value;
 
   return Object.fromEntries(
     Object.entries(type.value).map(([key, value]) => [

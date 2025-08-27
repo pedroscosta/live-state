@@ -280,15 +280,6 @@ export class OptimisticStore {
           const otherNodeType =
             schema.relations[schemaRelationalFields[k]].entity.name;
 
-          console.log(
-            "Creating node",
-            updatedRelation.value,
-            otherNodeType,
-            Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
-              r.type === "many" ? [r.entity.name] : []
-            )
-          );
-
           this.optimisticObjGraph.createNode(
             updatedRelation.value,
             otherNodeType,
@@ -301,14 +292,6 @@ export class OptimisticStore {
         if (prevRelation?.value) {
           this.optimisticObjGraph.removeLink(mutation.resourceId, k);
         }
-
-        console.log(
-          "Creating link",
-          mutation.resourceId,
-          mutation.resourceId,
-          updatedRelation.value,
-          routeName
-        );
 
         this.optimisticObjGraph.createLink(
           mutation.resourceId,
