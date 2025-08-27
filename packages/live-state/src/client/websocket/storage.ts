@@ -48,7 +48,10 @@ export class KVStorage {
     this.db = await openDB(name, dbVersion, {
       async upgrade(db) {
         [...Object.keys(schema), META_KEY].forEach((k) => {
-          if (databaseInfo?.objectHashes[k] !== objectHashes[k])
+          if (
+            databaseInfo?.objectHashes[k] !== objectHashes[k] &&
+            db.objectStoreNames.contains(k)
+          )
             db.deleteObjectStore(k);
 
           if (!db.objectStoreNames.contains(k)) db.createObjectStore(k);
