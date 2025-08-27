@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Client } from ".";
 import { AnyRouter } from "../server";
 import { Simplify } from "../utils";
@@ -8,15 +8,19 @@ export const useLiveQuery = <T extends DeepSubscribable<U>, U>(
   observable: T
 ): Simplify<ReturnType<T["get"]>> => {
   const [slice, setSlice] = useState(() => observable.get());
+  const primed = useRef(false);
 
-  useEffect(
-    () =>
-      observable.subscribe(() => {
-        const newSlice = observable.get();
-        setSlice(newSlice);
-      }),
-    []
-  );
+  useEffect(() => {
+    if (primed.current) setSlice(observable.get());
+    else primed.current = true;
+
+    const unsub = observable.subscribe(() => {
+      const newSlice = observable.get();
+      setSlice(newSlice);
+    });
+
+    return unsub;
+  }, [observable]);
 
   return slice as Simplify<ReturnType<T["get"]>>;
 };
