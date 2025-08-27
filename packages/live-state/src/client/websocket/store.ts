@@ -117,7 +117,7 @@ export class OptimisticStore {
 
             const [relationName, relation] =
               Object.entries(this.schema[resourceType].relations).find(
-                (r) => r[1].relationalColumn === k || r[1].foreignColumn === k
+                (r) => r[1].entity.name === k
               ) ?? [];
 
             const otherNodeType = relation?.entity.name;
@@ -296,7 +296,7 @@ export class OptimisticStore {
         this.optimisticObjGraph.createLink(
           mutation.resourceId,
           updatedRelation.value,
-          k
+          routeName
         );
       });
     }
