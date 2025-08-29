@@ -89,7 +89,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           subscriptions[resource][clientId] = {};
 
           // TODO send bootstrap
-        } else if (parsedMessage.type === "SYNC") {
+        } else if (parsedMessage.type === "QUERY") {
           const { resources: _res } = parsedMessage;
 
           const resources = _res ?? Object.keys(server.schema);
@@ -114,16 +114,18 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
 
               reply({
                 id: parsedMessage.id,
-                type: "SYNC",
-                resource: resourceName,
-                data: Object.fromEntries(
-                  Object.entries(
-                    (result.data ?? {}) as Record<
-                      string,
-                      MaterializedLiveType<LiveObjectAny>
-                    >
-                  ).map(([id, v]) => [id, v.value])
-                ),
+                type: "REPLY",
+                data: {
+                  resource: resourceName,
+                  data: Object.fromEntries(
+                    Object.entries(
+                      (result.data ?? {}) as Record<
+                        string,
+                        MaterializedLiveType<LiveObjectAny>
+                      >
+                    ).map(([id, v]) => [id, v.value])
+                  ),
+                },
               });
             })
           );

@@ -17,9 +17,9 @@ export const clSubscribeMsgSchema = z.object({
   resource: z.string(),
 });
 
-export const clSyncMsgSchema = z.object({
+export const clQueryMsgSchema = z.object({
   id: msgId,
-  type: z.literal("SYNC"),
+  type: z.literal("QUERY"),
   lastSyncedAt: z.string().optional(),
   resources: z.string().array().optional(),
   where: z.record(z.any()).optional(),
@@ -44,7 +44,7 @@ export type MutationMessage = z.infer<typeof mutationMsgSchema>;
 
 export const clientMessageSchema = z.union([
   clSubscribeMsgSchema,
-  clSyncMsgSchema,
+  clQueryMsgSchema,
   mutationMsgSchema,
 ]);
 
@@ -53,13 +53,6 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 /*
  * Server messages
  */
-
-export const svSyncMsgSchema = z.object({
-  id: msgId,
-  type: z.literal("SYNC"),
-  resource: z.string(),
-  data: z.record(defaultPayloadSchema),
-});
 
 export const svRejectMsgSchema = z.object({
   id: msgId,
@@ -75,10 +68,14 @@ export const svReplyMsgSchema = z.object({
 });
 
 export const serverMessageSchema = z.union([
-  svSyncMsgSchema,
   svRejectMsgSchema,
   svReplyMsgSchema,
   defaultMutationMsgSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
+
+export const syncReplyDataSchema = z.object({
+  resource: z.string(),
+  data: z.record(defaultPayloadSchema),
+});

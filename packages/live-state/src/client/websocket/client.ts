@@ -1,12 +1,18 @@
 import { ClientOptions } from "..";
 import {
   ClientMessage,
-  DefaultMutationMessage,
   MutationMessage,
   serverMessageSchema,
+  syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
-import { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
+import {
+  inferValue,
+  LiveObjectAny,
+  LiveObjectMutationInput,
+  MaterializedLiveType,
+  Schema,
+} from "../../schema";
 import { AnyRouter } from "../../server";
 import { Simplify } from "../../utils";
 import type { Client as ClientType } from "../types";
@@ -17,28 +23,35 @@ import { OptimisticStore } from "./store";
 class InnerClient {
   public readonly url: string;
   public readonly ws: WebSocketClient;
-  public readonly store: OptimisticStore;
+  public readonly store?: OptimisticStore;
+  public readonly schema: Schema<any>;
 
-  // This is subscriptions count for each route
-  private routeSubscriptions: Record<string, number> = {};
+  private remoteSubCounters: Record<string, number> = {};
 
   private replyHandlers: Record<
     string,
     { timeoutHandle: NodeJS.Timeout; handler: (data: any) => void }
   > = {};
 
-  public constructor(opts: ClientOptions & { storage: { name: string } }) {
+  public constructor(
+    opts: ClientOptions &
+      ({ storage: { name: string }; stateful?: true } | { stateful: false })
+  ) {
     this.url = opts.url;
+    const stateful = opts.stateful ?? true;
+    this.schema = opts.schema;
 
-    this.store = new OptimisticStore(
-      opts.schema,
-      opts.storage.name,
-      (stack) => {
-        Object.values(stack)
-          ?.flat()
-          ?.forEach((m) => this.sendWsMessage(m));
-      }
-    );
+    if (stateful) {
+      this.store = new OptimisticStore(
+        opts.schema,
+        (opts as { storage: { name: string } }).storage.name,
+        (stack) => {
+          Object.values(stack)
+            ?.flat()
+            ?.forEach((m) => this.sendWsMessage(m));
+        }
+      );
+    }
 
     this.ws = new WebSocketClient({
       url: opts.url,
@@ -54,39 +67,75 @@ class InnerClient {
 
     this.ws.addEventListener("connectionChange", (e) => {
       if (e.open) {
+        // TODO move this logic to the Provider
         this.sendWsMessage({
           id: generateId(),
-          type: "SYNC",
+          type: "QUERY",
           // TODO add lastSyncedAt
         });
 
-        Object.entries(this.routeSubscriptions).forEach(
-          ([routeName, count]) => {
-            if (count > 0) {
-              this.sendWsMessage({
-                id: generateId(),
-                type: "SUBSCRIBE",
-                resource: routeName,
-              });
-            }
+        Object.entries(this.remoteSubCounters).forEach(([routeName, count]) => {
+          if (count > 0) {
+            this.sendWsMessage({
+              id: generateId(),
+              type: "SUBSCRIBE",
+              resource: routeName,
+            });
           }
-        );
+        });
 
-        Object.values(this.store.optimisticMutationStack).forEach(
-          (mutations) => {
-            if (mutations) mutations.forEach((m) => this.sendWsMessage(m));
-          }
-        );
+        if (this.store)
+          Object.values(this.store.optimisticMutationStack).forEach(
+            (mutations) => {
+              if (mutations) mutations.forEach((m) => this.sendWsMessage(m));
+            }
+          );
       }
     });
   }
 
   public get(path: string[]) {
+    if (!this.store) throw new Error("Store not initialized");
     if (path.length === 0) throw new Error("Path must not be empty");
 
     return path.length === 1
-      ? this.store.get(path[0])
-      : this.store.getOne(path[0], path[1]);
+      ? this.store?.get(path[0])
+      : this.store?.getOne(path[0], path[1]);
+  }
+
+  public remoteGet(path: string[]) {
+    if (path.length === 0) throw new Error("Path must not be empty");
+
+    if (!this.ws || !this.ws.connected())
+      throw new Error("WebSocket not connected");
+
+    const id = generateId();
+
+    this.sendWsMessage({
+      id,
+      type: "QUERY",
+      resources: [path[0]],
+    });
+
+    return new Promise((resolve, reject) => {
+      this.replyHandlers[id] = {
+        timeoutHandle: setTimeout(() => {
+          delete this.replyHandlers[id];
+          reject(new Error("Reply timeout"));
+        }, 5000),
+        handler: (data: any) => {
+          delete this.replyHandlers[id];
+          resolve(
+            Object.fromEntries(
+              Object.entries(data.data).map(([id, v]) => [
+                id,
+                inferValue({ value: v } as MaterializedLiveType<LiveObjectAny>),
+              ])
+            )
+          );
+        },
+      };
+    });
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
@@ -100,19 +149,10 @@ class InnerClient {
         const { resource } = parsedMessage;
 
         try {
-          this.store.addMutation(resource, parsedMessage);
+          this.store?.addMutation(resource, parsedMessage);
         } catch (e) {
-          console.error("Error parsing mutation from the server:", e);
+          console.error("Error merging mutation from the server:", e);
         }
-      } else if (parsedMessage.type === "SYNC") {
-        const { resource, data } = parsedMessage;
-
-        console.log("Syncing resource:", data, parsedMessage);
-
-        this.store.loadConsolidatedState(
-          resource,
-          data as Record<string, DefaultMutationMessage["payload"]>
-        );
       } else if (parsedMessage.type === "REJECT") {
         // TODO handle reject
         // this.removeOptimisticMutation(
@@ -123,10 +163,20 @@ class InnerClient {
       } else if (parsedMessage.type === "REPLY") {
         const { id, data } = parsedMessage;
 
-        if (!this.replyHandlers[id]) return;
+        if (this.replyHandlers[id]) {
+          clearTimeout(this.replyHandlers[id].timeoutHandle);
+          this.replyHandlers[id].handler(data);
+          return;
+        }
 
-        clearTimeout(this.replyHandlers[id].timeoutHandle);
-        this.replyHandlers[id].handler(data);
+        if (!this.store) return;
+
+        const parsedSyncData = syncReplyDataSchema.parse(data);
+
+        this.store.loadConsolidatedState(
+          parsedSyncData.resource,
+          parsedSyncData.data
+        );
       }
     } catch (e) {
       console.error("Error parsing message from the server:", e);
@@ -134,8 +184,8 @@ class InnerClient {
   }
 
   public subscribeToRemote(routeName: string) {
-    this.routeSubscriptions[routeName] =
-      (this.routeSubscriptions[routeName] ?? 0) + 1;
+    this.remoteSubCounters[routeName] =
+      (this.remoteSubCounters[routeName] ?? 0) + 1;
 
     this.sendWsMessage({
       id: generateId(),
@@ -144,15 +194,17 @@ class InnerClient {
     });
 
     return () => {
-      this.routeSubscriptions[routeName] -= 1;
+      this.remoteSubCounters[routeName] -= 1;
 
-      if (this.routeSubscriptions[routeName] === 0) {
+      if (this.remoteSubCounters[routeName] === 0) {
         // TODO add unsubscribe message
       }
     };
   }
 
   public subscribeToStore(path: string[], listener: () => void) {
+    if (!this.store) throw new Error("Store not initialized");
+
     this.store.subscribe(path, listener);
   }
 
@@ -167,7 +219,7 @@ class InnerClient {
       id: generateId(),
       type: "MUTATE",
       resource: routeName,
-      payload: this.store.schema[routeName].encodeMutation(
+      payload: this.schema[routeName].encodeMutation(
         "set",
         payload as LiveObjectMutationInput<LiveObjectAny>,
         new Date().toISOString()
@@ -175,7 +227,7 @@ class InnerClient {
       resourceId,
     };
 
-    this.store.addMutation(routeName, mutationMessage, true);
+    this.store?.addMutation(routeName, mutationMessage, true);
 
     this.sendWsMessage(mutationMessage);
   }
@@ -222,7 +274,8 @@ export type Client<TRouter extends AnyRouter> = {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
-  opts: ClientOptions & { storage: { name: string } }
+  opts: ClientOptions &
+    ({ storage: { name: string }; stateful?: true } | { stateful: false })
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
 
@@ -232,7 +285,7 @@ export const createClient = <TRouter extends AnyRouter>(
       subscribe: (resourceType?: string[]) => {
         const removeListeners: (() => void)[] = [];
 
-        for (const rt of resourceType ?? Object.keys(ogClient.store.schema)) {
+        for (const rt of resourceType ?? Object.keys(ogClient.schema)) {
           removeListeners.push(ogClient.subscribeToRemote(rt));
         }
 
@@ -248,6 +301,8 @@ export const createClient = <TRouter extends AnyRouter>(
         const lastSegment = path[path.length - 1];
 
         if (lastSegment === "get") return ogClient.get(selector);
+
+        if (lastSegment === "remoteGet") return ogClient.remoteGet(selector);
 
         if (lastSegment === "subscribe")
           return ogClient.subscribeToStore(selector, argumentsList[0]);
