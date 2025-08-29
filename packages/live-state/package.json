@@ -65,7 +65,7 @@
       "require": "./dist/client.js"
     },
     "./client/fetch": {
-      "types": "./src/client/fetch-client.ts",
+      "types": "./src/client/fetch/index.ts",
       "import": "./dist/fetch-client.js",
       "require": "./dist/fetch-client.js"
     }

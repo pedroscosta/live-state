@@ -15,9 +15,9 @@ import {
 } from "../../schema";
 import { AnyRouter } from "../../server";
 import { Simplify } from "../../utils";
-import { createObservable } from "../observable";
 import { DeepSubscribable } from "../types";
-import { WebSocketClient } from "../web-socket";
+import { createObservable } from "../utils";
+import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
 type ClientState<TRouter extends AnyRouter> = {

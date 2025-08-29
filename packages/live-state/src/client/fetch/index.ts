@@ -1,6 +1,6 @@
 import { stringify } from "qs";
-import type { ClientOptions } from ".";
-import { consumeGeneratable } from "../core/utils";
+import type { ClientOptions } from "..";
+import { consumeGeneratable } from "../../core/utils";
 import {
   type IncludeClause,
   type InferLiveObject,
@@ -10,10 +10,10 @@ import {
   type LiveTypeAny,
   type MaterializedLiveType,
   type WhereClause,
-} from "../schema";
-import type { AnyRouter } from "../server";
-import { Simplify } from "../utils";
-import { createObservable } from "./observable";
+} from "../../schema";
+import type { AnyRouter } from "../../server";
+import { Simplify } from "../../utils";
+import { createObservable } from "../utils";
 
 type GetOptions<T extends LiveObjectAny> = {
   headers?: Record<string, string>;
