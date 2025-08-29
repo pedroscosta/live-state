@@ -16,7 +16,7 @@ export default defineConfig((options: Options) => [
   {
     entryPoints: {
       client: "./src/client/index.ts",
-      "fetch-client": "./src/client/fetch-client.ts",
+      "fetch-client": "./src/client/fetch/index.ts",
     },
     platform: "browser",
     tsconfig: "./src/client/tsconfig.json",

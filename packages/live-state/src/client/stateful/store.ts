@@ -8,7 +8,7 @@ import {
   MaterializedLiveType,
   Schema,
 } from "../../schema";
-import { GraphNode, ObjectGraph } from "../obj-graph";
+import { GraphNode, ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 
 type RawObjPool = Record<

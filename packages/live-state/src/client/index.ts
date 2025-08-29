@@ -2,7 +2,7 @@ import { Awaitable, Generatable } from "../core/utils";
 import { Schema } from "../schema";
 
 export * from "./react";
-export * from "./websocket/client";
+export * from "./stateful/client";
 
 export type ClientOptions = {
   url: string;
