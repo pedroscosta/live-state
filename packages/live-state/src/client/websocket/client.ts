@@ -2,6 +2,7 @@ import { ClientOptions } from "..";
 import {
   ClientMessage,
   MutationMessage,
+  type ServerMessage,
   serverMessageSchema,
   syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
@@ -20,6 +21,18 @@ import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
+export type ConnectionStateChangeEvent = {
+  type: "CONNECTION_STATE_CHANGE";
+  open: boolean;
+};
+
+export type MessageReceivedEvent = {
+  type: "MESSAGE_RECEIVED";
+  message: ServerMessage;
+};
+
+export type ClientEvents = ConnectionStateChangeEvent | MessageReceivedEvent;
+
 class InnerClient {
   public readonly url: string;
   public readonly ws: WebSocketClient;
@@ -27,6 +40,8 @@ class InnerClient {
   public readonly schema: Schema<any>;
 
   private remoteSubCounters: Record<string, number> = {};
+
+  private eventListeners: Set<(event: ClientEvents) => void> = new Set();
 
   private replyHandlers: Record<
     string,
@@ -66,6 +81,11 @@ class InnerClient {
     });
 
     this.ws.addEventListener("connectionChange", (e) => {
+      this.emitEvent({
+        type: "CONNECTION_STATE_CHANGE",
+        open: e.open,
+      });
+
       if (e.open) {
         // TODO move this logic to the Provider
         this.sendWsMessage({
@@ -144,6 +164,11 @@ class InnerClient {
       const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
 
       console.log("Parsed message:", parsedMessage);
+
+      this.emitEvent({
+        type: "MESSAGE_RECEIVED",
+        message: parsedMessage,
+      });
 
       if (parsedMessage.type === "MUTATE") {
         const { resource } = parsedMessage;
@@ -260,8 +285,19 @@ class InnerClient {
     });
   }
 
+  public addEventListener(listener: (event: ClientEvents) => void) {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
   private sendWsMessage(message: ClientMessage) {
     if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
+  }
+
+  private emitEvent(event: ClientEvents) {
+    this.eventListeners.forEach((listener) => listener(event));
   }
 }
 
@@ -269,6 +305,7 @@ export type Client<TRouter extends AnyRouter> = {
   client: {
     ws: WebSocketClient;
     subscribe: (resourceType?: string[]) => () => void;
+    addEventListener: (listener: (event: ClientEvents) => void) => () => void;
   };
   store: ClientType<TRouter>;
 };
@@ -293,6 +330,9 @@ export const createClient = <TRouter extends AnyRouter>(
           console.log("Removing listeners", removeListeners);
           removeListeners.forEach((remove) => remove());
         };
+      },
+      addEventListener: (listener) => {
+        return ogClient.addEventListener(listener);
       },
     },
     store: createObservable(() => {}, {
