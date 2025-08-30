@@ -40,7 +40,7 @@ type FetchClient<TRouter extends AnyRouter> = {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
-  opts: ClientOptions
+  opts: Omit<ClientOptions, "storage">
 ): FetchClient<TRouter> => {
   return createObservable(() => {}, {
     apply: async (_, path, argumentsList) => {
