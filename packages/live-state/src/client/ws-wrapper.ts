@@ -127,6 +127,18 @@ export class WebSocketClient {
 
   private handleError(event: Event): void {
     this.dispatchEvent("error", event);
+    this.dispatchEvent("connectionChange", { open: false });
+
+    if ((event as ErrorEvent).error?.message?.includes("non-101")) {
+      if (this.ws) {
+        this.ws.close();
+        this.ws = null;
+      }
+
+      if (this.autoReconnect && !this.intentionallyDisconnected) {
+        this.scheduleReconnect();
+      }
+    }
   }
 
   private handleMessage(event: MessageEvent): void {
