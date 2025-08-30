@@ -1,9 +1,9 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
     "lib": ["DOM", "ES2015"],
     "outDir": "./dist",
-    "types": ["node", ""],
+    "types": ["node", "vitest", "@testing-library/jest-dom"],
     "stripInternal": true
   },
   "include": ["."],
