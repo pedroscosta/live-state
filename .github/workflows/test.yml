@@ -41,10 +41,12 @@ jobs:
       #   run: pnpm lint
 
       - name: Run tests with coverage
-        run: pnpm test -- --coverage --coverage.reporter=json-summary
+        run: pnpm test --filter="./packages/*" -- --coverage --coverage.reporter=json-summary
 
       - name: "Report Coverage"
         # Set if: always() to also generate the report if tests are failing
         # Only works if you set `reportOnFailure: true` in your vite config as specified above
         if: always()
         uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          json-summary-path: packages/live-state/coverage/coverage-summary.json
