@@ -1,9 +1,16 @@
-import { describe, expect, test, vi, beforeEach, afterEach, Mock } from "vitest";
-import { Server, server } from "../../src/server";
-import { Storage } from "../../src/server/storage";
-import { AnyRouter } from "../../src/server/router";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  Mock,
+  test,
+  vi,
+} from "vitest";
 import { Schema } from "../../src/schema";
-import { ParsedRequest, Middleware, MutationHandler } from "../../src/server";
+import { Middleware, ParsedRequest, Server, server } from "../../src/server";
+import { AnyRouter } from "../../src/server/router";
+import { Storage } from "../../src/server/storage";
 
 describe("Server", () => {
   let mockRouter: AnyRouter;
@@ -14,7 +21,9 @@ describe("Server", () => {
     mockRouter = {
       routes: {
         users: {
-          handleRequest: vi.fn().mockResolvedValue({ data: {}, acceptedValues: null }),
+          handleRequest: vi
+            .fn()
+            .mockResolvedValue({ data: {}, acceptedValues: null }),
         },
       },
     } as unknown as AnyRouter;
@@ -123,7 +132,9 @@ describe("Server", () => {
     const unsubscribe = serverInstance.subscribeToMutations(handler);
 
     expect(typeof unsubscribe).toBe("function");
-    expect((serverInstance as any).mutationSubscriptions.has(handler)).toBe(true);
+    expect((serverInstance as any).mutationSubscriptions.has(handler)).toBe(
+      true
+    );
   });
 
   test("should unsubscribe from mutations", () => {
@@ -138,7 +149,9 @@ describe("Server", () => {
 
     unsubscribe();
 
-    expect((serverInstance as any).mutationSubscriptions.has(handler)).toBe(false);
+    expect((serverInstance as any).mutationSubscriptions.has(handler)).toBe(
+      false
+    );
   });
 
   test("should handle request successfully", async () => {
@@ -183,7 +196,9 @@ describe("Server", () => {
       context: {},
     };
 
-    await expect(serverInstance.handleRequest({ req: mockRequest })).rejects.toThrow("Invalid resource");
+    await expect(
+      serverInstance.handleRequest({ req: mockRequest })
+    ).rejects.toThrow("Invalid resource");
   });
 
   test("should execute server middlewares in correct order", async () => {
@@ -222,10 +237,10 @@ describe("Server", () => {
     await serverInstance.handleRequest({ req: mockRequest });
 
     expect(executionOrder).toEqual([
-      "server-middleware2-before",
       "server-middleware1-before",
-      "server-middleware1-after",
+      "server-middleware2-before",
       "server-middleware2-after",
+      "server-middleware1-after",
     ]);
   });
 
@@ -397,7 +412,7 @@ describe("Server", () => {
 
   test("should handle async middleware", async () => {
     const asyncMiddleware: Middleware = async ({ next, req }) => {
-      await new Promise(resolve => setTimeout(resolve, 1));
+      await new Promise((resolve) => setTimeout(resolve, 1));
       req.context.async = true;
       return next(req);
     };

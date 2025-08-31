@@ -1,9 +1,23 @@
-import { describe, expect, test, vi, beforeEach, afterEach, Mock } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  Mock,
+  test,
+  vi,
+} from "vitest";
 import { z } from "zod";
-import { Router, Route, RouteFactory, router, routeFactory } from "../../src/server/router";
-import { Storage } from "../../src/server/storage";
-import { LiveObjectAny, Schema, MaterializedLiveType } from "../../src/schema";
+import { LiveObjectAny, MaterializedLiveType, Schema } from "../../src/schema";
 import { ParsedRequest } from "../../src/server";
+import {
+  Route,
+  RouteFactory,
+  routeFactory,
+  Router,
+  router,
+} from "../../src/server/router";
+import { Storage } from "../../src/server/storage";
 
 describe("Router", () => {
   test("should create router instance", () => {
@@ -17,7 +31,7 @@ describe("Router", () => {
   test("should create router with router helper function", () => {
     const mockSchema = { users: {} } as Schema<any>;
     const routes = { users: {} as any };
-    
+
     const routerInstance = router({ schema: mockSchema, routes });
 
     expect(routerInstance).toBeInstanceOf(Router);
@@ -104,7 +118,11 @@ describe("Route", () => {
       schema: mockSchema,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith("users", undefined, undefined);
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      undefined,
+      undefined
+    );
     expect(result).toEqual({
       data: mockData,
       acceptedValues: null,
@@ -130,7 +148,11 @@ describe("Route", () => {
       schema: mockSchema,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith("users", { name: "John" }, { posts: true });
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      { name: "John" },
+      { posts: true }
+    );
   });
 
   test("should handle MUTATE request (set)", async () => {
@@ -148,7 +170,7 @@ describe("Route", () => {
 
     const mockExistingData = { value: { id: { value: "user1" } } };
     const mockNewData = { value: { name: { value: "John" } } };
-    
+
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
     (mockStorage.rawUpsert as Mock).mockResolvedValue(mockNewData);
 
@@ -159,7 +181,11 @@ describe("Route", () => {
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
-    expect(mockResource.mergeMutation).toHaveBeenCalledWith("set", { name: "John" }, mockExistingData);
+    expect(mockResource.mergeMutation).toHaveBeenCalledWith(
+      "set",
+      { name: "John" },
+      mockExistingData
+    );
     expect(mockStorage.rawUpsert).toHaveBeenCalledWith("users", "user1", {});
     expect(result).toEqual({
       data: mockNewData,
@@ -179,11 +205,13 @@ describe("Route", () => {
       context: {},
     };
 
-    await expect(route.handleRequest({
-      req: mockRequest,
-      db: mockStorage,
-      schema: mockSchema,
-    })).rejects.toThrow("Payload is required");
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Payload is required");
   });
 
   test("should throw error when MUTATE request missing resourceId", async () => {
@@ -198,11 +226,13 @@ describe("Route", () => {
       context: {},
     };
 
-    await expect(route.handleRequest({
-      req: mockRequest,
-      db: mockStorage,
-      schema: mockSchema,
-    })).rejects.toThrow("ResourceId is required");
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("ResourceId is required");
   });
 
   test("should throw error when mutation is rejected", async () => {
@@ -220,11 +250,13 @@ describe("Route", () => {
 
     (mockResource.mergeMutation as Mock).mockReturnValue([{}, null]);
 
-    await expect(route.handleRequest({
-      req: mockRequest,
-      db: mockStorage,
-      schema: mockSchema,
-    })).rejects.toThrow("Mutation rejected");
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Mutation rejected");
   });
 
   test("should handle custom mutation", async () => {
@@ -285,11 +317,13 @@ describe("Route", () => {
       context: {},
     };
 
-    await expect(route.handleRequest({
-      req: mockRequest,
-      db: mockStorage,
-      schema: mockSchema,
-    })).rejects.toThrow();
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow();
   });
 
   test("should throw error for invalid request type", async () => {
@@ -303,11 +337,13 @@ describe("Route", () => {
       context: {},
     } as any;
 
-    await expect(route.handleRequest({
-      req: mockRequest,
-      db: mockStorage,
-      schema: mockSchema,
-    })).rejects.toThrow("Invalid request");
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Invalid request");
   });
 
   test("should execute middlewares in correct order", async () => {
@@ -346,18 +382,20 @@ describe("Route", () => {
     });
 
     expect(executionOrder).toEqual([
-      "middleware2-before",
       "middleware1-before",
-      "middleware1-after",
+      "middleware2-before",
       "middleware2-after",
+      "middleware1-after",
     ]);
   });
 
   test("should create route with mutations using withMutations", () => {
     const route = new Route("users");
-    
+
     const newRoute = route.withMutations(({ mutation }) => ({
-      customAction: mutation(z.object({ data: z.string() })).handler(async () => ({ success: true })),
+      customAction: mutation(z.object({ data: z.string() })).handler(
+        async () => ({ success: true })
+      ),
     }));
 
     expect(newRoute).toBeInstanceOf(Route);
