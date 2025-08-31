@@ -5,8 +5,8 @@
     "outDir": "./dist",
     "types": ["node", "vitest", "@testing-library/jest-dom"],
     "stripInternal": true,
-    "rootDir": "."
+    "rootDir": ".."
   },
-  "include": ["."],
+  "include": ["./test"],
   "exclude": ["node_modules", "dist"]
 }
