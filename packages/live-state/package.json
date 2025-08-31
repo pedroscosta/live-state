@@ -24,21 +24,32 @@
     "build": "NODE_ENV=production tsup",
     "dev": "NODE_ENV=development tsup --watch",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit --project . && tsc --noEmit --project src/client",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/react-hooks": "^8.0.1",
     "@types/express": "^4.17.21",
     "@types/express-ws": "^3.0.5",
     "@types/node": "^20.11.24",
     "@types/qs": "^6.14.0",
+    "@types/react": "^18.2.62",
+    "@types/react-dom": "^18.2.19",
     "@types/ws": "^8.5.13",
+    "@vitest/coverage-v8": "3.2.4",
     "cookie": "^1.0.2",
     "express": "^4.21.2",
+    "jsdom": "^26.1.0",
     "react": "18.0.0",
+    "react-dom": "^18.2.0",
     "tsup": "^8.0.2",
     "typescript": "5.5.4",
-    "ulid": "^3.0.0"
+    "ulid": "^3.0.0",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "crypto-hash": "^3.1.0",
