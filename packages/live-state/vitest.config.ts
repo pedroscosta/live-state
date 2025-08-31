@@ -4,7 +4,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     coverage: {
-      reporter: ["text", "json-summary"],
+      reporter: ["text"],
+      reportOnFailure: true,
       exclude: [
         ...(configDefaults.coverage.exclude || []),
         "src/core/schemas/**",

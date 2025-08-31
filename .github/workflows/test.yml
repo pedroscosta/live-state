@@ -41,7 +41,7 @@ jobs:
       #   run: pnpm lint
 
       - name: Run tests with coverage
-        run: pnpm test -- --coverage
+        run: pnpm test -- --coverage --coverage.reporter=json-summary
 
       - name: "Report Coverage"
         # Set if: always() to also generate the report if tests are failing
