@@ -4,7 +4,8 @@
     "lib": ["DOM", "ES2015"],
     "outDir": "./dist",
     "types": ["node", ""],
-    "stripInternal": true
+    "stripInternal": true,
+    "rootDir": "../.."
   },
   "include": ["."],
   "exclude": ["node_modules", "dist"]

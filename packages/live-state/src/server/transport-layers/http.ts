@@ -16,7 +16,7 @@ export const httpTransportLayer = (
     try {
       const headers =
         typeof (request.headers as any).getSetCookie === "function"
-          ? Object.fromEntries(request.headers)
+          ? Object.fromEntries(request.headers as any)
           : (request.headers as unknown as Record<string, string>);
 
       const baseRequestData: {
