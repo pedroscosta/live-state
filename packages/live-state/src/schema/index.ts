@@ -16,13 +16,19 @@ type InferLiveObjectWithoutRelations<T extends LiveObjectAny> = {
   [K in keyof T["fields"]]: InferLiveType<T["fields"][K]>;
 };
 
-export type InferLiveObject<T extends LiveObjectAny> =
-  InferLiveObjectWithoutRelations<T>;
-//  & {
-//   [K in keyof T["relations"]]: T["relations"][K]["type"] extends "one"
-//     ? InferLiveObject<T["relations"][K]["entity"]>
-//     : InferLiveObject<T["relations"][K]["entity"]>[];
-// };
+export type InferLiveObject<
+  T extends LiveObjectAny,
+  Include extends IncludeClause<T> | undefined = undefined,
+> = InferLiveObjectWithoutRelations<T> &
+  (Include extends IncludeClause<T>
+    ? {
+        [K in keyof T["relations"] as Include[K] extends true
+          ? K
+          : never]: T["relations"][K]["type"] extends "one"
+          ? InferLiveObject<T["relations"][K]["entity"]>
+          : InferLiveObject<T["relations"][K]["entity"]>[];
+      }
+    : {});
 
 type InferRelationalColumns<T extends Record<string, RelationAny>> = {
   [K in keyof T as T[K] extends Relation<

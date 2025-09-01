@@ -1,5 +1,6 @@
 import { type RawQueryRequest } from "../core/schemas/core-protocol";
 import {
+  IncludeClause,
   WhereClause,
   type InferLiveObject,
   type LiveObjectAny,
@@ -14,37 +15,69 @@ export type QueryExecutor = {
   ): () => void;
 };
 
-export class QueryBuilder<TCollection extends LiveObjectAny> {
+export class QueryBuilder<
+  TCollection extends LiveObjectAny,
+  TInclude extends IncludeClause<TCollection> = {},
+> {
   private _collection: TCollection;
   private _client: QueryExecutor;
   private _where: WhereClause<TCollection>;
+  private _include: TInclude;
 
   private constructor(
     collection: TCollection,
     client: QueryExecutor,
-    where?: WhereClause<TCollection>
+    where?: WhereClause<TCollection>,
+    include?: TInclude
   ) {
     this._collection = collection;
     this._client = client;
     this._where = where ?? {};
+    this._include = include ?? ({} as TInclude);
   }
 
   where(where: WhereClause<TCollection>) {
-    return new QueryBuilder(this._collection, this._client, where);
+    return new QueryBuilder(
+      this._collection,
+      this._client,
+      { ...this._where, ...where },
+      this._include
+    );
   }
 
-  get(): Simplify<InferLiveObject<TCollection>>[] {
-    console.debug("Getting", this._collection.name);
+  include<TNewInclude extends IncludeClause<TCollection>>(
+    include: TNewInclude
+  ) {
+    return new QueryBuilder<TCollection, TInclude & TNewInclude>(
+      this._collection,
+      this._client,
+      this._where,
+      {
+        ...this._include,
+        ...include,
+      }
+    );
+  }
+
+  get(): Simplify<InferLiveObject<TCollection, TInclude>>[] {
+    console.debug("Getting", this._collection.name, {
+      resource: this._collection.name,
+      where: this._where,
+      include: this._include,
+    });
     const result = this._client.get({
       resource: this._collection.name,
       where: this._where,
+      include: this._include,
     });
     console.debug("Got", this._collection.name, result);
     return result;
   }
 
   subscribe(
-    callback: (value: Simplify<InferLiveObject<TCollection>>[]) => void
+    callback: (
+      value: Simplify<InferLiveObject<TCollection, TInclude>>[]
+    ) => void
   ): () => void {
     return this._client.subscribe(
       {
