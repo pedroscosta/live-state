@@ -39,3 +39,9 @@ export const createObservable = <T extends object>(
     },
   });
 };
+
+export const applyWhere = <T extends object>(obj: T, where: any) => {
+  return Object.entries(where).every(([k, v]) => {
+    return obj[k as keyof T] === v;
+  });
+};

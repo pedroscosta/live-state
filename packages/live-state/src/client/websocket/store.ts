@@ -1,3 +1,4 @@
+import { RawQueryRequest } from "../../core/schemas/core-protocol";
 import { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
   InferLiveType,
@@ -8,6 +9,7 @@ import {
   MaterializedLiveType,
   Schema,
 } from "../../schema";
+import { applyWhere } from "../utils";
 import { GraphNode, ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 
@@ -22,7 +24,10 @@ export class OptimisticStore {
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
-  private resourceTypeSubscriptions: Record<string, Set<(v: any) => void>> = {};
+  private resourceTypeSubscriptions: Record<
+    string,
+    Set<{ callback: (v: any) => void; query: RawQueryRequest }>
+  > = {};
 
   private kvStorage: KVStorage;
 
@@ -56,11 +61,9 @@ export class OptimisticStore {
   }
 
   public get(resourceType: string) {
-    return Object.fromEntries(
-      Object.entries(this.optimisticRawObjPool[resourceType] ?? {}).map(
-        ([k, v]) => [k, inferValue(v)]
-      )
-    ) as Record<string, InferLiveType<LiveObjectAny>>;
+    return Object.values(this.optimisticRawObjPool[resourceType] ?? {}).map(
+      inferValue
+    ) as InferLiveType<LiveObjectAny>[];
   }
 
   public getOne(
@@ -145,17 +148,17 @@ export class OptimisticStore {
     return inferValue(materializedObj);
   }
 
-  public subscribe(path: string[], listener: (v: any[]) => void) {
-    if (path.length === 1) {
-      if (!this.resourceTypeSubscriptions[path[0]])
-        this.resourceTypeSubscriptions[path[0]] = new Set();
+  public subscribe(query: RawQueryRequest, listener: (v: any[]) => void) {
+    const entry = {
+      callback: listener,
+      query,
+    };
 
-      this.resourceTypeSubscriptions[path[0]].add(listener);
+    (this.resourceTypeSubscriptions[query.resource] ??= new Set()).add(entry);
 
-      return () => {
-        this.resourceTypeSubscriptions[path[0]].delete(listener);
-      };
-    }
+    return () => {
+      this.resourceTypeSubscriptions[query.resource].delete(entry);
+    };
 
     // if (path.length === 2) {
     //   const node = this.optimisticObjGraph.getNode(path[1]);
@@ -165,7 +168,7 @@ export class OptimisticStore {
     //   return this.optimisticObjGraph.subscribe(path[1], listener);
     // }
 
-    throw new Error("Not implemented");
+    // throw new Error("Not implemented");
   }
 
   public addMutation(
@@ -303,10 +306,14 @@ export class OptimisticStore {
 
     const updatedCollection = Object.values(
       this.optimisticRawObjPool[routeName as string] ?? {}
-    );
+    ).map(inferValue);
 
-    this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
-      listener(updatedCollection)
+    this.resourceTypeSubscriptions[routeName as string]?.forEach((s) =>
+      s.callback(
+        s.query.where
+          ? updatedCollection.filter((v) => applyWhere(v!, s.query.where))
+          : updatedCollection
+      )
     );
 
     this.optimisticObjGraph.notifySubscribers(mutation.resourceId);

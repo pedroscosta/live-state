@@ -1,6 +1,6 @@
 import { type RawQueryRequest } from "../core/schemas/core-protocol";
 import {
-  inferValue,
+  WhereClause,
   type InferLiveObject,
   type LiveObjectAny,
 } from "../schema";
@@ -16,17 +16,28 @@ export type QueryExecutor = {
 
 export class QueryBuilder<TCollection extends LiveObjectAny> {
   private _collection: TCollection;
-  private client: QueryExecutor;
+  private _client: QueryExecutor;
+  private _where: WhereClause<TCollection>;
 
-  private constructor(collection: TCollection, client: QueryExecutor) {
+  private constructor(
+    collection: TCollection,
+    client: QueryExecutor,
+    where?: WhereClause<TCollection>
+  ) {
     this._collection = collection;
-    this.client = client;
+    this._client = client;
+    this._where = where ?? {};
+  }
+
+  where(where: WhereClause<TCollection>) {
+    return new QueryBuilder(this._collection, this._client, where);
   }
 
   get(): Simplify<InferLiveObject<TCollection>>[] {
     console.debug("Getting", this._collection.name);
-    const result = this.client.get({
+    const result = this._client.get({
       resource: this._collection.name,
+      where: this._where,
     });
     console.debug("Got", this._collection.name, result);
     return result;
@@ -35,11 +46,12 @@ export class QueryBuilder<TCollection extends LiveObjectAny> {
   subscribe(
     callback: (value: Simplify<InferLiveObject<TCollection>>[]) => void
   ): () => void {
-    return this.client.subscribe(
+    return this._client.subscribe(
       {
         resource: this._collection.name,
+        where: this._where,
       },
-      (v) => callback(v.map(inferValue))
+      callback
     );
   }
 
