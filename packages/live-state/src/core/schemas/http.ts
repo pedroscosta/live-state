@@ -6,7 +6,6 @@ import {
 } from "./core-protocol";
 
 export const httpQuerySchema = querySchema.omit({
-  type: true,
   resource: true,
 });
 
