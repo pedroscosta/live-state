@@ -1,6 +1,7 @@
 import { RawQueryRequest } from "../../core/schemas/core-protocol";
 import { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
+  IncludeClause,
   InferLiveType,
   inferValue,
   LiveObjectAny,
@@ -60,10 +61,18 @@ export class OptimisticStore {
     });
   }
 
-  public get(resourceType: string) {
-    return Object.values(this.optimisticRawObjPool[resourceType] ?? {}).map(
-      inferValue
+  public get(query: RawQueryRequest) {
+    const result = Object.keys(
+      this.optimisticRawObjPool[query.resource] ?? {}
+    ).map((k) =>
+      inferValue(this.materializeOneWithInclude(k, query.include))
     ) as InferLiveType<LiveObjectAny>[];
+
+    if (query.where) {
+      return result.filter((v) => applyWhere(v, query.where));
+    }
+
+    return result;
   }
 
   public getOne(
@@ -263,15 +272,15 @@ export class OptimisticStore {
       );
 
       Object.entries(mutation.payload).forEach(([k, v]) => {
+        const rel = schema.relations[schemaRelationalFields[k]];
+
         if (!v || !schemaRelationalFields[k]) return;
 
         const prevRelation = prevValue?.value[
           k as keyof (typeof prevValue)["value"]
         ] as MaterializedLiveType<LiveString> | undefined;
 
-        const [, updatedRelation] = schema.relations[
-          schemaRelationalFields[k]
-        ].mergeMutation(
+        const [, updatedRelation] = rel.mergeMutation(
           "set",
           v as { value: string; _meta: { timestamp: string } },
           prevRelation
@@ -280,8 +289,7 @@ export class OptimisticStore {
         if (!updatedRelation) return;
 
         if (!this.optimisticObjGraph.hasNode(updatedRelation.value)) {
-          const otherNodeType =
-            schema.relations[schemaRelationalFields[k]].entity.name;
+          const otherNodeType = rel.entity.name;
 
           this.optimisticObjGraph.createNode(
             updatedRelation.value,
@@ -293,13 +301,15 @@ export class OptimisticStore {
         }
 
         if (prevRelation?.value) {
-          this.optimisticObjGraph.removeLink(mutation.resourceId, k);
+          this.optimisticObjGraph.removeLink(
+            mutation.resourceId,
+            rel.entity.name
+          );
         }
 
         this.optimisticObjGraph.createLink(
           mutation.resourceId,
-          updatedRelation.value,
-          routeName
+          updatedRelation.value
         );
       });
     }
@@ -334,5 +344,74 @@ export class OptimisticStore {
         payload,
       });
     });
+  }
+
+  private materializeOneWithInclude(
+    id?: string,
+    include: IncludeClause<LiveObjectAny> = {}
+  ): MaterializedLiveType<LiveObjectAny> | undefined {
+    if (!id) return;
+
+    const node = this.optimisticObjGraph.getNode(id);
+
+    if (!node) return;
+
+    const resourceType = node.type;
+
+    const obj = this.optimisticRawObjPool[resourceType]?.[id];
+
+    if (!obj) return;
+
+    const [referencesToInclude, referencedByToInclude] = Object.keys(
+      include
+    ).reduce(
+      (acc, k) => {
+        const rel = this.schema[resourceType].relations[k];
+        if (rel.type === "one") {
+          acc[0].push([k, rel.entity.name]);
+        } else if (rel.type === "many") {
+          acc[1].push([k, rel.entity.name]);
+        }
+        return acc;
+      },
+      [[], []] as [string[][], string[][]]
+    );
+
+    console.log("materializing", resourceType, id);
+    console.log(referencesToInclude, referencedByToInclude);
+    console.log(node.references);
+    console.log(node.referencedBy);
+    console.log("----------------");
+
+    return {
+      value: {
+        ...obj.value,
+        // one relations
+        ...Object.fromEntries(
+          referencesToInclude.map(([k, refName]) => [
+            k,
+            this.materializeOneWithInclude(node.references.get(refName)),
+          ])
+        ),
+        // many relations
+        ...Object.fromEntries(
+          referencedByToInclude.map(([k, refName]) => {
+            const referencedBy = node.referencedBy.get(refName);
+            const isMany = referencedBy instanceof Set;
+
+            return [
+              k,
+              isMany
+                ? {
+                    value: Array.from(referencedBy.values()).map((v) =>
+                      this.materializeOneWithInclude(v)
+                    ),
+                  }
+                : this.materializeOneWithInclude(referencedBy),
+            ];
+          })
+        ),
+      },
+    } as MaterializedLiveType<LiveObjectAny>;
   }
 }

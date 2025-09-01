@@ -15,7 +15,6 @@ import { AnyRouter } from "../../server";
 import { Simplify } from "../../utils";
 import { QueryBuilder, QueryExecutor } from "../query";
 import type { Client as ClientType } from "../types";
-import { applyWhere } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
@@ -107,13 +106,7 @@ class InnerClient implements QueryExecutor {
   }
 
   public get(query: RawQueryRequest) {
-    const result = this.store.get(query.resource);
-
-    if (query.where) {
-      return result.filter((v) => applyWhere(v, query.where));
-    }
-
-    return result;
+    return this.store.get(query);
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
