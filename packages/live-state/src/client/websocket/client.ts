@@ -1,6 +1,9 @@
+import { z } from "zod";
 import { ClientOptions } from "..";
+import { type RawQueryRequest } from "../../core/schemas/core-protocol";
 import {
   ClientMessage,
+  clQueryMsgSchema,
   MutationMessage,
   type ServerMessage,
   serverMessageSchema,
@@ -10,8 +13,8 @@ import { generateId } from "../../core/utils";
 import { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
 import { AnyRouter } from "../../server";
 import { Simplify } from "../../utils";
+import { QueryBuilder, QueryExecutor } from "../query";
 import type { Client as ClientType } from "../types";
-import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
@@ -27,7 +30,7 @@ export type MessageReceivedEvent = {
 
 export type ClientEvents = ConnectionStateChangeEvent | MessageReceivedEvent;
 
-class InnerClient {
+class InnerClient implements QueryExecutor {
   public readonly url: string;
   public readonly ws: WebSocketClient;
   public readonly store: OptimisticStore;
@@ -74,10 +77,13 @@ class InnerClient {
 
       if (e.open) {
         // TODO move this logic to the Provider
-        this.sendWsMessage({
-          id: generateId(),
-          type: "QUERY",
-          // TODO add lastSyncedAt
+        Object.keys(this.store.schema).forEach((routeName) => {
+          this.sendWsMessage({
+            id: generateId(),
+            type: "QUERY",
+            resource: routeName,
+            // TODO add lastSyncedAt
+          });
         });
 
         Object.entries(this.remoteSubCounters).forEach(([routeName, count]) => {
@@ -99,12 +105,8 @@ class InnerClient {
     });
   }
 
-  public get(path: string[]) {
-    if (path.length === 0) throw new Error("Path must not be empty");
-
-    return path.length === 1
-      ? this.store.get(path[0])
-      : this.store.getOne(path[0], path[1]);
+  public get(query: RawQueryRequest) {
+    return [];
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
@@ -174,8 +176,11 @@ class InnerClient {
     };
   }
 
-  public subscribeToStore(path: string[], listener: () => void) {
-    this.store.subscribe(path, listener);
+  public subscribe(
+    query: z.infer<typeof clQueryMsgSchema>,
+    callback: (value: any[]) => void
+  ) {
+    return () => {};
   }
 
   public mutate(
@@ -279,35 +284,23 @@ export const createClient = <TRouter extends AnyRouter>(
         return ogClient.addEventListener(listener);
       },
     },
-    store: createObservable(() => {}, {
-      apply: (_, path, argumentsList) => {
-        const selector = path.slice(0, -1);
-        const lastSegment = path[path.length - 1];
-
-        if (lastSegment === "get") return ogClient.get(selector);
-
-        if (lastSegment === "subscribe")
-          return ogClient.subscribeToStore(selector, argumentsList[0]);
-
-        if (lastSegment === "subscribeToRemote")
-          return ogClient.subscribeToRemote(selector[0]);
-
-        if (lastSegment === "insert") {
-          const { id, ...rest } = argumentsList[0];
-          return ogClient.mutate(selector[0], id, rest);
-        }
-
-        if (lastSegment === "update") {
-          const [id, input] = argumentsList;
-          return ogClient.mutate(selector[0], id, input);
-        }
-
-        return ogClient.genericMutate(
-          selector[0],
-          lastSegment,
-          argumentsList[0]
-        );
-      },
-    }) as unknown as Client<TRouter>["store"],
+    store: {
+      query: Object.entries(opts.schema).reduce(
+        (acc, [key, value]) => {
+          acc[key as keyof TRouter["routes"]] = QueryBuilder._init(
+            value,
+            ogClient
+          );
+          return acc;
+        },
+        {} as Record<
+          keyof TRouter["routes"],
+          QueryBuilder<
+            TRouter["routes"][keyof TRouter["routes"]]["_resourceSchema"]
+          >
+        >
+      ),
+      mutate: {},
+    },
   };
 };

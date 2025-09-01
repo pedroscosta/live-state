@@ -1,12 +1,20 @@
 import { z } from "zod";
 import { Promisify } from "../core/utils";
-import type {
-  InferIndex,
-  InferLiveObject,
-  LiveObjectMutationInput,
-} from "../schema";
+import type { LiveObjectMutationInput } from "../schema";
 import type { AnyRouter } from "../server";
 import { Simplify } from "../utils";
+import { QueryBuilder } from "./query";
+
+export type Client<TRouter extends AnyRouter> = {
+  query: {
+    [K in keyof TRouter["routes"]]: QueryBuilder<
+      TRouter["routes"][K]["_resourceSchema"]
+    >;
+  };
+  mutate: {};
+};
+
+//// TO BE REMOVED
 
 export type DeepSubscribable<T> = {
   [K in keyof T]: DeepSubscribable<T[K]>;
@@ -15,16 +23,8 @@ export type DeepSubscribable<T> = {
   subscribe: (callback: (value: T) => void) => () => void;
 };
 
-export type Client<TRouter extends AnyRouter> = DeepSubscribable<{
-  [K in keyof TRouter["routes"]]:
-    | Record<
-        InferIndex<TRouter["routes"][K]["_resourceSchema"]>,
-        InferLiveObject<TRouter["routes"][K]["_resourceSchema"]>
-      >
-    | undefined;
-}> & {
+export type _Client<TRouter extends AnyRouter> = {
   [K in keyof TRouter["routes"]]: {
-    // TODO handle these as custom mutations
     insert: (
       input: Simplify<
         LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
