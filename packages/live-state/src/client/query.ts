@@ -1,5 +1,9 @@
 import { type RawQueryRequest } from "../core/schemas/core-protocol";
-import type { InferLiveObject, LiveObjectAny } from "../schema";
+import {
+  inferValue,
+  type InferLiveObject,
+  type LiveObjectAny,
+} from "../schema";
 import { Simplify } from "../utils";
 
 export type QueryExecutor = {
@@ -35,7 +39,7 @@ export class QueryBuilder<TCollection extends LiveObjectAny> {
       {
         resource: this._collection.name,
       },
-      callback
+      (v) => callback(v.map(inferValue))
     );
   }
 

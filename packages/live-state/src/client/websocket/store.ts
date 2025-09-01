@@ -22,7 +22,7 @@ export class OptimisticStore {
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
-  private resourceTypeSubscriptions: Record<string, Set<() => void>> = {};
+  private resourceTypeSubscriptions: Record<string, Set<(v: any) => void>> = {};
 
   private kvStorage: KVStorage;
 
@@ -145,7 +145,7 @@ export class OptimisticStore {
     return inferValue(materializedObj);
   }
 
-  public subscribe(path: string[], listener: () => void) {
+  public subscribe(path: string[], listener: (v: any[]) => void) {
     if (path.length === 1) {
       if (!this.resourceTypeSubscriptions[path[0]])
         this.resourceTypeSubscriptions[path[0]] = new Set();
@@ -157,13 +157,13 @@ export class OptimisticStore {
       };
     }
 
-    if (path.length === 2) {
-      const node = this.optimisticObjGraph.getNode(path[1]);
+    // if (path.length === 2) {
+    //   const node = this.optimisticObjGraph.getNode(path[1]);
 
-      if (!node) throw new Error("Node not found");
+    //   if (!node) throw new Error("Node not found");
 
-      return this.optimisticObjGraph.subscribe(path[1], listener);
-    }
+    //   return this.optimisticObjGraph.subscribe(path[1], listener);
+    // }
 
     throw new Error("Not implemented");
   }
@@ -301,8 +301,12 @@ export class OptimisticStore {
       });
     }
 
+    const updatedCollection = Object.values(
+      this.optimisticRawObjPool[routeName as string] ?? {}
+    );
+
     this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
-      listener()
+      listener(updatedCollection)
     );
 
     this.optimisticObjGraph.notifySubscribers(mutation.resourceId);

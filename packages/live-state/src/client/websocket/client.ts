@@ -180,7 +180,7 @@ class InnerClient implements QueryExecutor {
     query: z.infer<typeof clQueryMsgSchema>,
     callback: (value: any[]) => void
   ) {
-    return () => {};
+    return this.store.subscribe([query.resource], callback);
   }
 
   public mutate(
