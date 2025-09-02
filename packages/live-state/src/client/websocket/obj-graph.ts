@@ -73,13 +73,8 @@ export class ObjectGraph {
    * Creates a link between two nodes
    * @param sourceNodeId The ID of the source node
    * @param targetNodeId The ID of the target node
-   * @param linkName The name of the link (it's the type of the node that originates the link -- i.e. the 'one' side of the relation)
    */
-  createLink(
-    sourceNodeId: string,
-    targetNodeId: string,
-    linkName: string
-  ): void {
+  createLink(sourceNodeId: string, targetNodeId: string): void {
     const sourceNode = this.nodes.get(sourceNodeId);
     const targetNode = this.nodes.get(targetNodeId);
 
@@ -92,15 +87,15 @@ export class ObjectGraph {
     }
 
     // Add the reference from source to target
-    sourceNode.references.set(linkName, targetNodeId);
+    sourceNode.references.set(targetNode.type, targetNodeId);
 
     // Add the backlink from target to source
-    const backLink = targetNode.referencedBy.get(linkName);
+    const backLink = targetNode.referencedBy.get(sourceNode.type);
 
     if (backLink && backLink instanceof Set) {
       backLink.add(sourceNodeId);
     } else {
-      targetNode.referencedBy.set(linkName, sourceNodeId);
+      targetNode.referencedBy.set(sourceNode.type, sourceNodeId);
     }
 
     this.notifySubscribers(targetNodeId);
@@ -109,31 +104,31 @@ export class ObjectGraph {
   /**
    * Removes a link between two nodes
    * @param sourceNodeId The ID of the source node
-   * @param linkName The name of the link (it's the name of the column that originates the link)
+   * @param targetNodeType The type of the target node
    */
-  removeLink(sourceNodeId: string, linkName: string): void {
+  removeLink(sourceNodeId: string, targetNodeType: string): void {
     const sourceNode = this.nodes.get(sourceNodeId);
     if (!sourceNode) {
       throw new Error(`Node with id ${sourceNodeId} does not exist`);
     }
 
-    const reference = sourceNode.references.get(linkName);
+    const reference = sourceNode.references.get(targetNodeType);
 
     if (!reference) return;
 
-    sourceNode.references.delete(linkName);
+    sourceNode.references.delete(targetNodeType);
 
     const node = this.nodes.get(reference);
 
     if (!node) return;
 
-    const backLink = node.referencedBy.get(linkName);
+    const backLink = node.referencedBy.get(sourceNode.type);
 
     if (backLink) {
       if (backLink instanceof Set) {
         backLink.delete(sourceNodeId);
       } else {
-        node.referencedBy.delete(linkName);
+        node.referencedBy.delete(sourceNode.type);
       }
 
       this.notifySubscribers(reference);

@@ -157,9 +157,6 @@ importers:
       lucide-react:
         specifier: ^0.485.0
         version: 0.485.0(react@18.3.1)
-      nanoid:
-        specifier: ^5.0.9
-        version: 5.1.5
       next:
         specifier: ^14.1.1
         version: 14.2.26(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -181,6 +178,9 @@ importers:
       tw-animate-css:
         specifier: ^1.2.5
         version: 1.2.5
+      ulid:
+        specifier: ^3.0.0
+        version: 3.0.0
       zod:
         specifier: ^3.24.1
         version: 3.24.2
@@ -208,12 +208,15 @@ importers:
 
   packages/live-state:
     dependencies:
-      crypto-hash:
-        specifier: ^3.1.0
-        version: 3.1.0
+      fast-deep-equal:
+        specifier: ^3.1.3
+        version: 3.1.3
       idb:
         specifier: ^8.0.3
         version: 8.0.3
+      js-xxhash:
+        specifier: ^4.0.0
+        version: 4.0.0
       kysely:
         specifier: ^0.28.2
         version: 0.28.2
@@ -1371,10 +1374,6 @@ packages:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
 
-  crypto-hash@3.1.0:
-    resolution: {integrity: sha512-HR8JlZ+Dn54Lc5gGWZJxJitWbOCUzWb9/AlyONGecBnYZ+n/ONvt0gQnEzDNpJMYeRrYO7KogQ4qwyTPKnWKEw==}
-    engines: {node: '>=18'}
-
   css.escape@1.5.1:
     resolution: {integrity: sha512-YUifsXXuknHlUsmlgyY0PKzgPOr7/FjCePfHNt0jxm83wHZi44VDMQ7/fGNkjY3/jV1MC+1CmZbaHzugyeRtpg==}
 
@@ -1536,6 +1535,9 @@ packages:
 
   exsolve@1.0.5:
     resolution: {integrity: sha512-pz5dvkYYKQ1AHVrgOzBKWeP4u4FRb3a6DNK2ucr0OoNwYIU4QWsJ+NM36LLzORT+z845MzKHHhpXiUF5nvQoJg==}
+
+  fast-deep-equal@3.1.3:
+    resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
   fdir@6.4.3:
     resolution: {integrity: sha512-PMXmW2y1hDDfTSRc9gaXIuCCRpuoz3Kaz8cUelp3smouvfT632ozg2vrT6lJsHKKOF59YLbOGfAWGUcKEfRMQw==}
@@ -1716,6 +1718,10 @@ packages:
 
   js-tokens@9.0.1:
     resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==}
+
+  js-xxhash@4.0.0:
+    resolution: {integrity: sha512-3Q2eIqG6s1KEBBmkj9tGM9lef8LJbuRyTVBdI3GpTnrvtytunjLPO0wqABp5qhtMzfA32jYn1FlnIV7GH1RAHQ==}
+    engines: {node: '>=18.0.0'}
 
   jsdom@26.1.0:
     resolution: {integrity: sha512-Cvc9WUhxSMEo4McES3P7oK3QaXldCfNWp7pl2NNeiIFlCoLr3kfq9kb1fxftiwk1FLV7CvpvDfonxtzUDeSOPg==}
@@ -1899,11 +1905,6 @@ packages:
   nanoid@3.3.11:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
-
-  nanoid@5.1.5:
-    resolution: {integrity: sha512-Ir/+ZpE9fDsNH0hQ3C68uyThDXzYcim2EqcZ8zn8Chtt1iylPT9xXJB0kPCnqzgcEGikO9RxSrh63MsmVCU7Fw==}
-    engines: {node: ^18 || >=20}
     hasBin: true
 
   negotiator@0.6.3:
@@ -3629,8 +3630,6 @@ snapshots:
       shebang-command: 2.0.0
       which: 2.0.2
 
-  crypto-hash@3.1.0: {}
-
   css.escape@1.5.1: {}
 
   cssstyle@4.6.0:
@@ -3799,6 +3798,8 @@ snapshots:
       - supports-color
 
   exsolve@1.0.5: {}
+
+  fast-deep-equal@3.1.3: {}
 
   fdir@6.4.3(picomatch@4.0.2):
     optionalDependencies:
@@ -3987,6 +3988,8 @@ snapshots:
 
   js-tokens@9.0.1: {}
 
+  js-xxhash@4.0.0: {}
+
   jsdom@26.1.0:
     dependencies:
       cssstyle: 4.6.0
@@ -4146,8 +4149,6 @@ snapshots:
       thenify-all: 1.6.0
 
   nanoid@3.3.11: {}
-
-  nanoid@5.1.5: {}
 
   negotiator@0.6.3: {}
 

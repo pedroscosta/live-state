@@ -64,21 +64,21 @@ describe("ObjectGraph", () => {
     const userNode = graph.createNode("user1", "user", []);
     const profileNode = graph.createNode("profile1", "profile", []);
 
-    graph.createLink("user1", "profile1", "user");
+    graph.createLink("user1", "profile1");
 
-    expect(userNode.references.get("user")).toBe("profile1");
+    expect(userNode.references.get("profile")).toBe("profile1");
     expect(profileNode.referencedBy.get("user")).toBe("user1");
   });
 
   test("should create link between nodes with one-to-many relation", () => {
     const graph = new ObjectGraph();
-    const userNode = graph.createNode("user1", "user", ["posts"]);
+    const userNode = graph.createNode("user1", "user", ["post"]);
     const postNode = graph.createNode("post1", "post", []);
 
-    graph.createLink("post1", "user1", "posts");
+    graph.createLink("post1", "user1");
 
-    expect(postNode.references.get("posts")).toBe("user1");
-    const backLink = userNode.referencedBy.get("posts") as Set<string>;
+    expect(postNode.references.get("user")).toBe("user1");
+    const backLink = userNode.referencedBy.get("post") as Set<string>;
     expect(backLink).toBeInstanceOf(Set);
     expect(backLink.has("post1")).toBe(true);
   });
@@ -91,7 +91,7 @@ describe("ObjectGraph", () => {
     const mockSubscriber = vi.fn();
     graph.subscribe("profile1", mockSubscriber);
 
-    graph.createLink("user1", "profile1", "user");
+    graph.createLink("user1", "profile1");
 
     expect(mockSubscriber).toHaveBeenCalledWith("profile1");
   });
@@ -101,7 +101,7 @@ describe("ObjectGraph", () => {
     graph.createNode("profile1", "profile", []);
 
     expect(() => {
-      graph.createLink("nonexistent", "profile1", "user");
+      graph.createLink("nonexistent", "profile1");
     }).toThrow("Source node with id nonexistent does not exist");
   });
 
@@ -110,7 +110,7 @@ describe("ObjectGraph", () => {
     graph.createNode("user1", "user", []);
 
     expect(() => {
-      graph.createLink("user1", "nonexistent", "user");
+      graph.createLink("user1", "nonexistent");
     }).toThrow("Target node with id nonexistent does not exist");
   });
 
@@ -119,23 +119,23 @@ describe("ObjectGraph", () => {
     const userNode = graph.createNode("user1", "user", []);
     const profileNode = graph.createNode("profile1", "profile", []);
 
-    graph.createLink("user1", "profile1", "user");
-    graph.removeLink("user1", "user");
+    graph.createLink("user1", "profile1");
+    graph.removeLink("user1", "profile");
 
-    expect(userNode.references.has("user")).toBe(false);
+    expect(userNode.references.has("profile")).toBe(false);
     expect(profileNode.referencedBy.has("user")).toBe(false);
   });
 
   test("should remove link from many relation", () => {
     const graph = new ObjectGraph();
-    const userNode = graph.createNode("user1", "user", ["posts"]);
+    const userNode = graph.createNode("user1", "user", ["post"]);
     const postNode = graph.createNode("post1", "post", []);
 
-    graph.createLink("post1", "user1", "posts");
-    graph.removeLink("post1", "posts");
+    graph.createLink("post1", "user1");
+    graph.removeLink("post1", "user");
 
-    expect(postNode.references.has("posts")).toBe(false);
-    const backLink = userNode.referencedBy.get("posts") as Set<string>;
+    expect(postNode.references.has("user")).toBe(false);
+    const backLink = userNode.referencedBy.get("post") as Set<string>;
     expect(backLink.has("post1")).toBe(false);
   });
 
@@ -144,13 +144,13 @@ describe("ObjectGraph", () => {
     const userNode = graph.createNode("user1", "user", []);
     const profileNode = graph.createNode("profile1", "profile", []);
 
-    graph.createLink("user1", "profile1", "user");
+    graph.createLink("user1", "profile1");
 
     const mockSubscriber = vi.fn();
     graph.subscribe("profile1", mockSubscriber);
     graph.subscribe("user1", mockSubscriber);
 
-    graph.removeLink("user1", "user");
+    graph.removeLink("user1", "profile");
 
     expect(mockSubscriber).toHaveBeenCalledWith("profile1");
     expect(mockSubscriber).toHaveBeenCalledWith("user1");
@@ -208,12 +208,12 @@ describe("ObjectGraph", () => {
   // TODO fix and uncomment
   test.skip("should remove node and all its links", () => {
     const graph = new ObjectGraph();
-    const userNode = graph.createNode("user1", "user", ["posts"]);
+    const userNode = graph.createNode("user1", "user", ["post"]);
     const profileNode = graph.createNode("profile1", "profile", ["user"]);
     const postNode = graph.createNode("post1", "post", []);
 
-    graph.createLink("user1", "profile1", "user");
-    graph.createLink("post1", "user1", "posts");
+    graph.createLink("user1", "profile1");
+    graph.createLink("post1", "user1");
 
     const mockSubscriber = vi.fn();
     graph.subscribe("post1", mockSubscriber);
@@ -318,20 +318,20 @@ describe("ObjectGraph", () => {
     const graph = new ObjectGraph();
 
     // Create nodes
-    const userNode = graph.createNode("user1", "user", ["posts", "comments"]);
+    const userNode = graph.createNode("user1", "user", ["post", "comment"]);
     const postNode1 = graph.createNode("post1", "post", []);
     const postNode2 = graph.createNode("post2", "post", []);
     const commentNode = graph.createNode("comment1", "comment", []);
 
     // Create links
-    graph.createLink("post1", "user1", "posts");
-    graph.createLink("post2", "user1", "posts");
-    graph.createLink("comment1", "user1", "comments");
+    graph.createLink("post1", "user1");
+    graph.createLink("post2", "user1");
+    graph.createLink("comment1", "user1");
 
     // Verify many relations
-    const postsBackLink = userNode.referencedBy.get("posts") as Set<string>;
+    const postsBackLink = userNode.referencedBy.get("post") as Set<string>;
     const commentsBackLink = userNode.referencedBy.get(
-      "comments"
+      "comment"
     ) as Set<string>;
 
     expect(postsBackLink.has("post1")).toBe(true);
@@ -339,10 +339,10 @@ describe("ObjectGraph", () => {
     expect(commentsBackLink.has("comment1")).toBe(true);
 
     // Remove one post
-    graph.removeLink("post1", "posts");
+    graph.removeLink("post1", "user");
 
     expect(postsBackLink.has("post1")).toBe(false);
     expect(postsBackLink.has("post2")).toBe(true);
-    expect(postNode1.references.has("posts")).toBe(false);
+    expect(postNode1.references.has("post")).toBe(false);
   });
 });

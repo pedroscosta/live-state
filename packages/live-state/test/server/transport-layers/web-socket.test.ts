@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import WebSocket from "ws";
+import { ClientMessage } from "../../../src/core/schemas/web-socket";
 import { generateId } from "../../../src/core/utils";
 import { Server } from "../../../src/server";
 import { AnyRouter } from "../../../src/server/router";
@@ -97,7 +98,7 @@ describe("webSocketAdapter", () => {
     // Get the message handler
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const subscribeMessage = {
       type: "SUBSCRIBE",
@@ -117,13 +118,13 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const queryMessage = {
       type: "QUERY",
-      resources: ["users"],
+      resource: "users",
       id: "msg-1",
-    };
+    } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
@@ -156,14 +157,21 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
-    const queryMessage = {
+    const queryMessage1 = {
       type: "QUERY",
       id: "msg-1",
-    };
+      resource: "users",
+    } satisfies ClientMessage;
+    const queryMessage2 = {
+      type: "QUERY",
+      id: "msg-2",
+      resource: "posts",
+    } satisfies ClientMessage;
 
-    await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
+    await messageHandler(Buffer.from(JSON.stringify(queryMessage1)));
+    await messageHandler(Buffer.from(JSON.stringify(queryMessage2)));
 
     // Should query all resources in schema
     expect(mockServer.handleRequest).toHaveBeenCalledTimes(2);
@@ -184,7 +192,7 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const mutateMessage = {
       type: "MUTATE",
@@ -233,7 +241,7 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const mutateMessage = {
       type: "MUTATE",
@@ -272,7 +280,7 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const mutateMessage = {
       type: "MUTATE",
@@ -308,7 +316,7 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     // This should not throw an error, just log it
     await messageHandler(Buffer.from("invalid json"));
@@ -322,9 +330,9 @@ describe("webSocketAdapter", () => {
 
     const closeHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "close"
-    )[1];
+    )?.[1];
 
-    closeHandler();
+    closeHandler?.();
 
     // Should clean up connections and subscriptions
     // We can't directly test internal state, but verify no errors are thrown
@@ -413,13 +421,13 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const queryMessage = {
       type: "QUERY",
-      resources: ["users"],
+      resource: "users",
       id: "msg-1",
-    };
+    } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
@@ -437,13 +445,13 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const queryMessage = {
       type: "QUERY",
-      resources: ["users"],
+      resource: "users",
       id: "msg-1",
-    };
+    } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
@@ -489,7 +497,7 @@ describe("webSocketAdapter", () => {
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
       (call) => call[0] === "message"
-    )[1];
+    )?.[1];
 
     const queryMessage = {
       type: "QUERY",

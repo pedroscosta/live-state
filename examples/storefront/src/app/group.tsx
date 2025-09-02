@@ -1,32 +1,35 @@
+import { useDroppable } from "@dnd-kit/core";
 import { useLiveQuery } from "@live-state/sync/client";
-import { nanoid } from "nanoid";
 import { memo } from "react";
+import { ulid } from "ulid";
 import { Button } from "../../components/ui/button";
 import { Card } from "./card";
 import { store } from "./live-client";
-import { useDroppable } from "@dnd-kit/core";
-import { CSS } from '@dnd-kit/utilities';
 
 const MemoItem = memo(Card);
 
 export const Group = ({ groupId }: { groupId: string }) => {
-  const group = useLiveQuery(store.groups[groupId]);
-  
+  const group = useLiveQuery(
+    store.query.groups.where({ id: groupId }).include({
+      cards: true,
+    })
+  )?.[0];
+
   const { setNodeRef, isOver } = useDroppable({
     id: groupId,
     data: {
-      type: 'group',
-      groupId: groupId
+      type: "group",
+      groupId: groupId,
     },
   });
 
   const groupStyle = {
-    backgroundColor: isOver ? 'rgba(0, 0, 0, 0.05)' : 'transparent',
-    transition: 'background-color 0.2s ease',
+    backgroundColor: isOver ? "rgba(0, 0, 0, 0.05)" : "transparent",
+    transition: "background-color 0.2s ease",
   };
 
   return (
-    <div 
+    <div
       ref={setNodeRef}
       className="flex flex-col gap-4 border p-4 w-sm shrink-0 rounded-lg"
       style={groupStyle}
@@ -37,8 +40,8 @@ export const Group = ({ groupId }: { groupId: string }) => {
       ))}
       <Button
         onClick={() => {
-          store.cards.insert({
-            id: nanoid(),
+          store.mutate.cards.insert({
+            id: ulid().toLowerCase(),
             name: "New Card",
             counter: 0,
             groupId: group.id,

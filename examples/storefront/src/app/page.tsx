@@ -4,8 +4,8 @@ import { Switch } from "@/components/ui/switch";
 import { SubscriptionProvider } from "@live-state/sync/client";
 import { useSyncExternalStore } from "react";
 import { Board } from "./board";
-import { client } from "./live-client";
 import { DndProvider } from "./dnd-context";
+import { client } from "./live-client";
 
 export default function Store(): JSX.Element {
   const isConnected = useSyncExternalStore(

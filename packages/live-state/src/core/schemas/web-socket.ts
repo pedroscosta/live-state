@@ -3,6 +3,7 @@ import {
   defaultMutationSchema,
   defaultPayloadSchema,
   genericMutationSchema,
+  querySchema,
 } from "./core-protocol";
 
 export const msgId = z.string();
@@ -17,12 +18,9 @@ export const clSubscribeMsgSchema = z.object({
   resource: z.string(),
 });
 
-export const clQueryMsgSchema = z.object({
+export const clQueryMsgSchema = querySchema.extend({
   id: msgId,
   type: z.literal("QUERY"),
-  lastSyncedAt: z.string().optional(),
-  resources: z.string().array().optional(),
-  where: z.record(z.any()).optional(),
 });
 
 export const defaultMutationMsgSchema = defaultMutationSchema.extend({

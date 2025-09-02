@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 export const querySchema = z.object({
-  type: z.literal("QUERY"),
   resource: z.string(),
   where: z.record(z.any()).optional(),
   include: z.record(z.any()).optional(),
+  lastSyncedAt: z.string().optional(),
 });
 
 export type RawQueryRequest = z.infer<typeof querySchema>;

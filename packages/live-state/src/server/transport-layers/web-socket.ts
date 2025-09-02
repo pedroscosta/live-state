@@ -90,45 +90,37 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
 
           // TODO send bootstrap
         } else if (parsedMessage.type === "QUERY") {
-          const { resources: _res } = parsedMessage;
+          const { resource } = parsedMessage;
 
-          const resources = _res ?? Object.keys(server.schema);
+          const result = await server.handleRequest({
+            req: {
+              ...requestContext,
+              type: "QUERY",
+              resourceName: resource,
+              context: (await initialContext) ?? {},
+              query: parsedQs,
+            },
+          });
 
-          console.log("Syncing resources:", resources);
+          if (!result || !result.data) {
+            throw new Error("Invalid resource");
+          }
 
-          await Promise.all(
-            resources.map(async (resourceName) => {
-              const result = await server.handleRequest({
-                req: {
-                  ...requestContext,
-                  type: "QUERY",
-                  resourceName,
-                  context: (await initialContext) ?? {},
-                  query: parsedQs,
-                },
-              });
-
-              if (!result || !result.data) {
-                throw new Error("Invalid resource");
-              }
-
-              reply({
-                id: parsedMessage.id,
-                type: "REPLY",
-                data: {
-                  resource: resourceName,
-                  data: Object.fromEntries(
-                    Object.entries(
-                      (result.data ?? {}) as Record<
-                        string,
-                        MaterializedLiveType<LiveObjectAny>
-                      >
-                    ).map(([id, v]) => [id, v.value])
-                  ),
-                },
-              });
-            })
-          );
+          reply({
+            id: parsedMessage.id,
+            type: "REPLY",
+            data: {
+              resource,
+              data: Object.fromEntries(
+                Object.entries(
+                  (result.data ?? {}) as Record<
+                    string,
+                    MaterializedLiveType<LiveObjectAny>
+                  >
+                ).map(([id, v]) => [id, v.value])
+              ),
+            },
+          });
         } else if (parsedMessage.type === "MUTATE") {
           const { resource } = parsedMessage;
           console.log("Received mutation from client:", parsedMessage);

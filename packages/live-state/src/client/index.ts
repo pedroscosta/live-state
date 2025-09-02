@@ -8,7 +8,7 @@ export type ClientOptions = {
   url: string;
   schema: Schema<any>;
   credentials?: Generatable<Awaitable<Record<string, string>>>;
-  storage?:
+  storage:
     | {
         name: string;
       }

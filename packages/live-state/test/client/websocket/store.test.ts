@@ -1,14 +1,22 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  Mock,
+  test,
+  vi,
+} from "vitest";
 import { ObjectGraph } from "../../../src/client/websocket/obj-graph";
 import { KVStorage } from "../../../src/client/websocket/storage";
 import { OptimisticStore } from "../../../src/client/websocket/store";
 import { DefaultMutationMessage } from "../../../src/core/schemas/web-socket";
 import {
-  Schema,
   createRelations,
   id,
   number,
   object,
+  Schema,
   string,
 } from "../../../src/schema";
 
@@ -21,7 +29,7 @@ describe("OptimisticStore", () => {
   let mockSchema: Schema<any>;
   let mockKVStorage: any;
   let mockObjectGraph: any;
-  let afterLoadMutations: vi.Mock;
+  let afterLoadMutations: Mock;
 
   beforeEach(() => {
     // Create mock schema
@@ -81,7 +89,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should create an OptimisticStore instance", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     expect(store).toBeInstanceOf(OptimisticStore);
     expect(store.schema).toBe(mockSchema);
@@ -103,7 +111,11 @@ describe("OptimisticStore", () => {
     mockKVStorage.getMeta.mockResolvedValue(mockMutationStack);
     mockKVStorage.get.mockResolvedValue({ user1: { name: "John" } });
 
-    store = new OptimisticStore(mockSchema, "test-storage", afterLoadMutations);
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      afterLoadMutations
+    );
 
     // Wait for async initialization
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -113,7 +125,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should get all objects of a resource type", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mockData = {
       user1: {
@@ -134,26 +146,41 @@ describe("OptimisticStore", () => {
       },
     };
 
+    // Set up the mocked object graph to return nodes for user1 and user2
+    mockObjectGraph.getNode
+      .mockReturnValueOnce({
+        id: "user1",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      })
+      .mockReturnValueOnce({
+        id: "user2",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      });
+
     store["optimisticRawObjPool"] = { users: mockData };
 
-    const result = store.get("users");
+    const result = store.get({ resource: "users" });
 
-    expect(result).toEqual({
-      user1: { id: "user1", name: "John", age: 30 },
-      user2: { id: "user2", name: "Jane", age: 25 },
-    });
+    expect(result).toEqual([
+      { id: "user1", name: "John", age: 30 },
+      { id: "user2", name: "Jane", age: 25 },
+    ]);
   });
 
   test("should return empty object when no data exists for resource type", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
-    const result = store.get("nonexistent");
+    const result = store.get({ resource: "nonexistent" });
 
-    expect(result).toEqual({});
+    expect(result).toEqual([]);
   });
 
   test("should get one object by id", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mockNode = {
       id: "user1",
@@ -181,7 +208,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should return undefined when node doesn't exist", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
     mockObjectGraph.getNode.mockReturnValue(undefined);
 
     const result = store.getOne("users", "nonexistent");
@@ -190,7 +217,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should return undefined when object doesn't exist in pool", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mockNode = {
       id: "user1",
@@ -209,50 +236,28 @@ describe("OptimisticStore", () => {
   });
 
   test("should subscribe to resource type changes", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
     const listener = vi.fn();
 
-    const unsubscribe = store.subscribe(["users"], listener);
+    const unsubscribe = store.subscribe({ resource: "users" }, listener);
 
     expect(typeof unsubscribe).toBe("function");
-    expect(store["resourceTypeSubscriptions"]["users"]).toContain(listener);
+
+    // Check that the subscription was added to collectionSubscriptions
+    const subscriptions = store["collectionSubscriptions"];
+    expect(subscriptions.size).toBe(1);
+    const subscription = Array.from(subscriptions.values())[0];
+    expect(subscription.callbacks.has(listener)).toBe(true);
+    expect(subscription.query.resource).toBe("users");
 
     unsubscribe();
-    expect(store["resourceTypeSubscriptions"]["users"]).not.toContain(listener);
-  });
 
-  test("should subscribe to specific object changes", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
-    const listener = vi.fn();
-
-    const mockNode = { id: "user1" };
-    mockObjectGraph.getNode.mockReturnValue(mockNode);
-    mockObjectGraph.subscribe.mockReturnValue(() => {});
-
-    const unsubscribe = store.subscribe(["users", "user1"], listener);
-
-    expect(mockObjectGraph.subscribe).toHaveBeenCalledWith("user1", listener);
-  });
-
-  test("should throw error when subscribing to non-existent node", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
-    mockObjectGraph.getNode.mockReturnValue(undefined);
-
-    expect(() => {
-      store.subscribe(["users", "nonexistent"], vi.fn());
-    }).toThrow("Node not found");
-  });
-
-  test("should throw error for unsupported subscription path", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
-
-    expect(() => {
-      store.subscribe(["users", "user1", "field"], vi.fn());
-    }).toThrow("Not implemented");
+    // Check that the subscription was removed
+    expect(subscriptions.size).toBe(0);
   });
 
   test("should add optimistic mutation", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -281,7 +286,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should add server mutation and remove optimistic version", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     // Add optimistic mutation first
     const optimisticMutation: DefaultMutationMessage = {
@@ -328,7 +333,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should throw error when schema not found", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -344,7 +349,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should handle relations when adding mutation", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -378,15 +383,11 @@ describe("OptimisticStore", () => {
     expect(mockObjectGraph.createNode).toHaveBeenCalledWith("user1", "users", [
       "posts",
     ]);
-    expect(mockObjectGraph.createLink).toHaveBeenCalledWith(
-      "post1",
-      "user1",
-      "posts"
-    );
+    expect(mockObjectGraph.createLink).toHaveBeenCalledWith("post1", "user1");
   });
 
   test("should remove existing link when relation changes", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -423,19 +424,17 @@ describe("OptimisticStore", () => {
 
     store.addMutation("posts", mutation, true);
 
-    expect(mockObjectGraph.removeLink).toHaveBeenCalledWith("post1", "userId");
-    expect(mockObjectGraph.createLink).toHaveBeenCalledWith(
-      "post1",
-      "user2",
-      "posts"
-    );
+    expect(mockObjectGraph.removeLink).toHaveBeenCalledWith("post1", "users");
+    expect(mockObjectGraph.createLink).toHaveBeenCalledWith("post1", "user2");
   });
 
   test("should notify subscribers after adding mutation", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const listener = vi.fn();
-    store["resourceTypeSubscriptions"]["users"] = new Set([listener]);
+
+    // Subscribe to the users resource to set up the listener
+    store.subscribe({ resource: "users" }, listener);
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -456,7 +455,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should load consolidated state", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const data = {
       user1: { name: { value: "John", _meta: { timestamp: "2023-01-01" } } },
@@ -485,7 +484,7 @@ describe("OptimisticStore", () => {
   });
 
   test("should handle getOne with relations", () => {
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     const userNode = {
       id: "user1",
@@ -560,7 +559,11 @@ describe("OptimisticStore", () => {
   test("should handle empty mutation stack during initialization", async () => {
     mockKVStorage.getMeta.mockResolvedValue({});
 
-    store = new OptimisticStore(mockSchema, "test-storage", afterLoadMutations);
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      afterLoadMutations
+    );
 
     // Wait for async initialization
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -571,7 +574,7 @@ describe("OptimisticStore", () => {
   test("should handle empty data during initialization", async () => {
     mockKVStorage.get.mockResolvedValue({});
 
-    store = new OptimisticStore(mockSchema, "test-storage");
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
     // Wait for async initialization
     await new Promise((resolve) => setTimeout(resolve, 0));

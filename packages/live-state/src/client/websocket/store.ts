@@ -1,5 +1,9 @@
+import fastDeepEqual from "fast-deep-equal";
+import { ClientOptions } from "..";
+import { RawQueryRequest } from "../../core/schemas/core-protocol";
 import { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
+  IncludeClause,
   InferLiveType,
   inferValue,
   LiveObjectAny,
@@ -8,6 +12,8 @@ import {
   MaterializedLiveType,
   Schema,
 } from "../../schema";
+import { hash } from "../../utils";
+import { applyWhere } from "../utils";
 import { GraphNode, ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 
@@ -22,45 +28,70 @@ export class OptimisticStore {
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
-  private resourceTypeSubscriptions: Record<string, Set<() => void>> = {};
+  private collectionSubscriptions: Map<
+    string,
+    {
+      callbacks: Set<(v: any) => void>;
+      query: RawQueryRequest;
+      flatInclude?: string[];
+    }
+  > = new Map();
+  private querySnapshots: Record<string, any> = {};
 
   private kvStorage: KVStorage;
 
   public constructor(
     public readonly schema: Schema<any>,
-    storageName: string,
+    storage: ClientOptions["storage"],
     afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void
   ) {
     this.kvStorage = new KVStorage();
 
-    this.kvStorage.init(this.schema, storageName).then(() => {
-      this.kvStorage
-        .getMeta<typeof this.optimisticMutationStack>("mutationStack")
-        .then((data) => {
-          if (!data || Object.keys(data).length === 0) return;
-          this.optimisticMutationStack = data;
-          afterLoadMutations?.(this.optimisticMutationStack);
-        })
-        .then(() => {
-          Object.entries(this.schema).forEach(([k, v]) => {
-            this.kvStorage.get(k).then((data) => {
-              if (!data || Object.keys(data).length === 0) return;
-              this.loadConsolidatedState(k, data);
+    if (storage !== false) {
+      this.kvStorage.init(this.schema, storage.name).then(() => {
+        this.kvStorage
+          .getMeta<typeof this.optimisticMutationStack>("mutationStack")
+          .then((data) => {
+            if (!data || Object.keys(data).length === 0) return;
+            this.optimisticMutationStack = data;
+            afterLoadMutations?.(this.optimisticMutationStack);
+          })
+          .then(() => {
+            Object.entries(this.schema).forEach(([k, v]) => {
+              this.kvStorage.get(k).then((data) => {
+                if (!data || Object.keys(data).length === 0) return;
+                this.loadConsolidatedState(k, data);
+              });
             });
+          })
+          .catch((e) => {
+            console.error("Failed to load state from storage", e);
           });
-        })
-        .catch((e) => {
-          console.error("Failed to load state from storage", e);
-        });
-    });
+      });
+    }
   }
 
-  public get(resourceType: string) {
-    return Object.fromEntries(
-      Object.entries(this.optimisticRawObjPool[resourceType] ?? {}).map(
-        ([k, v]) => [k, inferValue(v)]
-      )
-    ) as Record<string, InferLiveType<LiveObjectAny>>;
+  public get(query: RawQueryRequest, _queryKey?: string, force = false) {
+    const queryKey = _queryKey ?? hash(query);
+
+    if (this.querySnapshots[queryKey] && !force) {
+      const value = this.querySnapshots[queryKey];
+      if (value) return value;
+    }
+
+    let result = Object.keys(
+      this.optimisticRawObjPool[query.resource] ?? {}
+    ).map((k) =>
+      inferValue(this.materializeOneWithInclude(k, query.include))
+    ) as InferLiveType<LiveObjectAny>[];
+
+    if (query.where) {
+      result = result.filter((v) => applyWhere(v, query.where));
+    }
+
+    if (!force) this.querySnapshots[queryKey] = result;
+
+    return result;
   }
 
   public getOne(
@@ -145,27 +176,39 @@ export class OptimisticStore {
     return inferValue(materializedObj);
   }
 
-  public subscribe(path: string[], listener: () => void) {
-    if (path.length === 1) {
-      if (!this.resourceTypeSubscriptions[path[0]])
-        this.resourceTypeSubscriptions[path[0]] = new Set();
+  public subscribe(query: RawQueryRequest, listener: (v: any[]) => void) {
+    const key = hash(query);
 
-      this.resourceTypeSubscriptions[path[0]].add(listener);
+    const entry = this.collectionSubscriptions.get(key);
 
-      return () => {
-        this.resourceTypeSubscriptions[path[0]].delete(listener);
-      };
+    if (!entry) {
+      this.collectionSubscriptions.set(key, {
+        callbacks: new Set(),
+        query,
+        flatInclude: query.include ? Object.keys(query.include) : undefined,
+      });
     }
 
-    if (path.length === 2) {
-      const node = this.optimisticObjGraph.getNode(path[1]);
+    this.collectionSubscriptions.get(key)?.callbacks.add(listener);
 
-      if (!node) throw new Error("Node not found");
+    return () => {
+      this.collectionSubscriptions.get(key)?.callbacks.delete(listener);
 
-      return this.optimisticObjGraph.subscribe(path[1], listener);
-    }
+      if (this.collectionSubscriptions.get(key)?.callbacks.size === 0) {
+        this.collectionSubscriptions.delete(key);
+        delete this.querySnapshots[key];
+      }
+    };
 
-    throw new Error("Not implemented");
+    // if (path.length === 2) {
+    //   const node = this.optimisticObjGraph.getNode(path[1]);
+
+    //   if (!node) throw new Error("Node not found");
+
+    //   return this.optimisticObjGraph.subscribe(path[1], listener);
+    // }
+
+    // throw new Error("Not implemented");
   }
 
   public addMutation(
@@ -260,15 +303,15 @@ export class OptimisticStore {
       );
 
       Object.entries(mutation.payload).forEach(([k, v]) => {
+        const rel = schema.relations[schemaRelationalFields[k]];
+
         if (!v || !schemaRelationalFields[k]) return;
 
         const prevRelation = prevValue?.value[
           k as keyof (typeof prevValue)["value"]
         ] as MaterializedLiveType<LiveString> | undefined;
 
-        const [, updatedRelation] = schema.relations[
-          schemaRelationalFields[k]
-        ].mergeMutation(
+        const [, updatedRelation] = rel.mergeMutation(
           "set",
           v as { value: string; _meta: { timestamp: string } },
           prevRelation
@@ -277,8 +320,7 @@ export class OptimisticStore {
         if (!updatedRelation) return;
 
         if (!this.optimisticObjGraph.hasNode(updatedRelation.value)) {
-          const otherNodeType =
-            schema.relations[schemaRelationalFields[k]].entity.name;
+          const otherNodeType = rel.entity.name;
 
           this.optimisticObjGraph.createNode(
             updatedRelation.value,
@@ -290,20 +332,20 @@ export class OptimisticStore {
         }
 
         if (prevRelation?.value) {
-          this.optimisticObjGraph.removeLink(mutation.resourceId, k);
+          this.optimisticObjGraph.removeLink(
+            mutation.resourceId,
+            rel.entity.name
+          );
         }
 
         this.optimisticObjGraph.createLink(
           mutation.resourceId,
-          updatedRelation.value,
-          routeName
+          updatedRelation.value
         );
       });
     }
 
-    this.resourceTypeSubscriptions[routeName as string]?.forEach((listener) =>
-      listener()
-    );
+    this.notifyCollectionSubscribers(routeName);
 
     this.optimisticObjGraph.notifySubscribers(mutation.resourceId);
   }
@@ -322,6 +364,89 @@ export class OptimisticStore {
         resourceId: id,
         payload,
       });
+    });
+  }
+
+  private materializeOneWithInclude(
+    id?: string,
+    include: IncludeClause<LiveObjectAny> = {}
+  ): MaterializedLiveType<LiveObjectAny> | undefined {
+    if (!id) return;
+
+    const node = this.optimisticObjGraph.getNode(id);
+
+    if (!node) return;
+
+    const resourceType = node.type;
+
+    const obj = this.optimisticRawObjPool[resourceType]?.[id];
+
+    if (!obj) return;
+
+    const [referencesToInclude, referencedByToInclude] = Object.keys(
+      include
+    ).reduce(
+      (acc, k) => {
+        const rel = this.schema[resourceType].relations[k];
+        if (rel.type === "one") {
+          acc[0].push([k, rel.entity.name]);
+        } else if (rel.type === "many") {
+          acc[1].push([k, rel.entity.name]);
+        }
+        return acc;
+      },
+      [[], []] as [string[][], string[][]]
+    );
+
+    return {
+      value: {
+        ...obj.value,
+        // one relations
+        ...Object.fromEntries(
+          referencesToInclude.map(([k, refName]) => [
+            k,
+            this.materializeOneWithInclude(node.references.get(refName)),
+          ])
+        ),
+        // many relations
+        ...Object.fromEntries(
+          referencedByToInclude.map(([k, refName]) => {
+            const referencedBy = node.referencedBy.get(refName);
+            const isMany = referencedBy instanceof Set;
+
+            return [
+              k,
+              isMany
+                ? {
+                    value: Array.from(referencedBy.values()).map((v) =>
+                      this.materializeOneWithInclude(v)
+                    ),
+                  }
+                : this.materializeOneWithInclude(referencedBy),
+            ];
+          })
+        ),
+      },
+    } as MaterializedLiveType<LiveObjectAny>;
+  }
+
+  private notifyCollectionSubscribers(collection: string) {
+    this.collectionSubscriptions.forEach((s) => {
+      if (
+        s.query.resource === collection ||
+        (s.flatInclude && s.flatInclude.includes(collection))
+      ) {
+        // TODO implement incremental computing
+        const queryHash = hash(s.query);
+        const oldResult = this.querySnapshots[queryHash];
+        const newResult = this.get(s.query, undefined, true);
+
+        if (fastDeepEqual(newResult, oldResult)) return;
+
+        this.querySnapshots[queryHash] = newResult;
+
+        s.callbacks.forEach((cb) => cb(newResult));
+      }
     });
   }
 }

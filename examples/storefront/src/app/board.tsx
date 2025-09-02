@@ -1,8 +1,8 @@
 // import { client, useLiveData, useSubscribe } from "./live-client";
 
 import { useLiveQuery } from "@live-state/sync/client";
-import { nanoid } from "nanoid";
 import { memo } from "react";
+import { ulid } from "ulid";
 import { Button } from "../../components/ui/button";
 import { client } from "../../lib/fetch-client";
 import { Group } from "./group";
@@ -11,7 +11,7 @@ import { store } from "./live-client";
 const MemoItem = memo(Group);
 
 export function Board(): JSX.Element {
-  const groups = useLiveQuery(store.groups);
+  const groups = useLiveQuery(store.query.groups);
 
   return (
     <div className="p-2 flex flex-1 border overflow-y-hidden overflow-x-auto gap-6">
@@ -22,8 +22,8 @@ export function Board(): JSX.Element {
         <Button
           className="w-sm"
           onClick={() => {
-            store.groups.insert({
-              id: nanoid(),
+            store.mutate.groups.insert({
+              id: ulid().toLowerCase(),
               name: `New Group ${Object.keys(groups ?? {}).length + 1}`,
             });
           }}
@@ -34,7 +34,7 @@ export function Board(): JSX.Element {
           className="w-sm"
           onClick={() => {
             client.groups.upsert({
-              id: nanoid(),
+              id: ulid().toLowerCase(),
               name: `New Group ${Object.keys(groups ?? {}).length + 1} (fetch)`,
             });
           }}

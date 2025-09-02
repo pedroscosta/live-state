@@ -1,28 +1,68 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Client } from ".";
 import { AnyRouter } from "../server";
-import { Simplify } from "../utils";
-import { DeepSubscribable } from "./types";
+import { hash } from "../utils";
+import { QueryBuilder } from "./query";
 
-export const useLiveQuery = <T extends DeepSubscribable<U>, U>(
-  observable: T
-): Simplify<ReturnType<T["get"]>> => {
-  const [slice, setSlice] = useState(() => observable.get());
-  const primed = useRef(false);
+declare const TESTING: boolean;
 
-  useEffect(() => {
-    if (primed.current) setSlice(observable.get());
-    else primed.current = true;
+class Store {
+  private subscriptions: Map<
+    string,
+    {
+      subscribe: (cb: () => void) => () => void;
+      callbacks: Set<() => void>;
+    }
+  > = new Map();
 
-    const unsub = observable.subscribe(() => {
-      const newSlice = observable.get();
-      setSlice(newSlice);
+  getOrStoreSubscription(
+    builder: QueryBuilder<any>
+  ): (cb: () => void) => () => void {
+    const key = hash(builder);
+
+    if (this.subscriptions.has(key))
+      return this.subscriptions.get(key)!.subscribe;
+
+    this.subscriptions.set(key, {
+      subscribe: (cb: () => void) => {
+        this.subscriptions.get(key)?.callbacks.add(cb);
+
+        const unsub = builder.subscribe(() => {
+          this.subscriptions.get(key)?.callbacks.forEach((cb) => cb());
+        });
+
+        return () => {
+          this.subscriptions.get(key)?.callbacks.delete(cb);
+
+          setTimeout(() => {
+            if (this.subscriptions.get(key)?.callbacks.size === 0) {
+              this.subscriptions.delete(key);
+              unsub();
+            }
+          }, 10);
+        };
+      },
+      callbacks: new Set(),
     });
 
-    return unsub;
-  }, [observable]);
+    return this.subscriptions.get(key)!.subscribe;
+  }
+}
 
-  return slice as Simplify<ReturnType<T["get"]>>;
+const store = new Store();
+
+export const useLiveQuery = <
+  T extends { get: () => U; subscribe: (cb: (v: U) => void) => () => void },
+  U,
+>(
+  observable: T
+) => {
+  return useSyncExternalStore(
+    store.getOrStoreSubscription(
+      observable as unknown as QueryBuilder<any, any>
+    ),
+    observable.get
+  ) as ReturnType<T["get"]>;
 };
 
 export const SubscriptionProvider = ({
