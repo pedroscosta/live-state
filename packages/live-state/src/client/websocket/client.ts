@@ -15,6 +15,7 @@ import { AnyRouter } from "../../server";
 import { Simplify } from "../../utils";
 import { QueryBuilder, QueryExecutor } from "../query";
 import type { Client as ClientType } from "../types";
+import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
@@ -296,7 +297,27 @@ export const createClient = <TRouter extends AnyRouter>(
           >
         >
       ),
-      mutate: {},
+      mutate: createObservable(() => {}, {
+        apply: (_, path, argumentsList) => {
+          if (path.length < 2) return;
+          if (path.length > 2)
+            throw new Error("Trying to access an invalid path");
+
+          const [route, method] = path;
+
+          if (method === "insert") {
+            const { id, ...input } = argumentsList[0];
+            return ogClient.mutate(route, id, input);
+          }
+
+          if (method === "update") {
+            const [id, input] = argumentsList;
+            return ogClient.mutate(route, id, input);
+          }
+
+          return ogClient.genericMutate(route, method, argumentsList[0]);
+        },
+      }) as unknown as ClientType<TRouter>["mutate"],
     },
   };
 };
