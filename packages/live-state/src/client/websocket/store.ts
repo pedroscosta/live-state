@@ -1,4 +1,5 @@
 import fastDeepEqual from "fast-deep-equal";
+import { ClientOptions } from "..";
 import { RawQueryRequest } from "../../core/schemas/core-protocol";
 import { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
@@ -41,31 +42,33 @@ export class OptimisticStore {
 
   public constructor(
     public readonly schema: Schema<any>,
-    storageName: string,
+    storage: ClientOptions["storage"],
     afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void
   ) {
     this.kvStorage = new KVStorage();
 
-    this.kvStorage.init(this.schema, storageName).then(() => {
-      this.kvStorage
-        .getMeta<typeof this.optimisticMutationStack>("mutationStack")
-        .then((data) => {
-          if (!data || Object.keys(data).length === 0) return;
-          this.optimisticMutationStack = data;
-          afterLoadMutations?.(this.optimisticMutationStack);
-        })
-        .then(() => {
-          Object.entries(this.schema).forEach(([k, v]) => {
-            this.kvStorage.get(k).then((data) => {
-              if (!data || Object.keys(data).length === 0) return;
-              this.loadConsolidatedState(k, data);
+    if (storage !== false) {
+      this.kvStorage.init(this.schema, storage.name).then(() => {
+        this.kvStorage
+          .getMeta<typeof this.optimisticMutationStack>("mutationStack")
+          .then((data) => {
+            if (!data || Object.keys(data).length === 0) return;
+            this.optimisticMutationStack = data;
+            afterLoadMutations?.(this.optimisticMutationStack);
+          })
+          .then(() => {
+            Object.entries(this.schema).forEach(([k, v]) => {
+              this.kvStorage.get(k).then((data) => {
+                if (!data || Object.keys(data).length === 0) return;
+                this.loadConsolidatedState(k, data);
+              });
             });
+          })
+          .catch((e) => {
+            console.error("Failed to load state from storage", e);
           });
-        })
-        .catch((e) => {
-          console.error("Failed to load state from storage", e);
-        });
-    });
+      });
+    }
   }
 
   public get(query: RawQueryRequest, _queryKey?: string, force = false) {

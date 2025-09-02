@@ -47,15 +47,11 @@ class InnerClient implements QueryExecutor {
   public constructor(opts: ClientOptions) {
     this.url = opts.url;
 
-    this.store = new OptimisticStore(
-      opts.schema,
-      (opts as { storage: { name: string } }).storage.name,
-      (stack) => {
-        Object.values(stack)
-          ?.flat()
-          ?.forEach((m) => this.sendWsMessage(m));
-      }
-    );
+    this.store = new OptimisticStore(opts.schema, opts.storage, (stack) => {
+      Object.values(stack)
+        ?.flat()
+        ?.forEach((m) => this.sendWsMessage(m));
+    });
 
     this.ws = new WebSocketClient({
       url: opts.url,
