@@ -34,6 +34,9 @@ export class QueryBuilder<
     this._client = client;
     this._where = where ?? {};
     this._include = include ?? ({} as TInclude);
+
+    this.get = this.get.bind(this);
+    this.subscribe = this.subscribe.bind(this);
   }
 
   where(where: WhereClause<TCollection>) {
@@ -77,9 +80,18 @@ export class QueryBuilder<
       {
         resource: this._collection.name,
         where: this._where,
+        include: this._include,
       },
       callback
     );
+  }
+
+  toJSON(): any {
+    return {
+      resource: this._collection.name,
+      where: this._where,
+      include: this._include,
+    } satisfies RawQueryRequest;
   }
 
   /** @internal */

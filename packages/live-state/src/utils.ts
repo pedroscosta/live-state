@@ -1,4 +1,4 @@
-import { sha256 } from "crypto-hash";
+import { xxHash32 } from "js-xxhash";
 
 export type Simplify<T> =
   T extends Record<string, any>
@@ -8,5 +8,5 @@ export type Simplify<T> =
     : T;
 
 export const hash = (value: any) => {
-  return sha256(JSON.stringify(value));
+  return xxHash32(JSON.stringify(value)).toString(32);
 };

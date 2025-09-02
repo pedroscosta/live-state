@@ -1,3 +1,4 @@
+import fastDeepEqual from "fast-deep-equal";
 import { RawQueryRequest } from "../../core/schemas/core-protocol";
 import { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
@@ -10,6 +11,7 @@ import {
   MaterializedLiveType,
   Schema,
 } from "../../schema";
+import { hash } from "../../utils";
 import { applyWhere } from "../utils";
 import { GraphNode, ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
@@ -25,11 +27,15 @@ export class OptimisticStore {
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
-  private collectionSubscriptions: Set<{
-    callback: (v: any) => void;
-    query: RawQueryRequest;
-    flatInclude?: string[];
-  }> = new Set();
+  private collectionSubscriptions: Map<
+    string,
+    {
+      callbacks: Set<(v: any) => void>;
+      query: RawQueryRequest;
+      flatInclude?: string[];
+    }
+  > = new Map();
+  private querySnapshots: Record<string, any> = {};
 
   private kvStorage: KVStorage;
 
@@ -62,16 +68,25 @@ export class OptimisticStore {
     });
   }
 
-  public get(query: RawQueryRequest) {
-    const result = Object.keys(
+  public get(query: RawQueryRequest, _queryKey?: string, force = false) {
+    const queryKey = _queryKey ?? hash(query);
+
+    if (this.querySnapshots[queryKey] && !force) {
+      const value = this.querySnapshots[queryKey];
+      if (value) return value;
+    }
+
+    let result = Object.keys(
       this.optimisticRawObjPool[query.resource] ?? {}
     ).map((k) =>
       inferValue(this.materializeOneWithInclude(k, query.include))
     ) as InferLiveType<LiveObjectAny>[];
 
     if (query.where) {
-      return result.filter((v) => applyWhere(v, query.where));
+      result = result.filter((v) => applyWhere(v, query.where));
     }
+
+    if (!force) this.querySnapshots[queryKey] = result;
 
     return result;
   }
@@ -159,16 +174,27 @@ export class OptimisticStore {
   }
 
   public subscribe(query: RawQueryRequest, listener: (v: any[]) => void) {
-    const entry = {
-      callback: listener,
-      query,
-      flatInclude: query.include ? Object.keys(query.include) : undefined,
-    };
+    const key = hash(query);
 
-    this.collectionSubscriptions.add(entry);
+    const entry = this.collectionSubscriptions.get(key);
+
+    if (!entry) {
+      this.collectionSubscriptions.set(key, {
+        callbacks: new Set(),
+        query,
+        flatInclude: query.include ? Object.keys(query.include) : undefined,
+      });
+    }
+
+    this.collectionSubscriptions.get(key)?.callbacks.add(listener);
 
     return () => {
-      this.collectionSubscriptions.delete(entry);
+      this.collectionSubscriptions.get(key)?.callbacks.delete(listener);
+
+      if (this.collectionSubscriptions.get(key)?.callbacks.size === 0) {
+        this.collectionSubscriptions.delete(key);
+        delete this.querySnapshots[key];
+      }
     };
 
     // if (path.length === 2) {
@@ -369,8 +395,6 @@ export class OptimisticStore {
       [[], []] as [string[][], string[][]]
     );
 
-    console.log("materializing", resourceType, id);
-
     return {
       value: {
         ...obj.value,
@@ -410,7 +434,15 @@ export class OptimisticStore {
         (s.flatInclude && s.flatInclude.includes(collection))
       ) {
         // TODO implement incremental computing
-        s.callback(this.get(s.query));
+        const queryHash = hash(s.query);
+        const oldResult = this.querySnapshots[queryHash];
+        const newResult = this.get(s.query, undefined, true);
+
+        if (fastDeepEqual(newResult, oldResult)) return;
+
+        this.querySnapshots[queryHash] = newResult;
+
+        s.callbacks.forEach((cb) => cb(newResult));
       }
     });
   }
