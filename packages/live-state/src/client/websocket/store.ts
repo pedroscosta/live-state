@@ -181,11 +181,17 @@ export class OptimisticStore {
 
     const entry = this.collectionSubscriptions.get(key);
 
+    const schema = this.schema[query.resource];
+
     if (!entry) {
       this.collectionSubscriptions.set(key, {
         callbacks: new Set(),
         query,
-        flatInclude: query.include ? Object.keys(query.include) : undefined,
+        flatInclude: query.include
+          ? Object.keys(query.include).map(
+              (k) => schema.relations[k].entity.name
+            )
+          : undefined,
       });
     }
 
