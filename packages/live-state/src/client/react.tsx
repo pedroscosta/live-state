@@ -4,6 +4,8 @@ import { AnyRouter } from "../server";
 import { hash } from "../utils";
 import { QueryBuilder } from "./query";
 
+declare const TESTING: boolean;
+
 class Store {
   private subscriptions: Map<
     string,
@@ -30,15 +32,14 @@ class Store {
         });
 
         return () => {
-          const refCount = this.subscriptions.get(key)?.callbacks.size;
-
           this.subscriptions.get(key)?.callbacks.delete(cb);
 
-          unsub();
-
-          if (refCount === 1) {
-            this.subscriptions.delete(key);
-          }
+          setTimeout(() => {
+            if (this.subscriptions.get(key)?.callbacks.size === 0) {
+              this.subscriptions.delete(key);
+              unsub();
+            }
+          }, 10);
         };
       },
       callbacks: new Set(),
