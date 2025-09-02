@@ -1,11 +1,11 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { SubscriptionProvider } from "@live-state/sync/client";
 import { useSyncExternalStore } from "react";
+import { Board } from "./board";
 import { DndProvider } from "./dnd-context";
-import { client, store } from "./live-client";
+import { client } from "./live-client";
 
 export default function Store(): JSX.Element {
   const isConnected = useSyncExternalStore(
@@ -32,14 +32,7 @@ export default function Store(): JSX.Element {
             />
           </div>
         </header>
-        <Button
-          onClick={() =>
-            console.log(store.query.groups.where({ name: "New Group 1" }).get())
-          }
-        >
-          Add Group
-        </Button>
-        {/* <Board /> */}
+        <Board />
       </DndProvider>
     </SubscriptionProvider>
   );
