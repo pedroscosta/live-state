@@ -60,17 +60,11 @@ export class QueryBuilder<
   }
 
   get(): Simplify<InferLiveObject<TCollection, TInclude>>[] {
-    console.debug("Getting", this._collection.name, {
-      resource: this._collection.name,
-      where: this._where,
-      include: this._include,
-    });
     const result = this._client.get({
       resource: this._collection.name,
       where: this._where,
       include: this._include,
     });
-    console.debug("Got", this._collection.name, result);
     return result;
   }
 

@@ -25,10 +25,11 @@ export class OptimisticStore {
   private optimisticObjGraph: ObjectGraph = new ObjectGraph();
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
 
-  private resourceTypeSubscriptions: Record<
-    string,
-    Set<{ callback: (v: any) => void; query: RawQueryRequest }>
-  > = {};
+  private collectionSubscriptions: Set<{
+    callback: (v: any) => void;
+    query: RawQueryRequest;
+    flatInclude?: string[];
+  }> = new Set();
 
   private kvStorage: KVStorage;
 
@@ -161,12 +162,13 @@ export class OptimisticStore {
     const entry = {
       callback: listener,
       query,
+      flatInclude: query.include ? Object.keys(query.include) : undefined,
     };
 
-    (this.resourceTypeSubscriptions[query.resource] ??= new Set()).add(entry);
+    this.collectionSubscriptions.add(entry);
 
     return () => {
-      this.resourceTypeSubscriptions[query.resource].delete(entry);
+      this.collectionSubscriptions.delete(entry);
     };
 
     // if (path.length === 2) {
@@ -314,17 +316,7 @@ export class OptimisticStore {
       });
     }
 
-    const updatedCollection = Object.values(
-      this.optimisticRawObjPool[routeName as string] ?? {}
-    ).map(inferValue);
-
-    this.resourceTypeSubscriptions[routeName as string]?.forEach((s) =>
-      s.callback(
-        s.query.where
-          ? updatedCollection.filter((v) => applyWhere(v!, s.query.where))
-          : updatedCollection
-      )
-    );
+    this.notifyCollectionSubscribers(routeName);
 
     this.optimisticObjGraph.notifySubscribers(mutation.resourceId);
   }
@@ -378,10 +370,6 @@ export class OptimisticStore {
     );
 
     console.log("materializing", resourceType, id);
-    console.log(referencesToInclude, referencedByToInclude);
-    console.log(node.references);
-    console.log(node.referencedBy);
-    console.log("----------------");
 
     return {
       value: {
@@ -413,5 +401,17 @@ export class OptimisticStore {
         ),
       },
     } as MaterializedLiveType<LiveObjectAny>;
+  }
+
+  private notifyCollectionSubscribers(collection: string) {
+    this.collectionSubscriptions.forEach((s) => {
+      if (
+        s.query.resource === collection ||
+        (s.flatInclude && s.flatInclude.includes(collection))
+      ) {
+        // TODO implement incremental computing
+        s.callback(this.get(s.query));
+      }
+    });
   }
 }
