@@ -23,7 +23,7 @@ describe("QueryBuilder", () => {
 
   test("should create QueryBuilder instance", () => {
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    
+
     expect(builder).toBeInstanceOf(QueryBuilder);
     expect(typeof builder.get).toBe("function");
     expect(typeof builder.subscribe).toBe("function");
@@ -84,10 +84,7 @@ describe("QueryBuilder", () => {
     mockExecutor.get = vi.fn().mockReturnValue(mockResult);
 
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder
-      .where({ age: 30 })
-      .include({ posts: true })
-      .get();
+    const result = builder.where({ age: 30 }).include({ posts: true }).get();
 
     expect(result).toBe(mockResult);
     expect(mockExecutor.get).toHaveBeenCalledWith({
@@ -103,10 +100,7 @@ describe("QueryBuilder", () => {
     mockExecutor.get = vi.fn().mockReturnValue(mockResult);
 
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder
-      .where({ age: 30 })
-      .where({ active: true })
-      .get();
+    const result = builder.where({ age: 30 }).where({ active: true }).get();
 
     expect(result).toBe(mockResult);
     expect(mockExecutor.get).toHaveBeenCalledWith({
@@ -152,7 +146,7 @@ describe("QueryBuilder", () => {
         include: {},
         limit: undefined,
       },
-      mockCallback
+      expect.any(Function)
     );
   });
 
@@ -175,16 +169,13 @@ describe("QueryBuilder", () => {
         include: { posts: true },
         limit: undefined,
       },
-      mockCallback
+      expect.any(Function)
     );
   });
 
   test("should return correct JSON representation", () => {
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const json = builder
-      .where({ age: 30 })
-      .include({ posts: true })
-      .toJSON();
+    const json = builder.where({ age: 30 }).include({ posts: true }).toJSON();
 
     expect(json).toEqual({
       resource: "users",
@@ -235,10 +226,10 @@ describe("QueryBuilder", () => {
 
   test("should preserve bound methods", () => {
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    
+
     // Extract methods
     const { get, subscribe } = builder;
-    
+
     // Methods should work when called independently
     expect(() => get()).not.toThrow();
     expect(() => subscribe(vi.fn())).not.toThrow();
@@ -294,7 +285,7 @@ describe("QueryBuilder", () => {
   test("should handle subscription callback with data", () => {
     const mockData = [{ id: "1", name: "John" }];
     const mockCallback = vi.fn();
-    
+
     // Mock subscribe to immediately call the callback
     mockExecutor.subscribe = vi.fn().mockImplementation((query, callback) => {
       callback(mockData);
@@ -349,7 +340,10 @@ describe("QueryBuilder", () => {
   });
 
   test("should execute get query with limit clause", () => {
-    const mockResult = [{ id: "1", name: "John" }, { id: "2", name: "Jane" }];
+    const mockResult = [
+      { id: "1", name: "John" },
+      { id: "2", name: "Jane" },
+    ];
     mockExecutor.get = vi.fn().mockReturnValue(mockResult);
 
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
@@ -370,7 +364,7 @@ describe("QueryBuilder", () => {
 
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
     const result = builder
-      .where({ active: true })
+      .where({ active: true } as any)
       .include({ posts: true })
       .limit(5)
       .get();
@@ -400,7 +394,7 @@ describe("QueryBuilder", () => {
         include: {},
         limit: 3,
       },
-      mockCallback
+      expect.any(Function)
     );
   });
 
@@ -410,7 +404,7 @@ describe("QueryBuilder", () => {
 
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
     builder
-      .where({ active: true })
+      .where({ active: true } as any)
       .limit(2)
       .include({ posts: true })
       .get();
@@ -426,7 +420,7 @@ describe("QueryBuilder", () => {
   test("should return correct JSON representation with limit", () => {
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
     const json = builder
-      .where({ active: true })
+      .where({ active: true } as any)
       .include({ posts: true })
       .limit(15)
       .toJSON();
@@ -491,6 +485,329 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: 10,
+    });
+  });
+
+  describe("one method", () => {
+    test("should query by ID and return single result", () => {
+      const mockResult = [{ id: "123", name: "John" }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.one("123").get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "123" },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should return undefined when no result found", () => {
+      mockExecutor.get = vi.fn().mockReturnValue([]);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.one("nonexistent").get();
+
+      expect(result).toBeUndefined();
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "nonexistent" },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should work with include clause", () => {
+      const mockResult = [{ id: "123", name: "John", posts: [] }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.include({ posts: true }).one("123").get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "123" },
+        include: { posts: true },
+        limit: 1,
+      });
+    });
+
+    test("should work with subscribe and return single result", () => {
+      const mockData = [{ id: "123", name: "John" }];
+      const mockCallback = vi.fn();
+
+      mockExecutor.subscribe = vi.fn().mockImplementation((query, callback) => {
+        callback(mockData);
+        return vi.fn();
+      });
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.one("123").subscribe(mockCallback);
+
+      expect(mockCallback).toHaveBeenCalledWith(mockData[0]);
+      expect(mockExecutor.subscribe).toHaveBeenCalledWith(
+        {
+          resource: "users",
+          where: { id: "123" },
+          include: {},
+          limit: 1,
+        },
+        expect.any(Function)
+      );
+    });
+
+    test("should call subscribe callback with undefined when no result", () => {
+      const mockCallback = vi.fn();
+
+      mockExecutor.subscribe = vi.fn().mockImplementation((query, callback) => {
+        callback([]);
+        return vi.fn();
+      });
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.one("nonexistent").subscribe(mockCallback);
+
+      expect(mockCallback).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe("first method", () => {
+    test("should return first result without where clause", () => {
+      const mockResult = [
+        { id: "1", name: "John" },
+        { id: "2", name: "Jane" },
+      ];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.first().get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should return first result with where clause", () => {
+      const mockResult = [{ id: "1", name: "John", active: true }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.first({ active: true } as any).get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { active: true },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should return undefined when no results found", () => {
+      mockExecutor.get = vi.fn().mockReturnValue([]);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.first({ nonexistent: true } as any).get();
+
+      expect(result).toBeUndefined();
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { nonexistent: true },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should work with include clause", () => {
+      const mockResult = [{ id: "1", name: "John", posts: [] }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .include({ posts: true })
+        .first({ active: true } as any)
+        .get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { active: true },
+        include: { posts: true },
+        limit: 1,
+      });
+    });
+
+    test("should work with subscribe and return single result", () => {
+      const mockData = [{ id: "1", name: "John" }];
+      const mockCallback = vi.fn();
+
+      mockExecutor.subscribe = vi.fn().mockImplementation((query, callback) => {
+        callback(mockData);
+        return vi.fn();
+      });
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.first({ active: true } as any).subscribe(mockCallback);
+
+      expect(mockCallback).toHaveBeenCalledWith(mockData[0]);
+      expect(mockExecutor.subscribe).toHaveBeenCalledWith(
+        {
+          resource: "users",
+          where: { active: true },
+          include: {},
+          limit: 1,
+        },
+        expect.any(Function)
+      );
+    });
+
+    test("should call subscribe callback with undefined when no result", () => {
+      const mockCallback = vi.fn();
+
+      mockExecutor.subscribe = vi.fn().mockImplementation((query, callback) => {
+        callback([]);
+        return vi.fn();
+      });
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.first({ nonexistent: true } as any).subscribe(mockCallback);
+
+      expect(mockCallback).toHaveBeenCalledWith(undefined);
+    });
+
+    test("should create new QueryBuilder instance", () => {
+      const builder1 = QueryBuilder._init(mockCollection, mockExecutor);
+      const builder2 = builder1.first({ active: true } as any);
+
+      expect(builder1).not.toBe(builder2);
+
+      // Original builder should remain unchanged
+      expect(builder1.toJSON()).toEqual({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+      });
+    });
+  });
+
+  describe("chaining with one and first", () => {
+    test("should chain one with where clause (where should be overridden)", () => {
+      const mockResult = [{ id: "123", name: "John", active: true }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .where({ active: true } as any)
+        .one("123")
+        .get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "123" },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should chain first with existing where clause (where should be overridden)", () => {
+      const mockResult = [{ id: "1", name: "John", role: "admin" }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .where({ active: true } as any)
+        .first({ role: "admin" } as any)
+        .get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { role: "admin" },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should chain include with one", () => {
+      const mockResult = [{ id: "123", name: "John", posts: [], comments: [] }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .include({ posts: true })
+        .one("123")
+        .include({ comments: true })
+        .get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "123" },
+        include: { posts: true, comments: true },
+        limit: 1,
+      });
+    });
+
+    test("should chain include with first", () => {
+      const mockResult = [{ id: "1", name: "John", posts: [], profile: {} }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .include({ posts: true })
+        .first({ active: true })
+        .include({ profile: true })
+        .get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { active: true },
+        include: { posts: true, profile: true },
+        limit: 1,
+      });
+    });
+
+    test("should handle limit being overridden by one", () => {
+      const mockResult = [{ id: "123", name: "John" }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.limit(10).one("123").get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "123" },
+        include: {},
+        limit: 1,
+      });
+    });
+
+    test("should handle limit being overridden by first", () => {
+      const mockResult = [{ id: "1", name: "John" }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.limit(5).first({ active: true }).get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { active: true },
+        include: {},
+        limit: 1,
+      });
     });
   });
 });

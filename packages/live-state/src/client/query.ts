@@ -132,7 +132,7 @@ export class QueryBuilder<
     return new QueryBuilder(
       this._collection,
       this._client,
-      where,
+      where ?? this._where,
       this._include,
       1,
       true
