@@ -4,5 +4,5 @@
       "mode": "auto"
     }
   ],
-  "biome.enabled": false
+  "biome.enabled": true
 }
