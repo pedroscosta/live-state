@@ -91,6 +91,16 @@ export class QueryBuilder<
     );
   }
 
+  limit(limit: number) {
+    return new QueryBuilder(
+      this._collection,
+      this._client,
+      this._where,
+      this._include,
+      limit
+    );
+  }
+
   toJSON() {
     return {
       resource: this._collection.name,
