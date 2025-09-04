@@ -20,7 +20,9 @@ vi.mock("cookie", () => ({
 
 vi.mock("qs", () => ({
   default: {
-    parse: vi.fn().mockReturnValue({ page: "1", limit: "10" }),
+    parse: vi
+      .fn()
+      .mockReturnValue({ where: { name: "John" }, include: {}, limit: 10 }),
   },
 }));
 
@@ -89,8 +91,9 @@ describe("httpTransportLayer", () => {
         type: "QUERY",
         resourceName: "users",
         query: expect.objectContaining({
-          page: "1",
-          limit: "10",
+          limit: 10,
+          where: { name: "John" },
+          include: {},
         }),
       }),
     });

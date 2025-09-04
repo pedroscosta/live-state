@@ -179,6 +179,159 @@ describe("OptimisticStore", () => {
     expect(result).toEqual([]);
   });
 
+  test("should apply limit to query results", () => {
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+
+    const mockData = {
+      user1: {
+        value: {
+          id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 30, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+      user2: {
+        value: {
+          id: { value: "user2", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "Jane", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 25, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+      user3: {
+        value: {
+          id: { value: "user3", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "Bob", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 35, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+    };
+
+    // Set up the mocked object graph to return nodes for all users
+    mockObjectGraph.getNode
+      .mockReturnValueOnce({
+        id: "user1",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      })
+      .mockReturnValueOnce({
+        id: "user2",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      })
+      .mockReturnValueOnce({
+        id: "user3",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      });
+
+    store["optimisticRawObjPool"] = { users: mockData };
+
+    const result = store.get({ resource: "users", limit: 2 });
+
+    expect(result).toHaveLength(2);
+    expect(result).toEqual([
+      { id: "user1", name: "John", age: 30 },
+      { id: "user2", name: "Jane", age: 25 },
+    ]);
+  });
+
+  test("should apply limit with where clause", () => {
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+
+    const mockData = {
+      user1: {
+        value: {
+          id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 25, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+      user2: {
+        value: {
+          id: { value: "user2", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "Jane", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 25, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+      user3: {
+        value: {
+          id: { value: "user3", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "Bob", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 35, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+    };
+
+    // Set up the mocked object graph to return nodes for all users
+    mockObjectGraph.getNode
+      .mockReturnValueOnce({
+        id: "user1",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      })
+      .mockReturnValueOnce({
+        id: "user2",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      })
+      .mockReturnValueOnce({
+        id: "user3",
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      });
+
+    store["optimisticRawObjPool"] = { users: mockData };
+
+    const result = store.get({
+      resource: "users",
+      where: { age: 25 },
+      limit: 1,
+    });
+
+    expect(result).toHaveLength(1);
+  });
+
+  test("should handle limit larger than available results", () => {
+    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+
+    const mockData = {
+      user1: {
+        value: {
+          id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+          name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          age: { value: 30, _meta: { timestamp: "2023-01-01" } },
+        },
+        _meta: { timestamp: "2023-01-01" },
+      },
+    };
+
+    mockObjectGraph.getNode.mockReturnValueOnce({
+      id: "user1",
+      type: "users",
+      references: new Map(),
+      referencedBy: new Map(),
+    });
+
+    store["optimisticRawObjPool"] = { users: mockData };
+
+    const result = store.get({ resource: "users", limit: 10 });
+
+    expect(result).toHaveLength(1);
+    expect(result).toEqual([{ id: "user1", name: "John", age: 30 }]);
+  });
+
   test("should get one object by id", () => {
     store = new OptimisticStore(mockSchema, { name: "test-storage" });
 
