@@ -102,6 +102,10 @@ export class QueryBuilder<
     );
   }
 
+  first(where?: WhereClause<TCollection>) {
+    return where ? this.where(where).limit(1) : this.limit(1);
+  }
+
   toJSON() {
     return {
       resource: this._collection.name,
