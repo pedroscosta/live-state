@@ -61,7 +61,8 @@ export class QueryBuilder<
       {
         ...this._include,
         ...include,
-      }
+      },
+      this._limit
     );
   }
 
