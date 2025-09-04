@@ -13,7 +13,7 @@ const inter = Inter({
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
-      <body className="flex flex-col min-h-screen">
+      <body className="flex flex-col min-h-screen overflow-x-hidden w-screen">
         <header className="border-b h-14 w-full sticky top-0 bg-background flex items-center px-12 py-2 font-mono z-50">
           <Link
             href="/"
