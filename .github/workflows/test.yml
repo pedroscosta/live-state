@@ -37,8 +37,8 @@ jobs:
       - name: Run type checking
         run: pnpm typecheck --filter="./packages/*"
 
-      # - name: Run linting
-      #   run: pnpm lint
+      - name: Run linting
+        run: pnpm lint --filter="./packages/*" -- --diagnostic-level error
 
       - name: Run tests with coverage
         run: pnpm test --filter="./packages/*" -- --coverage --coverage.reporter=json-summary
