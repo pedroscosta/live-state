@@ -10,10 +10,12 @@ const MemoItem = memo(Card);
 
 export const Group = ({ groupId }: { groupId: string }) => {
   const group = useLiveQuery(
-    store.query.groups.where({ id: groupId }).include({
+    store.query.groups.one(groupId).include({
       cards: true,
     })
-  )?.[0];
+  );
+
+  if (!group) return null;
 
   const { setNodeRef, isOver } = useDroppable({
     id: groupId,

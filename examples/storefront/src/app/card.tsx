@@ -21,7 +21,7 @@ export const Card = ({
   cardId: string;
   isDragging?: boolean;
 }) => {
-  const card = useLiveQuery(store.query.cards.where({ id: cardId }))?.[0];
+  const card = useLiveQuery(store.query.cards.one(cardId));
   const {
     setNodeRef,
     transform,
@@ -40,6 +40,8 @@ export const Card = ({
     transform: CSS.Translate.toString(transform),
     opacity: isBeingDragged ? 0.5 : 1,
   };
+
+  if (!card) return null;
 
   return (
     <div
