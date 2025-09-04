@@ -102,6 +102,10 @@ export class QueryBuilder<
     );
   }
 
+  one(id: string) {
+    return this.where({ id }).limit(1);
+  }
+
   first(where?: WhereClause<TCollection>) {
     return where ? this.where(where).limit(1) : this.limit(1);
   }
