@@ -1,20 +1,20 @@
 import fastDeepEqual from "fast-deep-equal";
-import { ClientOptions } from "..";
-import { RawQueryRequest } from "../../core/schemas/core-protocol";
-import { DefaultMutationMessage } from "../../core/schemas/web-socket";
+import type { RawQueryRequest } from "../../core/schemas/core-protocol";
+import type { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
-  IncludeClause,
-  InferLiveType,
+  type IncludeClause,
+  type InferLiveType,
   inferValue,
-  LiveObjectAny,
-  LiveString,
-  LiveTypeAny,
-  MaterializedLiveType,
-  Schema,
+  type LiveObjectAny,
+  type LiveString,
+  type LiveTypeAny,
+  type MaterializedLiveType,
+  type Schema,
 } from "../../schema";
 import { hash } from "../../utils";
+import type { ClientOptions } from "..";
 import { applyWhere } from "../utils";
-import { GraphNode, ObjectGraph } from "./obj-graph";
+import { type GraphNode, ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 
 type RawObjPool = Record<
@@ -232,7 +232,9 @@ export class OptimisticStore {
       this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
 
     if (optimistic) {
-      (this.optimisticMutationStack[routeName] ??= []).push(mutation);
+      this.optimisticMutationStack[routeName] ??=
+        [] as DefaultMutationMessage[];
+      this.optimisticMutationStack[routeName].push(mutation);
     } else {
       this.optimisticMutationStack[routeName] =
         this.optimisticMutationStack?.[routeName]?.filter(
@@ -283,7 +285,8 @@ export class OptimisticStore {
     }, rawValue);
 
     if (newOptimisticValue) {
-      (this.optimisticRawObjPool[routeName] ??= {})[mutation.resourceId] = {
+      this.optimisticRawObjPool[routeName] ??= {};
+      this.optimisticRawObjPool[routeName][mutation.resourceId] = {
         value: {
           ...newOptimisticValue.value,
           id: { value: mutation.resourceId },
@@ -451,7 +454,9 @@ export class OptimisticStore {
 
         this.querySnapshots[queryHash] = newResult;
 
-        s.callbacks.forEach((cb) => cb(newResult));
+        s.callbacks.forEach((cb) => {
+          cb(newResult);
+        });
       }
     });
   }

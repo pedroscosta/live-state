@@ -1,12 +1,12 @@
-import { LiveString } from "./atomic-types";
+import type { LiveString } from "./atomic-types";
 import {
-  InferIndex,
-  InferLiveType,
+  type InferIndex,
+  type InferLiveType,
   LiveType,
-  LiveTypeAny,
-  LiveTypeMeta,
-  MutationType,
-  StorageFieldType,
+  type LiveTypeAny,
+  type LiveTypeMeta,
+  type MutationType,
+  type StorageFieldType,
 } from "./live-type";
 
 export * from "./atomic-types";

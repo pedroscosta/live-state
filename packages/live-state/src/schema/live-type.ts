@@ -1,4 +1,4 @@
-import { MaterializedLiveType } from ".";
+import type { MaterializedLiveType } from ".";
 
 export type LiveTypeMeta = {};
 

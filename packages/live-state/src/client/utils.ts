@@ -26,7 +26,7 @@ export const createObservable = <T extends object>(
         anyTgt[segString] = createObservable(
           typeof anyTgt[segString] === "object"
             ? anyTgt[segString]
-            : function () {},
+            : (() => {}),
           handler,
           [...parentPath, segment as string]
         );

@@ -1,7 +1,7 @@
-import { RawMutationRequest } from "../core/schemas/core-protocol";
-import { Schema } from "../schema";
-import { AnyRouter } from "./router";
-import { Storage } from "./storage";
+import type { RawMutationRequest } from "../core/schemas/core-protocol";
+import type { Schema } from "../schema";
+import type { AnyRouter } from "./router";
+import type { Storage } from "./storage";
 
 export * from "./adapters/express";
 export * from "./router";
@@ -58,7 +58,9 @@ export class Server<TRouter extends AnyRouter> {
     this.router = opts.router;
     this.storage = opts.storage;
     this.schema = opts.schema;
-    opts.middlewares?.forEach((middleware) => this.middlewares.add(middleware));
+    opts.middlewares?.forEach((middleware) => {
+      this.middlewares.add(middleware);
+    });
 
     this.storage.updateSchema(this.schema);
     this.contextProvider = opts.contextProvider;

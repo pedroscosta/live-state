@@ -1,7 +1,6 @@
 import { stringify } from "qs";
-
-import { ClientOptions } from ".";
 import { consumeGeneratable } from "../core/utils";
+import type { ClientOptions } from ".";
 
 export type WebSocketClientEventMap = WebSocketEventMap & {
   connectionChange: {
@@ -17,7 +16,10 @@ export class WebSocketClient {
   private reconnectTimeout: number;
   private reconnectLimit?: number;
   private reconnectAttempts: number = 0;
-  private eventListeners: Map<string, Set<Function>> = new Map();
+  private eventListeners: Map<
+    string,
+    Set<(event: WebSocketClientEventMap[keyof WebSocketClientEventMap]) => void>
+  > = new Map();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private intentionallyDisconnected: boolean = false;
   private credentials?: ClientOptions["credentials"];
@@ -89,7 +91,13 @@ export class WebSocketClient {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, new Set());
     }
-    this.eventListeners.get(event)!.add(callback);
+    this.eventListeners
+      .get(event)
+      ?.add(
+        callback as (
+          event: WebSocketClientEventMap[keyof WebSocketClientEventMap]
+        ) => void
+      );
   }
 
   public removeEventListener<K extends keyof WebSocketClientEventMap>(
@@ -97,7 +105,13 @@ export class WebSocketClient {
     callback: (event: WebSocketClientEventMap[K]) => void
   ): void {
     if (this.eventListeners.has(event)) {
-      this.eventListeners.get(event)!.delete(callback);
+      this.eventListeners
+        .get(event)
+        ?.delete(
+          callback as (
+            event: WebSocketClientEventMap[keyof WebSocketClientEventMap]
+          ) => void
+        );
     }
   }
 
@@ -160,10 +174,8 @@ export class WebSocketClient {
     event: K,
     data: WebSocketClientEventMap[K]
   ): void {
-    if (this.eventListeners.has(event)) {
-      this.eventListeners.get(event)!.forEach((callback) => {
-        callback(data);
-      });
-    }
+    this.eventListeners.get(event)?.forEach((callback) => {
+      callback(data);
+    });
   }
 }

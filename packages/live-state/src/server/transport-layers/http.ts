@@ -1,11 +1,11 @@
 import cookie from "cookie";
 import qs from "qs";
-import { AnyRouter, Server } from "..";
-import { DefaultMutation } from "../../core/schemas/core-protocol";
+import type { AnyRouter, Server } from "..";
+import type { DefaultMutation } from "../../core/schemas/core-protocol";
 import {
   httpDefaultMutationSchema,
   httpGenericMutationSchema,
-  HttpMutation,
+  type HttpMutation,
   httpQuerySchema,
 } from "../../core/schemas/http";
 

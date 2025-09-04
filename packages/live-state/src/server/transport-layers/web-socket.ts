@@ -1,18 +1,19 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: too much work to fix right now -- PRs welcome! */
 import cookie from "cookie";
 import { parse } from "qs";
-import WebSocket from "ws";
-import { AnyRouter, Server } from "../";
-import {
+import type WebSocket from "ws";
+import type {
   DefaultMutation,
   GenericMutation,
 } from "../../core/schemas/core-protocol";
 import {
   clientMessageSchema,
-  MutationMessage,
-  ServerMessage,
+  type MutationMessage,
+  type ServerMessage,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
-import { LiveObjectAny, MaterializedLiveType } from "../../schema";
+import type { LiveObjectAny, MaterializedLiveType } from "../../schema";
+import type { AnyRouter, Server } from "../";
 
 export type Subscription = {
   filters?: Record<string, any>;
@@ -30,7 +31,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     console.log("Mutation propagated:", m);
 
     Object.entries(subscriptions[m.resource] ?? {}).forEach(
-      ([clientId, sub]) => {
+      ([clientId, _sub]) => {
         // TODO handle subscription filters
         connections[clientId]?.send(
           JSON.stringify({
