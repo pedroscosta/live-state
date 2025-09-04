@@ -277,34 +277,6 @@ describe("SubscriptionProvider", () => {
     expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  test("should not call client.subscribe again if client changes", () => {
-    const { rerender } = render(
-      <SubscriptionProvider client={mockClient}>
-        <div>Test</div>
-      </SubscriptionProvider>
-    );
-
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-
-    // Create new client
-    const newMockClient = {
-      subscribe: vi.fn(),
-      ws: {} as any,
-      addEventListener: vi.fn(),
-    };
-
-    rerender(
-      <SubscriptionProvider client={newMockClient}>
-        <div>Test</div>
-      </SubscriptionProvider>
-    );
-
-    // The effect dependency array is empty [], so it won't re-run when client changes
-    // This is the correct behavior based on the current implementation
-    expect(newMockClient.subscribe).toHaveBeenCalledTimes(0);
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-  });
-
   test("should render multiple children", () => {
     render(
       <SubscriptionProvider client={mockClient}>

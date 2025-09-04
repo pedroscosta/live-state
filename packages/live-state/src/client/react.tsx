@@ -1,8 +1,8 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { Client } from ".";
-import { AnyRouter } from "../server";
+import type { AnyRouter } from "../server";
 import { hash } from "../utils";
-import { QueryBuilder } from "./query";
+import type { Client } from ".";
+import type { QueryBuilder } from "./query";
 
 declare const TESTING: boolean;
 
@@ -28,7 +28,9 @@ class Store {
         this.subscriptions.get(key)?.callbacks.add(cb);
 
         const unsub = builder.subscribe(() => {
-          this.subscriptions.get(key)?.callbacks.forEach((cb) => cb());
+          this.subscriptions.get(key)?.callbacks.forEach((cb) => {
+            cb();
+          });
         });
 
         return () => {
@@ -74,7 +76,7 @@ export const SubscriptionProvider = ({
 }) => {
   useEffect(() => {
     client.subscribe();
-  }, []);
+  }, [client.subscribe]);
 
   return <>{children}</>;
 };

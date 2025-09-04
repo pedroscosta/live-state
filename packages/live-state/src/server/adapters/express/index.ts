@@ -1,5 +1,5 @@
-import { Application } from "express-ws";
-import { AnyRouter, Server } from "../../";
+import type { Application } from "express-ws";
+import type { AnyRouter, Server } from "../../";
 import { httpTransportLayer } from "../../transport-layers/http";
 import { webSocketAdapter } from "../../transport-layers/web-socket";
 import { convertRequest } from "./convert-request";

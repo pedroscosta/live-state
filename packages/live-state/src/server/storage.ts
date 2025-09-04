@@ -1,17 +1,17 @@
-import { Kysely, PostgresDialect, PostgresPool, Selectable } from "kysely";
+import { Kysely, PostgresDialect, type PostgresPool, type Selectable } from "kysely";
 import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
 import {
-  IncludeClause,
-  InferLiveObject,
+  type IncludeClause,
+  type InferLiveObject,
   inferValue,
-  LiveObjectAny,
-  LiveObjectMutationInput,
-  LiveTypeAny,
-  MaterializedLiveType,
-  Schema,
-  WhereClause,
+  type LiveObjectAny,
+  type LiveObjectMutationInput,
+  type LiveTypeAny,
+  type MaterializedLiveType,
+  type Schema,
+  type WhereClause,
 } from "../schema";
-import { Simplify } from "../utils";
+import type { Simplify } from "../utils";
 
 export abstract class Storage {
   /** @internal */

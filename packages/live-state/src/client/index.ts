@@ -1,5 +1,5 @@
-import { Awaitable, Generatable } from "../core/utils";
-import { Schema } from "../schema";
+import type { Awaitable, Generatable } from "../core/utils";
+import type { Schema } from "../schema";
 
 export * from "./react";
 export * from "./websocket/client";

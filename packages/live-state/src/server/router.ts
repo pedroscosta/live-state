@@ -1,6 +1,6 @@
-import { z, ZodTypeAny } from "zod";
-import { Middleware, NextFunction, ParsedRequest, Storage } from ".";
-import {
+import { z, type ZodTypeAny } from "zod";
+import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
+import type {
   LiveObjectAny,
   LiveObjectMutationInput,
   LiveTypeAny,

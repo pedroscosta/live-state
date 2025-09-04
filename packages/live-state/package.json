@@ -23,7 +23,7 @@
   "scripts": {
     "build": "NODE_ENV=production tsup",
     "dev": "NODE_ENV=development tsup --watch",
-    "lint": "eslint src/",
+    "lint": "biome lint",
     "typecheck": "tsc --noEmit --project . && tsc --noEmit --project src/client",
     "test": "vitest run",
     "test:watch": "vitest"

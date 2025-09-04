@@ -12,7 +12,7 @@ import {
   type WhereClause,
 } from "../../schema";
 import type { AnyRouter } from "../../server";
-import { Simplify } from "../../utils";
+import type { Simplify } from "../../utils";
 import { createObservable } from "../utils";
 
 type GetOptions<T extends LiveObjectAny> = {

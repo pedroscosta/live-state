@@ -1,10 +1,10 @@
-import { MaterializedLiveType } from ".";
+import type { MaterializedLiveType } from ".";
 import {
   LiveType,
-  LiveTypeAny,
-  LiveTypeMeta,
-  MutationType,
-  StorageFieldType,
+  type LiveTypeAny,
+  type LiveTypeMeta,
+  type MutationType,
+  type StorageFieldType,
 } from "./live-type";
 
 class OptionalLiveType<T extends LiveTypeAny> extends LiveType<

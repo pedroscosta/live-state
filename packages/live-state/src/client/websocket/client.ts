@@ -1,19 +1,19 @@
-import { z } from "zod";
-import { ClientOptions } from "..";
-import { type RawQueryRequest } from "../../core/schemas/core-protocol";
+import type { z } from "zod";
+import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import {
-  ClientMessage,
-  clQueryMsgSchema,
-  MutationMessage,
+  type ClientMessage,
+  type clQueryMsgSchema,
+  type MutationMessage,
   type ServerMessage,
   serverMessageSchema,
   syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
-import { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
-import { AnyRouter } from "../../server";
-import { Simplify } from "../../utils";
-import { QueryBuilder, QueryExecutor } from "../query";
+import type { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
+import type { AnyRouter } from "../../server";
+import type { Simplify } from "../../utils";
+import type { ClientOptions } from "..";
+import { QueryBuilder, type QueryExecutor } from "../query";
 import type { Client as ClientType } from "../types";
 import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
@@ -51,7 +51,9 @@ class InnerClient implements QueryExecutor {
     this.store = new OptimisticStore(opts.schema, opts.storage, (stack) => {
       Object.values(stack)
         ?.flat()
-        ?.forEach((m) => this.sendWsMessage(m));
+        ?.forEach((m) => {
+          this.sendWsMessage(m);
+        });
     });
 
     this.ws = new WebSocketClient({
@@ -95,7 +97,10 @@ class InnerClient implements QueryExecutor {
 
         Object.values(this.store.optimisticMutationStack).forEach(
           (mutations) => {
-            if (mutations) mutations.forEach((m) => this.sendWsMessage(m));
+            if (mutations)
+              mutations.forEach((m) => {
+                this.sendWsMessage(m);
+              });
           }
         );
       }
@@ -240,11 +245,13 @@ class InnerClient implements QueryExecutor {
   }
 
   private sendWsMessage(message: ClientMessage) {
-    if (this.ws && this.ws.connected()) this.ws.send(JSON.stringify(message));
+    if (this.ws?.connected()) this.ws.send(JSON.stringify(message));
   }
 
   private emitEvent(event: ClientEvents) {
-    this.eventListeners.forEach((listener) => listener(event));
+    this.eventListeners.forEach((listener) => {
+      listener(event);
+    });
   }
 }
 
@@ -274,7 +281,9 @@ export const createClient = <TRouter extends AnyRouter>(
 
         return () => {
           console.log("Removing listeners", removeListeners);
-          removeListeners.forEach((remove) => remove());
+          removeListeners.forEach((remove) => {
+            remove();
+          });
         };
       },
       addEventListener: (listener) => {

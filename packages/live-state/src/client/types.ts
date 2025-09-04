@@ -1,9 +1,9 @@
-import { z } from "zod";
-import { Promisify } from "../core/utils";
-import { LiveObjectMutationInput } from "../schema";
+import type { z } from "zod";
+import type { Promisify } from "../core/utils";
+import type { LiveObjectMutationInput } from "../schema";
 import type { AnyRouter } from "../server";
-import { Simplify } from "../utils";
-import { QueryBuilder } from "./query";
+import type { Simplify } from "../utils";
+import type { QueryBuilder } from "./query";
 
 export type Client<TRouter extends AnyRouter> = {
   query: {

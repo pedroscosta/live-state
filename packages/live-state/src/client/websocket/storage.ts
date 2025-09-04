@@ -1,6 +1,7 @@
-import { IDBPDatabase, openDB } from "idb";
-import { DefaultMutationMessage } from "../../core/schemas/web-socket";
-import { Schema } from "../../schema";
+/** biome-ignore-all lint/suspicious/noExplicitAny: too much work to fix - PRs welcome */
+import { type IDBPDatabase, openDB } from "idb";
+import type { DefaultMutationMessage } from "../../core/schemas/web-socket";
+import type { Schema } from "../../schema";
 import { hash } from "../../utils";
 
 const META_KEY = "__meta";

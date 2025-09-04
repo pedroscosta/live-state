@@ -1,11 +1,11 @@
-import { type RawQueryRequest } from "../core/schemas/core-protocol";
-import {
+import type { RawQueryRequest } from "../core/schemas/core-protocol";
+import type {
   IncludeClause,
   WhereClause,
-  type InferLiveObject,
-  type LiveObjectAny,
+  InferLiveObject,
+  LiveObjectAny,
 } from "../schema";
-import { Simplify } from "../utils";
+import type { Simplify } from "../utils";
 
 export type QueryExecutor = {
   get(query: RawQueryRequest): any[];
