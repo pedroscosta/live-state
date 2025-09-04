@@ -13,7 +13,7 @@ import {
 } from "../../schema";
 import { hash } from "../../utils";
 import type { ClientOptions } from "..";
-import { applyWhere } from "../utils";
+import { applyWhere, filterWithLimit } from "../utils";
 import { type GraphNode, ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 
@@ -85,8 +85,11 @@ export class OptimisticStore {
       inferValue(this.materializeOneWithInclude(k, query.include))
     ) as InferLiveType<LiveObjectAny>[];
 
-    if (query.where) {
-      result = result.filter((v) => applyWhere(v, query.where));
+    if (query.where || query.limit) {
+      const whereFunc = query.where
+        ? (v: any) => applyWhere(v, query.where)
+        : () => true;
+      result = filterWithLimit(result, whereFunc, query.limit);
     }
 
     if (!force) this.querySnapshots[queryKey] = result;

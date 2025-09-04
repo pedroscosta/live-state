@@ -1,9 +1,9 @@
 import type { RawQueryRequest } from "../core/schemas/core-protocol";
 import type {
   IncludeClause,
-  WhereClause,
   InferLiveObject,
   LiveObjectAny,
+  WhereClause,
 } from "../schema";
 import type { Simplify } from "../utils";
 
@@ -23,17 +23,20 @@ export class QueryBuilder<
   private _client: QueryExecutor;
   private _where: WhereClause<TCollection>;
   private _include: TInclude;
+  private _limit?: number;
 
   private constructor(
     collection: TCollection,
     client: QueryExecutor,
     where?: WhereClause<TCollection>,
-    include?: TInclude
+    include?: TInclude,
+    limit?: number
   ) {
     this._collection = collection;
     this._client = client;
     this._where = where ?? {};
     this._include = include ?? ({} as TInclude);
+    this._limit = limit;
 
     this.get = this.get.bind(this);
     this.subscribe = this.subscribe.bind(this);
@@ -58,7 +61,8 @@ export class QueryBuilder<
       {
         ...this._include,
         ...include,
-      }
+      },
+      this._limit
     );
   }
 
@@ -67,6 +71,7 @@ export class QueryBuilder<
       resource: this._collection.name,
       where: this._where,
       include: this._include,
+      limit: this._limit,
     });
     return result;
   }
@@ -81,16 +86,28 @@ export class QueryBuilder<
         resource: this._collection.name,
         where: this._where,
         include: this._include,
+        limit: this._limit,
       },
       callback
     );
   }
 
-  toJSON(): any {
+  limit(limit: number) {
+    return new QueryBuilder(
+      this._collection,
+      this._client,
+      this._where,
+      this._include,
+      limit
+    );
+  }
+
+  toJSON() {
     return {
       resource: this._collection.name,
       where: this._where,
       include: this._include,
+      limit: this._limit,
     } satisfies RawQueryRequest;
   }
 
