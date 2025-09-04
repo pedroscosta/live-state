@@ -10,41 +10,20 @@ export function Features() {
     },
     {
       title: "Fine-grained reactivity",
-      description: "React only when the specific data you need changes.",
+      description: "React only when the query result changes.",
       icon: <Flame />,
     },
     {
       title: "Built-in ORM",
-      description: "Built-in ORM to design and interact with your database.",
+      description: "Built-in ORM to model and interact with your database.",
       icon: <Package />,
     },
     {
       title: "Works with any database",
-      description:
-        "Sync works with any database, be it a NoSQL or a SQL database.",
+      description: "live-state works with any database, be it NoSQL or SQL.",
       icon: <DatabaseZap />,
     },
-    {
-      title: "Offline-first 2",
-      description: "Save changes locally and sync when you're back online.",
-      icon: <CloudOff />,
-    },
-    {
-      title: "Fine-grained reactivity 2",
-      description: "React only when the specific data you need changes.",
-      icon: <Flame />,
-    },
-    {
-      title: "Built-in ORM 2",
-      description: "Built-in ORM to design and interact with your database.",
-      icon: <Package />,
-    },
-    {
-      title: "Works with any database 2",
-      description:
-        "Sync works with any database, be it a NoSQL or a SQL database.",
-      icon: <DatabaseZap />,
-    },
+    // TODO: Add more features -- Tree shakable, type safe, + 2 more features
   ];
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 text-left relative z-10 max-w-7xl mx-auto border-t">
