@@ -24,9 +24,7 @@ export const createObservable = <T extends object>(
 
       if (!anyTgt[segString]?.__isProxy__) {
         anyTgt[segString] = createObservable(
-          typeof anyTgt[segString] === "object"
-            ? anyTgt[segString]
-            : (() => {}),
+          typeof anyTgt[segString] === "object" ? anyTgt[segString] : () => {},
           handler,
           [...parentPath, segment as string]
         );
@@ -44,4 +42,22 @@ export const applyWhere = <T extends object>(obj: T, where: any) => {
   return Object.entries(where).every(([k, v]) => {
     return obj[k as keyof T] === v;
   });
+};
+
+export const filterWithLimit = <T>(
+  items: T[],
+  predicate: (item: T, index: number) => boolean,
+  limit?: number
+): T[] => {
+  const result: T[] = [];
+  let processedCount = 0;
+
+  for (let i = 0; i < items.length && (limit === undefined || processedCount < limit); i++) {
+    if (predicate(items[i], i)) {
+      result.push(items[i]);
+      processedCount++;
+    }
+  }
+
+  return result;
 };

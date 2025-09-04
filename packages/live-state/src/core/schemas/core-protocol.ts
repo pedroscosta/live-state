@@ -5,6 +5,7 @@ export const querySchema = z.object({
   where: z.record(z.any()).optional(),
   include: z.record(z.any()).optional(),
   lastSyncedAt: z.string().optional(),
+  limit: z.number().optional(),
 });
 
 export type RawQueryRequest = z.infer<typeof querySchema>;
