@@ -453,7 +453,7 @@ export type WhereClause<T extends LiveObjectAny> =
   | ({
       [K in keyof T["fields"]]?:
         | InferLiveType<T["fields"][K]>
-        | {
+        | ({
             $eq?: InferLiveType<T["fields"][K]>;
             $in?: InferLiveType<T["fields"][K]>[];
             $not?:
@@ -461,7 +461,14 @@ export type WhereClause<T extends LiveObjectAny> =
               | {
                   $in?: InferLiveType<T["fields"][K]>[];
                 };
-          };
+          } & (InferLiveType<T["fields"][K]> extends number
+            ? {
+                $gt?: InferLiveType<T["fields"][K]>;
+                $gte?: InferLiveType<T["fields"][K]>;
+                $lt?: InferLiveType<T["fields"][K]>;
+                $lte?: InferLiveType<T["fields"][K]>;
+              }
+            : never));
     } & {
       [K in keyof T["relations"]]?: WhereClause<T["relations"][K]["entity"]>;
     })

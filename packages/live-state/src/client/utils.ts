@@ -66,6 +66,22 @@ export const applyWhere = <T extends object>(
       if (v.$not !== undefined && !not)
         return applyWhere(obj, { [k]: v.$not }, true);
 
+      // Handle $gt operator
+      if (v.$gt !== undefined)
+        return not ? obj[k as keyof T] <= v.$gt : obj[k as keyof T] > v.$gt;
+
+      // Handle $gte operator
+      if (v.$gte !== undefined)
+        return not ? obj[k as keyof T] < v.$gte : obj[k as keyof T] >= v.$gte;
+
+      // Handle $lt operator
+      if (v.$lt !== undefined)
+        return not ? obj[k as keyof T] >= v.$lt : obj[k as keyof T] < v.$lt;
+
+      // Handle $lte operator
+      if (v.$lte !== undefined)
+        return not ? obj[k as keyof T] > v.$lte : obj[k as keyof T] <= v.$lte;
+
       // Handle nested objects
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
         return false;
