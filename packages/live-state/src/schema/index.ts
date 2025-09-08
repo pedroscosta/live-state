@@ -449,11 +449,26 @@ export const createSchema = <TRawSchema extends RawSchema>(
   ) as Schema<TRawSchema>;
 };
 
-export type WhereClause<T extends LiveObjectAny> = {
-  [K in keyof T["fields"]]?: InferLiveType<T["fields"][K]>;
-} & {
-  [K in keyof T["relations"]]?: WhereClause<T["relations"][K]["entity"]>;
-};
+export type WhereClause<T extends LiveObjectAny> =
+  | ({
+      [K in keyof T["fields"]]?:
+        | InferLiveType<T["fields"][K]>
+        | {
+            $eq?: InferLiveType<T["fields"][K]>;
+            $in?: InferLiveType<T["fields"][K]>[];
+            $not?:
+              | InferLiveType<T["fields"][K]>
+              | {
+                  $in?: InferLiveType<T["fields"][K]>[];
+                };
+          };
+    } & {
+      [K in keyof T["relations"]]?: WhereClause<T["relations"][K]["entity"]>;
+    })
+  | {
+      $and?: WhereClause<T>[];
+      $or?: WhereClause<T>[];
+    };
 
 export type IncludeClause<T extends LiveObjectAny> = {
   [K in keyof T["relations"]]?: boolean;
