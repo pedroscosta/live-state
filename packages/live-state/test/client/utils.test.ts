@@ -290,4 +290,15 @@ describe("applyWhere", () => {
       })
     ).toBe(true);
   });
+
+  test("should handle $eq operator", () => {
+    const obj = { message: "Test", author: { name: "John", age: 30 } };
+
+    expect(applyWhere(obj, { message: { $eq: "Test" } })).toBe(true);
+    expect(applyWhere(obj, { message: { $eq: "Test2" } })).toBe(false);
+    expect(applyWhere(obj, { author: { name: { $eq: "John" } } })).toBe(true);
+    expect(applyWhere(obj, { author: { name: { $eq: "Alice" } } })).toBe(false);
+    expect(applyWhere(obj, { author: { age: { $eq: 30 } } })).toBe(true);
+    expect(applyWhere(obj, { author: { age: { $eq: 25 } } })).toBe(false);
+  });
 });

@@ -45,10 +45,14 @@ export const applyWhere = <T extends object>(
   where: WhereClause<LiveObjectAny>
 ): boolean => {
   return Object.entries(where).every(([k, v]) => {
-    // Handles nested objects
     if (typeof v === "object" && v !== null) {
+      // Handle $eq operator
+      if (v.$eq !== undefined) return obj[k as keyof T] === v.$eq;
+
+      // Handle nested objects
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
         return false;
+
       return applyWhere(obj[k as keyof T] as object, v);
     }
 
