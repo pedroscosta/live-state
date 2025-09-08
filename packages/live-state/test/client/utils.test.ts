@@ -301,4 +301,21 @@ describe("applyWhere", () => {
     expect(applyWhere(obj, { author: { age: { $eq: 30 } } })).toBe(true);
     expect(applyWhere(obj, { author: { age: { $eq: 25 } } })).toBe(false);
   });
+
+  test("should handle $in operator", () => {
+    const obj = { message: "Test", author: { name: "John", age: 30 } };
+
+    expect(applyWhere(obj, { message: { $in: ["Test", "Test2"] } })).toBe(true);
+    expect(applyWhere(obj, { message: { $in: ["Test2", "Test3"] } })).toBe(
+      false
+    );
+    expect(
+      applyWhere(obj, { author: { name: { $in: ["John", "Alice"] } } })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, { author: { name: { $in: ["Alice", "Bob"] } } })
+    ).toBe(false);
+    expect(applyWhere(obj, { author: { age: { $in: [30, 25] } } })).toBe(true);
+    expect(applyWhere(obj, { author: { age: { $in: [25, 20] } } })).toBe(false);
+  });
 });

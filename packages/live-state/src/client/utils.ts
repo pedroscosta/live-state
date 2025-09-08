@@ -49,6 +49,9 @@ export const applyWhere = <T extends object>(
       // Handle $eq operator
       if (v.$eq !== undefined) return obj[k as keyof T] === v.$eq;
 
+      // Handle $in operator
+      if (v.$in !== undefined) return v.$in.includes(obj[k as keyof T]);
+
       // Handle nested objects
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
         return false;
