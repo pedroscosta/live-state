@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/complexity/noBannedTypes: false positive */
 import type { LiveString } from "./atomic-types";
 import {
   type InferIndex,
@@ -460,6 +461,7 @@ export type WhereClause<T extends LiveObjectAny> =
               | InferLiveType<T["fields"][K]>
               | {
                   $in?: InferLiveType<T["fields"][K]>[];
+                  $eq?: InferLiveType<T["fields"][K]>;
                 };
           } & (InferLiveType<T["fields"][K]> extends number
             ? {
@@ -468,7 +470,7 @@ export type WhereClause<T extends LiveObjectAny> =
                 $lt?: InferLiveType<T["fields"][K]>;
                 $lte?: InferLiveType<T["fields"][K]>;
               }
-            : never));
+            : {}));
     } & {
       [K in keyof T["relations"]]?: WhereClause<T["relations"][K]["entity"]>;
     })
