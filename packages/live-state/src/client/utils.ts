@@ -57,30 +57,43 @@ export const applyWhere = <T extends object>(
 
     if (typeof v === "object" && v !== null && v?.$eq === undefined) {
       // Handle $in operator
-      if (v.$in !== undefined)
-        return not
-          ? !v.$in.includes(obj[k as keyof T])
-          : v.$in.includes(obj[k as keyof T]);
+      if (v.$in !== undefined) {
+        const value = obj[k as keyof T];
+        if (value === undefined) return false;
+        return not ? !v.$in.includes(value) : v.$in.includes(value);
+      }
 
       // Handle $not operator
       if (v.$not !== undefined && !not)
         return applyWhere(obj, { [k]: v.$not }, true);
 
       // Handle $gt operator
-      if (v.$gt !== undefined)
-        return not ? obj[k as keyof T] <= v.$gt : obj[k as keyof T] > v.$gt;
+      if (v.$gt !== undefined) {
+        const value = obj[k as keyof T];
+        if (typeof value !== "number") return false;
+        return not ? value <= v.$gt : value > v.$gt;
+      }
 
       // Handle $gte operator
-      if (v.$gte !== undefined)
-        return not ? obj[k as keyof T] < v.$gte : obj[k as keyof T] >= v.$gte;
+      if (v.$gte !== undefined) {
+        const value = obj[k as keyof T];
+        if (typeof value !== "number") return false;
+        return not ? value < v.$gte : value >= v.$gte;
+      }
 
       // Handle $lt operator
-      if (v.$lt !== undefined)
-        return not ? obj[k as keyof T] >= v.$lt : obj[k as keyof T] < v.$lt;
+      if (v.$lt !== undefined) {
+        const value = obj[k as keyof T];
+        if (typeof value !== "number") return false;
+        return not ? value >= v.$lt : value < v.$lt;
+      }
 
       // Handle $lte operator
-      if (v.$lte !== undefined)
-        return not ? obj[k as keyof T] > v.$lte : obj[k as keyof T] <= v.$lte;
+      if (v.$lte !== undefined) {
+        const value = obj[k as keyof T];
+        if (typeof value !== "number") return false;
+        return not ? value > v.$lte : value <= v.$lte;
+      }
 
       // Handle nested objects
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
