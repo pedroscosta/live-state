@@ -42,15 +42,22 @@ export const createObservable = <T extends object>(
 
 export const applyWhere = <T extends object>(
   obj: T,
-  where: WhereClause<LiveObjectAny>
+  where: WhereClause<LiveObjectAny>,
+  not = false
 ): boolean => {
   return Object.entries(where).every(([k, v]) => {
-    if (typeof v === "object" && v !== null) {
-      // Handle $eq operator
-      if (v.$eq !== undefined) return obj[k as keyof T] === v.$eq;
+    const comparisonValue = v?.$eq !== undefined ? v?.$eq : v;
 
+    if (typeof v === "object" && v !== null && v?.$eq === undefined) {
       // Handle $in operator
-      if (v.$in !== undefined) return v.$in.includes(obj[k as keyof T]);
+      if (v.$in !== undefined)
+        return not
+          ? !v.$in.includes(obj[k as keyof T])
+          : v.$in.includes(obj[k as keyof T]);
+
+      // Handle $not operator
+      if (v.$not !== undefined && !not)
+        return applyWhere(obj, { [k]: v.$not }, true);
 
       // Handle nested objects
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
@@ -59,7 +66,9 @@ export const applyWhere = <T extends object>(
       return applyWhere(obj[k as keyof T] as object, v);
     }
 
-    return obj[k as keyof T] === v;
+    return not
+      ? obj[k as keyof T] !== comparisonValue
+      : obj[k as keyof T] === comparisonValue;
   });
 };
 

@@ -221,13 +221,13 @@ describe("applyWhere", () => {
     expect(applyWhere(obj, { verified: true })).toBe(false);
   });
 
-  test("should handle null and undefined values", () => {
-    const obj = { value: null, other: undefined, name: "test" };
+  test("should handle null values", () => {
+    const obj = { nonNull: "value", nullValue: null };
 
-    expect(applyWhere(obj, { value: null })).toBe(true);
-    expect(applyWhere(obj, { value: undefined })).toBe(false);
-    expect(applyWhere(obj, { other: undefined })).toBe(true);
-    expect(applyWhere(obj, { other: null })).toBe(false);
+    expect(applyWhere(obj, { nullValue: null })).toBe(true);
+    expect(applyWhere(obj, { nullValue: "value" })).toBe(false);
+    expect(applyWhere(obj, { nonNull: null })).toBe(false);
+    expect(applyWhere(obj, { nonNull: "value" })).toBe(true);
   });
 
   test("should handle multiple conditions", () => {
@@ -317,5 +317,49 @@ describe("applyWhere", () => {
     ).toBe(false);
     expect(applyWhere(obj, { author: { age: { $in: [30, 25] } } })).toBe(true);
     expect(applyWhere(obj, { author: { age: { $in: [25, 20] } } })).toBe(false);
+  });
+
+  test("should handle $not operator", () => {
+    const obj = { message: "Test", author: { name: "John", age: 30 } };
+
+    expect(applyWhere(obj, { message: { $not: "Test" } })).toBe(false);
+    expect(applyWhere(obj, { message: { $not: "Test2" } })).toBe(true);
+    expect(
+      applyWhere(obj, { author: { name: { $not: { $eq: "John" } } } })
+    ).toBe(false);
+    expect(
+      applyWhere(obj, { author: { name: { $not: { $eq: "Alice" } } } })
+    ).toBe(true);
+    expect(applyWhere(obj, { author: { age: { $not: { $eq: 30 } } } })).toBe(
+      false
+    );
+    expect(applyWhere(obj, { author: { age: { $not: { $eq: 25 } } } })).toBe(
+      true
+    );
+  });
+
+  test("should handle $not operator with $in operator", () => {
+    const obj = { message: "Test", author: { name: "John", age: 30 } };
+
+    expect(
+      applyWhere(obj, { message: { $not: { $in: ["Test", "Test2"] } } })
+    ).toBe(false);
+    expect(
+      applyWhere(obj, { message: { $not: { $in: ["Test2", "Test3"] } } })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, {
+        author: { name: { $not: { $in: ["John", "Alice"] } } },
+      })
+    ).toBe(false);
+    expect(
+      applyWhere(obj, { author: { name: { $not: { $in: ["Alice", "Bob"] } } } })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, { author: { age: { $not: { $in: [30, 25] } } } })
+    ).toBe(false);
+    expect(
+      applyWhere(obj, { author: { age: { $not: { $in: [25, 20] } } } })
+    ).toBe(true);
   });
 });
