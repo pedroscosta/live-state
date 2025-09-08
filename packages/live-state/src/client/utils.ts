@@ -46,6 +46,13 @@ export const applyWhere = <T extends object>(
   not = false
 ): boolean => {
   return Object.entries(where).every(([k, v]) => {
+    if (k === "$and")
+      return v.every((w: WhereClause<LiveObjectAny>) =>
+        applyWhere(obj, w, not)
+      );
+    if (k === "$or")
+      return v.some((w: WhereClause<LiveObjectAny>) => applyWhere(obj, w, not));
+
     const comparisonValue = v?.$eq !== undefined ? v?.$eq : v;
 
     if (typeof v === "object" && v !== null && v?.$eq === undefined) {

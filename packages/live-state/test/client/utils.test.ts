@@ -224,9 +224,9 @@ describe("applyWhere", () => {
   test("should handle null values", () => {
     const obj = { nonNull: "value", nullValue: null };
 
-    expect(applyWhere(obj, { nullValue: null })).toBe(true);
+    expect(applyWhere(obj, { nullValue: null } as any)).toBe(true);
     expect(applyWhere(obj, { nullValue: "value" })).toBe(false);
-    expect(applyWhere(obj, { nonNull: null })).toBe(false);
+    expect(applyWhere(obj, { nonNull: null } as any)).toBe(false);
     expect(applyWhere(obj, { nonNull: "value" })).toBe(true);
   });
 
@@ -361,5 +361,64 @@ describe("applyWhere", () => {
     expect(
       applyWhere(obj, { author: { age: { $not: { $in: [25, 20] } } } })
     ).toBe(true);
+  });
+
+  test("should handle $and operator", () => {
+    const obj = { message: "Test", author: { name: "John", age: 30 } };
+
+    expect(
+      applyWhere(obj, {
+        $and: [{ message: "Test" }, { author: { name: "John" } }],
+      })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, {
+        $and: [{ message: "Test" }, { author: { name: "Alice" } }],
+      })
+    ).toBe(false);
+    expect(
+      applyWhere(obj, {
+        $and: [
+          { author: { name: { $in: ["John", "Alice"] } } },
+          { author: { age: { $not: 25 } } },
+        ],
+      })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, {
+        $and: [
+          { author: { name: { $in: ["John", "Alice"] } } },
+          { author: { age: 25 } },
+        ],
+      })
+    ).toBe(false);
+  });
+
+  test("should handle $or operator", () => {
+    const obj = { message: "Test", author: { name: "John", age: 30 } };
+
+    expect(
+      applyWhere(obj, {
+        $or: [{ message: "Test" }, { author: { name: "Not John" } }],
+      })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, {
+        $or: [
+          { message: "Not Test" },
+          { author: { name: { $not: "Not John" } } },
+        ],
+      })
+    ).toBe(true);
+    expect(
+      applyWhere(obj, {
+        $or: [{ message: "Not Test" }, { author: { name: "Not John" } }],
+      })
+    ).toBe(false);
+    expect(
+      applyWhere(obj, {
+        $or: [{ message: { $not: "Test" } }, { author: { name: "Not John" } }],
+      })
+    ).toBe(false);
   });
 });
