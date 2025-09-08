@@ -10,6 +10,7 @@ import {
   type LiveTypeAny,
   type MaterializedLiveType,
   type Schema,
+  type WhereClause,
 } from "../../schema";
 import { hash } from "../../utils";
 import type { ClientOptions } from "..";
@@ -87,7 +88,7 @@ export class OptimisticStore {
 
     if (query.where || query.limit) {
       const whereFunc = query.where
-        ? (v: any) => applyWhere(v, query.where)
+        ? (v: any) => applyWhere(v, query.where as WhereClause<LiveObjectAny>)
         : () => true;
       result = filterWithLimit(result, whereFunc, query.limit);
     }

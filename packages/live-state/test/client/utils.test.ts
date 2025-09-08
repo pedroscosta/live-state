@@ -265,4 +265,29 @@ describe("applyWhere", () => {
     expect(applyWhere(obj, { flag: 0 })).toBe(false);
     expect(applyWhere(obj, { flag: false })).toBe(true);
   });
+
+  test("should handle deep queries", () => {
+    const obj = {
+      author: {
+        name: "John",
+        age: 30,
+        active: true,
+        role: "admin",
+      },
+    };
+
+    expect(applyWhere(obj, { author: { name: "John", age: 30 } })).toBe(true);
+    expect(applyWhere(obj, { author: { name: "John", age: 25 } })).toBe(false);
+    expect(applyWhere(obj, { author: { active: true, role: "admin" } })).toBe(
+      true
+    );
+    expect(applyWhere(obj, { author: { active: true, role: "user" } })).toBe(
+      false
+    );
+    expect(
+      applyWhere(obj, {
+        author: { name: "John", age: 30, active: true, role: "admin" },
+      })
+    ).toBe(true);
+  });
 });

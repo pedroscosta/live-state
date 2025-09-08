@@ -1,3 +1,5 @@
+import type { LiveObjectAny, WhereClause } from "../schema";
+
 export type ObservableHandler<T extends object> = {
   get?(target: T, p: string[]): any;
   apply?(target: T, p: string[], argumentsList: any[]): any;
@@ -38,8 +40,18 @@ export const createObservable = <T extends object>(
   });
 };
 
-export const applyWhere = <T extends object>(obj: T, where: any) => {
+export const applyWhere = <T extends object>(
+  obj: T,
+  where: WhereClause<LiveObjectAny>
+): boolean => {
   return Object.entries(where).every(([k, v]) => {
+    // Handles nested objects
+    if (typeof v === "object" && v !== null) {
+      if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
+        return false;
+      return applyWhere(obj[k as keyof T] as object, v);
+    }
+
     return obj[k as keyof T] === v;
   });
 };
@@ -52,7 +64,11 @@ export const filterWithLimit = <T>(
   const result: T[] = [];
   let processedCount = 0;
 
-  for (let i = 0; i < items.length && (limit === undefined || processedCount < limit); i++) {
+  for (
+    let i = 0;
+    i < items.length && (limit === undefined || processedCount < limit);
+    i++
+  ) {
     if (predicate(items[i], i)) {
       result.push(items[i]);
       processedCount++;
