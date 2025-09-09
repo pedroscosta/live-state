@@ -7,8 +7,8 @@ import {
   type StorageFieldType,
 } from "./live-type";
 
-class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
-  T["_value"] | undefined,
+class NullableLiveType<T extends LiveTypeAny> extends LiveType<
+  T["_value"] | null,
   T["_meta"],
   T["_encodeInput"],
   T["_decodeInput"]
@@ -22,7 +22,7 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
 
   encodeMutation(
     mutationType: MutationType,
-    input: T["_value"] | undefined,
+    input: T["_value"] | null,
     timestamp: string
   ): T["_decodeInput"] {
     return this.inner.encodeMutation(mutationType, input, timestamp);
@@ -34,9 +34,9 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
     materializedShape?:
       | MaterializedLiveType<
           LiveType<
-            T["_value"] | undefined,
+            T["_value"] | null,
             T["_meta"],
-            T["_value"] | Partial<T["_value"] | undefined>,
+            T["_value"] | Partial<T["_value"] | null>,
             T["_decodeInput"]
           >
         >
@@ -44,9 +44,9 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
   ): [
     MaterializedLiveType<
       LiveType<
-        T["_value"] | undefined,
+        T["_value"] | null,
         T["_meta"],
-        T["_value"] | Partial<T["_value"] | undefined>,
+        T["_value"] | Partial<T["_value"] | null>,
         T["_decodeInput"]
       >
     >,
@@ -59,9 +59,9 @@ class OptionalLiveType<T extends LiveTypeAny> extends LiveType<
     ) as [
       MaterializedLiveType<
         LiveType<
-          T["_value"] | undefined,
+          T["_value"] | null,
           T["_meta"],
-          T["_value"] | Partial<T["_value"] | undefined>,
+          T["_value"] | Partial<T["_value"] | null>,
           T["_decodeInput"]
         >
       >,
@@ -240,8 +240,8 @@ class LiveAtomicType<Value> extends LiveType<
     );
   }
 
-  optional(): OptionalLiveType<this> {
-    return new OptionalLiveType<this>(this);
+  nullable(): NullableLiveType<this> {
+    return new NullableLiveType<this>(this);
   }
 }
 

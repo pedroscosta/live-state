@@ -142,8 +142,8 @@ describe("LiveNumber", () => {
     expect(storageType.primary).toBe(true);
   });
 
-  test("should create optional field", () => {
-    const liveNumber = number().optional();
+  test("should create nullable field", () => {
+    const liveNumber = number().nullable();
     const storageType = liveNumber.getStorageFieldType();
 
     expect(storageType.nullable).toBe(true);
@@ -358,16 +358,16 @@ describe("LiveTimestamp", () => {
   });
 });
 
-describe("OptionalLiveType", () => {
+describe("NullableLiveType", () => {
   test("should create an optional field", () => {
-    const optionalNumber = number().optional();
+    const optionalNumber = number().nullable();
     const storageType = optionalNumber.getStorageFieldType();
 
     expect(storageType.nullable).toBe(true);
   });
 
   test("should encode mutation correctly", () => {
-    const optionalNumber = number().optional();
+    const optionalNumber = number().nullable();
     const timestamp = "2023-01-01T00:00:00.000Z";
     const result = optionalNumber.encodeMutation("set", 42, timestamp);
 
@@ -379,13 +379,13 @@ describe("OptionalLiveType", () => {
     });
   });
 
-  test("should encode undefined mutation correctly", () => {
-    const optionalNumber = number().optional();
+  test("should encode null mutation correctly", () => {
+    const optionalNumber = number().nullable();
     const timestamp = "2023-01-01T00:00:00.000Z";
-    const result = optionalNumber.encodeMutation("set", undefined, timestamp);
+    const result = optionalNumber.encodeMutation("set", null, timestamp);
 
     expect(result).toEqual({
-      value: undefined,
+      value: null,
       _meta: {
         timestamp,
       },
@@ -393,7 +393,7 @@ describe("OptionalLiveType", () => {
   });
 
   test("should merge mutation correctly", () => {
-    const optionalNumber = number().optional();
+    const optionalNumber = number().nullable();
     const timestamp = "2023-01-01T00:00:00.000Z";
     const encodedMutation = {
       value: 42,
