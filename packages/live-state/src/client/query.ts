@@ -35,6 +35,7 @@ export class QueryBuilder<
   private _include: TInclude;
   private _limit?: number;
   private _single?: TSingle;
+  private _sort?: { key: string; direction: "asc" | "desc" }[];
 
   private constructor(
     collection: TCollection,
@@ -42,7 +43,8 @@ export class QueryBuilder<
     where?: WhereClause<TCollection>,
     include?: TInclude,
     limit?: number,
-    single?: TSingle
+    single?: TSingle,
+    sort?: typeof this._sort
   ) {
     this._collection = collection;
     this._client = client;
@@ -50,6 +52,7 @@ export class QueryBuilder<
     this._include = include ?? ({} as TInclude);
     this._limit = limit;
     this._single = single;
+    this._sort = sort;
 
     this.get = this.get.bind(this);
     this.subscribe = this.subscribe.bind(this);
@@ -62,7 +65,8 @@ export class QueryBuilder<
       { ...this._where, ...where },
       this._include,
       this._limit,
-      this._single
+      this._single,
+      this._sort
     );
   }
 
@@ -78,7 +82,8 @@ export class QueryBuilder<
         ...include,
       },
       this._limit,
-      this._single
+      this._single,
+      this._sort
     );
   }
 
@@ -88,6 +93,7 @@ export class QueryBuilder<
       where: this._where,
       include: this._include,
       limit: this._limit,
+      sort: this._sort,
     });
 
     if (this._single) return result[0];
@@ -104,6 +110,7 @@ export class QueryBuilder<
         where: this._where,
         include: this._include,
         limit: this._limit,
+        sort: this._sort,
       },
       (v) => {
         if (this._single) return callback(v[0]);
@@ -120,7 +127,8 @@ export class QueryBuilder<
       this._where,
       this._include,
       limit,
-      this._single
+      this._single,
+      this._sort
     );
   }
 
@@ -135,7 +143,21 @@ export class QueryBuilder<
       where ?? this._where,
       this._include,
       1,
-      true
+      true,
+      this._sort
+    );
+  }
+
+  orderBy(key: keyof TCollection["fields"], direction: "asc" | "desc" = "asc") {
+    const newSort = [...(this._sort ?? []), { key, direction }];
+    return new QueryBuilder(
+      this._collection,
+      this._client,
+      this._where,
+      this._include,
+      this._limit,
+      this._single,
+      newSort as typeof this._sort
     );
   }
 
@@ -145,6 +167,7 @@ export class QueryBuilder<
       where: this._where,
       include: this._include,
       limit: this._limit,
+      sort: this._sort,
     } satisfies RawQueryRequest;
   }
 

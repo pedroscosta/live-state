@@ -84,9 +84,31 @@ export class OptimisticStore {
       query.where?.id
         ? [query.where.id]
         : Object.keys(this.optimisticRawObjPool[query.resource] ?? {})
-    )
-      .map((k) => inferValue(this.materializeOneWithInclude(k, query.include)))
-      .filter((v) => v !== undefined) as InferLiveType<LiveObjectAny>[];
+    ).flatMap((k) => {
+      const value = inferValue(
+        this.materializeOneWithInclude(k, query.include)
+      );
+      if (!value) return [];
+      return [value];
+    });
+
+    if (query.sort && query.sort.length > 0) {
+      // biome-ignore lint/suspicious/noExplicitAny: no need to type
+      const sortingPredicate = (a: any, b: any) => {
+        // biome-ignore lint/style/noNonNullAssertion: false positive
+        for (const sort of query.sort!) {
+          const aValue = a[sort.key];
+          const bValue = b[sort.key];
+
+          if (aValue < bValue) return sort.direction === "asc" ? -1 : 1;
+          if (aValue > bValue) return sort.direction === "asc" ? 1 : -1;
+        }
+
+        return 0;
+      };
+
+      result.sort(sortingPredicate);
+    }
 
     if (query.where || query.limit) {
       const whereFunc = query.where

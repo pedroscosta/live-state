@@ -6,6 +6,9 @@ export const querySchema = z.object({
   include: z.record(z.any()).optional(),
   lastSyncedAt: z.string().optional(),
   limit: z.number().optional(),
+  sort: z
+    .array(z.object({ key: z.string(), direction: z.enum(["asc", "desc"]) }))
+    .optional(),
 });
 
 export type RawQueryRequest = z.infer<typeof querySchema>;
