@@ -47,132 +47,6 @@ describe("QueryBuilder", () => {
     });
   });
 
-  test("should execute get query with where clause", () => {
-    const mockResult = [{ id: "1", name: "John", age: 30 }];
-    mockExecutor.get = vi.fn().mockReturnValue(mockResult);
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder.where({ age: 30 }).get();
-
-    expect(result).toBe(mockResult);
-    expect(mockExecutor.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: { age: 30 },
-      include: {},
-      limit: undefined,
-    });
-  });
-
-  test("should execute get query with include clause", () => {
-    const mockResult = [{ id: "1", name: "John", posts: [] }];
-    mockExecutor.get = vi.fn().mockReturnValue(mockResult);
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder.include({ posts: true }).get();
-
-    expect(result).toBe(mockResult);
-    expect(mockExecutor.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: {},
-      include: { posts: true },
-      limit: undefined,
-    });
-  });
-
-  test("should execute get query with both where and include", () => {
-    const mockResult = [{ id: "1", name: "John", age: 30, posts: [] }];
-    mockExecutor.get = vi.fn().mockReturnValue(mockResult);
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder.where({ age: 30 }).include({ posts: true }).get();
-
-    expect(result).toBe(mockResult);
-    expect(mockExecutor.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: { age: 30 },
-      include: { posts: true },
-      limit: undefined,
-    });
-  });
-
-  test("should chain multiple where clauses", () => {
-    const mockResult = [{ id: "1", name: "John", age: 30, active: true }];
-    mockExecutor.get = vi.fn().mockReturnValue(mockResult);
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder.where({ age: 30 }).where({ active: true }).get();
-
-    expect(result).toBe(mockResult);
-    expect(mockExecutor.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: { age: 30, active: true },
-      include: {},
-      limit: undefined,
-    });
-  });
-
-  test("should chain multiple include clauses", () => {
-    const mockResult = [{ id: "1", name: "John", posts: [], comments: [] }];
-    mockExecutor.get = vi.fn().mockReturnValue(mockResult);
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const result = builder
-      .include({ posts: true })
-      .include({ comments: true })
-      .get();
-
-    expect(result).toBe(mockResult);
-    expect(mockExecutor.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: {},
-      include: { posts: true, comments: true },
-      limit: undefined,
-    });
-  });
-
-  test("should execute subscribe with callback", () => {
-    const mockUnsubscribe = vi.fn();
-    mockExecutor.subscribe = vi.fn().mockReturnValue(mockUnsubscribe);
-    const mockCallback = vi.fn();
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const unsubscribe = builder.subscribe(mockCallback);
-
-    expect(unsubscribe).toBe(mockUnsubscribe);
-    expect(mockExecutor.subscribe).toHaveBeenCalledWith(
-      {
-        resource: "users",
-        where: {},
-        include: {},
-        limit: undefined,
-      },
-      expect.any(Function)
-    );
-  });
-
-  test("should execute subscribe with where and include", () => {
-    const mockUnsubscribe = vi.fn();
-    mockExecutor.subscribe = vi.fn().mockReturnValue(mockUnsubscribe);
-    const mockCallback = vi.fn();
-
-    const builder = QueryBuilder._init(mockCollection, mockExecutor);
-    const unsubscribe = builder
-      .where({ active: true })
-      .include({ posts: true })
-      .subscribe(mockCallback);
-
-    expect(unsubscribe).toBe(mockUnsubscribe);
-    expect(mockExecutor.subscribe).toHaveBeenCalledWith(
-      {
-        resource: "users",
-        where: { active: true },
-        include: { posts: true },
-        limit: undefined,
-      },
-      expect.any(Function)
-    );
-  });
-
   test("should return correct JSON representation", () => {
     const builder = QueryBuilder._init(mockCollection, mockExecutor);
     const json = builder.where({ age: 30 }).include({ posts: true }).toJSON();
@@ -485,6 +359,136 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: 10,
+    });
+  });
+
+  describe("where method", () => {
+    test("should execute get query with where clause", () => {
+      const mockResult = [{ id: "1", name: "John", age: 30 }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.where({ age: 30 }).get();
+
+      expect(result).toBe(mockResult);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { age: 30 },
+        include: {},
+        limit: undefined,
+      });
+    });
+
+    test("should execute get query with include clause", () => {
+      const mockResult = [{ id: "1", name: "John", posts: [] }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.include({ posts: true }).get();
+
+      expect(result).toBe(mockResult);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: { posts: true },
+        limit: undefined,
+      });
+    });
+
+    test("should execute get query with both where and include", () => {
+      const mockResult = [{ id: "1", name: "John", age: 30, posts: [] }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.where({ age: 30 }).include({ posts: true }).get();
+
+      expect(result).toBe(mockResult);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { age: 30 },
+        include: { posts: true },
+        limit: undefined,
+      });
+    });
+
+    test("should chain multiple where clauses", () => {
+      const mockResult = [{ id: "1", name: "John", age: 30, active: true }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.where({ age: 30 }).where({ active: true }).get();
+
+      expect(result).toBe(mockResult);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { age: 30, active: true },
+        include: {},
+        limit: undefined,
+      });
+    });
+  });
+
+  describe("include method", () => {
+    test("should chain multiple include clauses", () => {
+      const mockResult = [{ id: "1", name: "John", posts: [], comments: [] }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .include({ posts: true })
+        .include({ comments: true })
+        .get();
+
+      expect(result).toBe(mockResult);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: { posts: true, comments: true },
+        limit: undefined,
+      });
+    });
+
+    test("should execute subscribe with callback", () => {
+      const mockUnsubscribe = vi.fn();
+      mockExecutor.subscribe = vi.fn().mockReturnValue(mockUnsubscribe);
+      const mockCallback = vi.fn();
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const unsubscribe = builder.subscribe(mockCallback);
+
+      expect(unsubscribe).toBe(mockUnsubscribe);
+      expect(mockExecutor.subscribe).toHaveBeenCalledWith(
+        {
+          resource: "users",
+          where: {},
+          include: {},
+          limit: undefined,
+        },
+        expect.any(Function)
+      );
+    });
+
+    test("should execute subscribe with where and include", () => {
+      const mockUnsubscribe = vi.fn();
+      mockExecutor.subscribe = vi.fn().mockReturnValue(mockUnsubscribe);
+      const mockCallback = vi.fn();
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const unsubscribe = builder
+        .where({ active: true })
+        .include({ posts: true })
+        .subscribe(mockCallback);
+
+      expect(unsubscribe).toBe(mockUnsubscribe);
+      expect(mockExecutor.subscribe).toHaveBeenCalledWith(
+        {
+          resource: "users",
+          where: { active: true },
+          include: { posts: true },
+          limit: undefined,
+        },
+        expect.any(Function)
+      );
     });
   });
 
