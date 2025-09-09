@@ -29,6 +29,7 @@ describe("QueryBuilder", () => {
     expect(typeof builder.subscribe).toBe("function");
     expect(typeof builder.where).toBe("function");
     expect(typeof builder.include).toBe("function");
+    expect(typeof builder.orderBy).toBe("function");
   });
 
   test("should execute get query with basic parameters", () => {
@@ -44,6 +45,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -56,6 +58,7 @@ describe("QueryBuilder", () => {
       where: { age: 30 },
       include: { posts: true },
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -68,6 +71,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -87,6 +91,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: undefined,
+      sort: undefined,
     });
 
     // Final builder should have all modifications
@@ -95,6 +100,7 @@ describe("QueryBuilder", () => {
       where: { age: 30 },
       include: { posts: true },
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -129,6 +135,7 @@ describe("QueryBuilder", () => {
       where: complexWhere,
       include: {},
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -153,6 +160,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: complexInclude,
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -194,6 +202,7 @@ describe("QueryBuilder", () => {
       where: { deletedAt: null, archivedAt: undefined },
       include: {},
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -210,6 +219,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: undefined,
+      sort: undefined,
     });
   });
 
@@ -320,6 +330,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: undefined,
+      sort: undefined,
     });
 
     // New builder should have the limit
@@ -328,6 +339,7 @@ describe("QueryBuilder", () => {
       where: {},
       include: {},
       limit: 10,
+      sort: undefined,
     });
   });
 
@@ -506,6 +518,7 @@ describe("QueryBuilder", () => {
         where: { id: "123" },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -521,6 +534,7 @@ describe("QueryBuilder", () => {
         where: { id: "nonexistent" },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -537,6 +551,7 @@ describe("QueryBuilder", () => {
         where: { id: "123" },
         include: { posts: true },
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -596,6 +611,7 @@ describe("QueryBuilder", () => {
         where: {},
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -612,6 +628,7 @@ describe("QueryBuilder", () => {
         where: { active: true },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -627,6 +644,7 @@ describe("QueryBuilder", () => {
         where: { nonexistent: true },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -646,6 +664,7 @@ describe("QueryBuilder", () => {
         where: { active: true },
         include: { posts: true },
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -720,6 +739,7 @@ describe("QueryBuilder", () => {
         where: { id: "123" },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -739,6 +759,7 @@ describe("QueryBuilder", () => {
         where: { role: "admin" },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -759,6 +780,7 @@ describe("QueryBuilder", () => {
         where: { id: "123" },
         include: { posts: true, comments: true },
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -779,6 +801,7 @@ describe("QueryBuilder", () => {
         where: { active: true },
         include: { posts: true, profile: true },
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -795,6 +818,7 @@ describe("QueryBuilder", () => {
         where: { id: "123" },
         include: {},
         limit: 1,
+        sort: undefined,
       });
     });
 
@@ -811,7 +835,238 @@ describe("QueryBuilder", () => {
         where: { active: true },
         include: {},
         limit: 1,
+        sort: undefined,
       });
+    });
+  });
+
+  describe("sort method", () => {
+    test("should execute get query with single sort clause", () => {
+      const mockResult = [
+        { id: "1", name: "Alice", age: 25 },
+        { id: "2", name: "Bob", age: 30 },
+      ];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.orderBy("name", "asc").get();
+
+      expect(result).toBe(mockResult);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+        sort: [{ key: "name", direction: "asc" }],
+      });
+    });
+
+    test("should execute get query with multiple sort clauses", () => {
+      const mockResult = [];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.orderBy("age", "desc").orderBy("name", "asc").get();
+
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+        sort: [
+          { key: "age", direction: "desc" },
+          { key: "name", direction: "asc" },
+        ],
+      });
+    });
+
+    test("should default to ascending direction when not specified", () => {
+      const mockResult = [];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.orderBy("name").get();
+
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+        sort: [{ key: "name", direction: "asc" }],
+      });
+    });
+
+    test("should work with descending direction", () => {
+      const mockResult = [];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.orderBy("createdAt", "desc").get();
+
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+        sort: [{ key: "createdAt", direction: "desc" }],
+      });
+    });
+
+    test("should chain sort with where and include", () => {
+      const mockResult = [];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder
+        .where({ active: true } as any)
+        .include({ posts: true })
+        .orderBy("name", "asc")
+        .get();
+
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { active: true },
+        include: { posts: true },
+        limit: undefined,
+        sort: [{ key: "name", direction: "asc" }],
+      });
+    });
+
+    test("should chain sort with limit", () => {
+      const mockResult = [];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      builder.orderBy("age", "desc").limit(10).get();
+
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: 10,
+        sort: [{ key: "age", direction: "desc" }],
+      });
+    });
+
+    test("should work with subscribe", () => {
+      const mockUnsubscribe = vi.fn();
+      mockExecutor.subscribe = vi.fn().mockReturnValue(mockUnsubscribe);
+      const mockCallback = vi.fn();
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const unsubscribe = builder
+        .orderBy("name", "asc")
+        .subscribe(mockCallback);
+
+      expect(unsubscribe).toBe(mockUnsubscribe);
+      expect(mockExecutor.subscribe).toHaveBeenCalledWith(
+        {
+          resource: "users",
+          where: {},
+          include: {},
+          limit: undefined,
+          sort: [{ key: "name", direction: "asc" }],
+        },
+        expect.any(Function)
+      );
+    });
+
+    test("should work with one method", () => {
+      const mockResult = [{ id: "123", name: "John" }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder.orderBy("name", "asc").one("123").get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { id: "123" },
+        include: {},
+        limit: 1,
+        sort: [{ key: "name", direction: "asc" }],
+      });
+    });
+
+    test("should work with first method", () => {
+      const mockResult = [{ id: "1", name: "John", active: true }];
+      mockExecutor.get = vi.fn().mockReturnValue(mockResult);
+
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .orderBy("name", "asc")
+        .first({ active: true } as any)
+        .get();
+
+      expect(result).toBe(mockResult[0]);
+      expect(mockExecutor.get).toHaveBeenCalledWith({
+        resource: "users",
+        where: { active: true },
+        include: {},
+        limit: 1,
+        sort: [{ key: "name", direction: "asc" }],
+      });
+    });
+
+    test("should return correct JSON representation with sort", () => {
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const json = builder
+        .where({ active: true } as any)
+        .include({ posts: true })
+        .orderBy("name", "asc")
+        .orderBy("age", "desc")
+        .toJSON();
+
+      expect(json).toEqual({
+        resource: "users",
+        where: { active: true },
+        include: { posts: true },
+        limit: undefined,
+        sort: [
+          { key: "name", direction: "asc" },
+          { key: "age", direction: "desc" },
+        ],
+      });
+    });
+
+    test("should create new QueryBuilder instance when using sort", () => {
+      const builder1 = QueryBuilder._init(mockCollection, mockExecutor);
+      const builder2 = builder1.orderBy("name", "asc");
+
+      // Should return a new instance
+      expect(builder1).not.toBe(builder2);
+
+      // Original builder should remain unchanged
+      expect(builder1.toJSON()).toEqual({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+        sort: undefined,
+      });
+
+      // New builder should have the sort
+      expect(builder2.toJSON()).toEqual({
+        resource: "users",
+        where: {},
+        include: {},
+        limit: undefined,
+        sort: [{ key: "name", direction: "asc" }],
+      });
+    });
+
+    test("should preserve existing sort when chaining", () => {
+      const builder = QueryBuilder._init(mockCollection, mockExecutor);
+      const result = builder
+        .orderBy("name", "asc")
+        .orderBy("age", "desc")
+        .orderBy("createdAt", "asc");
+
+      expect(result.toJSON().sort).toEqual([
+        { key: "name", direction: "asc" },
+        { key: "age", direction: "desc" },
+        { key: "createdAt", direction: "asc" },
+      ]);
     });
   });
 });
