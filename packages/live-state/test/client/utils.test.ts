@@ -228,6 +228,8 @@ describe("applyWhere", () => {
     expect(applyWhere(obj, { nullValue: "value" })).toBe(false);
     expect(applyWhere(obj, { nonNull: null } as any)).toBe(false);
     expect(applyWhere(obj, { nonNull: "value" })).toBe(true);
+    expect(applyWhere(obj, { nullValue: { $not: null } } as any)).toBe(false);
+    expect(applyWhere(obj, { nonNull: { $not: null } } as any)).toBe(true);
   });
 
   test("should handle multiple conditions", () => {
@@ -433,7 +435,7 @@ describe("applyWhere", () => {
     // Decimal comparisons
     expect(applyWhere(obj, { price: { $gt: 29.98 } })).toBe(true);
     expect(applyWhere(obj, { price: { $gt: 29.99 } })).toBe(false);
-    expect(applyWhere(obj, { price: { $gt: 30.00 } })).toBe(false);
+    expect(applyWhere(obj, { price: { $gt: 30.0 } })).toBe(false);
 
     // Zero comparisons
     expect(applyWhere(obj, { count: { $gt: -1 } })).toBe(true);
@@ -452,7 +454,7 @@ describe("applyWhere", () => {
     // Decimal comparisons
     expect(applyWhere(obj, { price: { $gte: 29.98 } })).toBe(true);
     expect(applyWhere(obj, { price: { $gte: 29.99 } })).toBe(true);
-    expect(applyWhere(obj, { price: { $gte: 30.00 } })).toBe(false);
+    expect(applyWhere(obj, { price: { $gte: 30.0 } })).toBe(false);
 
     // Zero comparisons
     expect(applyWhere(obj, { count: { $gte: -1 } })).toBe(true);
@@ -469,7 +471,7 @@ describe("applyWhere", () => {
     expect(applyWhere(obj, { score: { $lt: 80 } })).toBe(false);
 
     // Decimal comparisons
-    expect(applyWhere(obj, { price: { $lt: 30.00 } })).toBe(true);
+    expect(applyWhere(obj, { price: { $lt: 30.0 } })).toBe(true);
     expect(applyWhere(obj, { price: { $lt: 29.99 } })).toBe(false);
     expect(applyWhere(obj, { price: { $lt: 29.98 } })).toBe(false);
 
@@ -488,7 +490,7 @@ describe("applyWhere", () => {
     expect(applyWhere(obj, { score: { $lte: 80 } })).toBe(false);
 
     // Decimal comparisons
-    expect(applyWhere(obj, { price: { $lte: 30.00 } })).toBe(true);
+    expect(applyWhere(obj, { price: { $lte: 30.0 } })).toBe(true);
     expect(applyWhere(obj, { price: { $lte: 29.99 } })).toBe(true);
     expect(applyWhere(obj, { price: { $lte: 29.98 } })).toBe(false);
 
@@ -501,7 +503,7 @@ describe("applyWhere", () => {
   test("should handle comparison operators with nested objects", () => {
     const obj = {
       user: { age: 25, score: 87.5 },
-      product: { price: 19.99, rating: 4.2 }
+      product: { price: 19.99, rating: 4.2 },
     };
 
     // Nested $gt
@@ -515,7 +517,7 @@ describe("applyWhere", () => {
 
     // Nested $lt
     expect(applyWhere(obj, { user: { age: { $lt: 30 } } })).toBe(true);
-    expect(applyWhere(obj, { product: { price: { $lt: 20.00 } } })).toBe(true);
+    expect(applyWhere(obj, { product: { price: { $lt: 20.0 } } })).toBe(true);
 
     // Nested $lte
     expect(applyWhere(obj, { user: { age: { $lte: 25 } } })).toBe(true);
@@ -550,33 +552,27 @@ describe("applyWhere", () => {
       applyWhere(obj, {
         age: { $gte: 18 },
         score: { $gt: 80 },
-        price: { $lt: 30 }
+        price: { $lt: 30 },
       })
     ).toBe(true);
 
     expect(
       applyWhere(obj, {
         age: { $gte: 30 },
-        score: { $gt: 80 }
+        score: { $gt: 80 },
       })
     ).toBe(false);
 
     // Range queries (between values) using $and
     expect(
       applyWhere(obj, {
-        $and: [
-          { age: { $gte: 20 } },
-          { age: { $lte: 30 } }
-        ]
+        $and: [{ age: { $gte: 20 } }, { age: { $lte: 30 } }],
       })
     ).toBe(true);
 
     expect(
       applyWhere(obj, {
-        $and: [
-          { score: { $gt: 80 } },
-          { score: { $lt: 90 } }
-        ]
+        $and: [{ score: { $gt: 80 } }, { score: { $lt: 90 } }],
       })
     ).toBe(true);
   });
@@ -587,39 +583,26 @@ describe("applyWhere", () => {
     // $and with comparison operators
     expect(
       applyWhere(obj, {
-        $and: [
-          { age: { $gte: 18 } },
-          { score: { $gt: 80 } },
-          { active: true }
-        ]
+        $and: [{ age: { $gte: 18 } }, { score: { $gt: 80 } }, { active: true }],
       })
     ).toBe(true);
 
     expect(
       applyWhere(obj, {
-        $and: [
-          { age: { $gte: 30 } },
-          { score: { $gt: 80 } }
-        ]
+        $and: [{ age: { $gte: 30 } }, { score: { $gt: 80 } }],
       })
     ).toBe(false);
 
     // $or with comparison operators
     expect(
       applyWhere(obj, {
-        $or: [
-          { age: { $lt: 18 } },
-          { score: { $gte: 85 } }
-        ]
+        $or: [{ age: { $lt: 18 } }, { score: { $gte: 85 } }],
       })
     ).toBe(true);
 
     expect(
       applyWhere(obj, {
-        $or: [
-          { age: { $lt: 18 } },
-          { score: { $lt: 70 } }
-        ]
+        $or: [{ age: { $lt: 18 } }, { score: { $lt: 70 } }],
       })
     ).toBe(false);
   });
