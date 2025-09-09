@@ -80,11 +80,13 @@ export class OptimisticStore {
       if (value) return value;
     }
 
-    let result = Object.keys(
-      this.optimisticRawObjPool[query.resource] ?? {}
-    ).map((k) =>
-      inferValue(this.materializeOneWithInclude(k, query.include))
-    ) as InferLiveType<LiveObjectAny>[];
+    let result = (
+      query.where?.id
+        ? [query.where.id]
+        : Object.keys(this.optimisticRawObjPool[query.resource] ?? {})
+    )
+      .map((k) => inferValue(this.materializeOneWithInclude(k, query.include)))
+      .filter((v) => v !== undefined) as InferLiveType<LiveObjectAny>[];
 
     if (query.where || query.limit) {
       const whereFunc = query.where
@@ -100,6 +102,8 @@ export class OptimisticStore {
 
   public subscribe(query: RawQueryRequest, listener: (v: any[]) => void) {
     const key = hash(query);
+
+    // Handles single object subscriptions
 
     const entry = this.collectionSubscriptions.get(key);
 
@@ -127,16 +131,6 @@ export class OptimisticStore {
         delete this.querySnapshots[key];
       }
     };
-
-    // if (path.length === 2) {
-    //   const node = this.optimisticObjGraph.getNode(path[1]);
-
-    //   if (!node) throw new Error("Node not found");
-
-    //   return this.optimisticObjGraph.subscribe(path[1], listener);
-    // }
-
-    // throw new Error("Not implemented");
   }
 
   public addMutation(
