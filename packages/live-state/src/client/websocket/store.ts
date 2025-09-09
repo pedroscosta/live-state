@@ -80,11 +80,13 @@ export class OptimisticStore {
       if (value) return value;
     }
 
-    let result = Object.keys(
-      this.optimisticRawObjPool[query.resource] ?? {}
-    ).map((k) =>
-      inferValue(this.materializeOneWithInclude(k, query.include))
-    ) as InferLiveType<LiveObjectAny>[];
+    let result = (
+      query.where?.id
+        ? [query.where.id]
+        : Object.keys(this.optimisticRawObjPool[query.resource] ?? {})
+    )
+      .map((k) => inferValue(this.materializeOneWithInclude(k, query.include)))
+      .filter((v) => v !== undefined) as InferLiveType<LiveObjectAny>[];
 
     if (query.where || query.limit) {
       const whereFunc = query.where
@@ -98,90 +100,10 @@ export class OptimisticStore {
     return result;
   }
 
-  public getOne(
-    resourceType: string,
-    id: string
-  ): InferLiveType<LiveObjectAny> | undefined {
-    const node = this.optimisticObjGraph.getNode(id);
-
-    if (!node) return;
-
-    const obj = this.optimisticRawObjPool[resourceType]?.[id];
-
-    if (!obj) return;
-
-    const materializedObj = {
-      value: {
-        ...obj.value,
-        ...Object.fromEntries(
-          Array.from(node.references.entries()).map(([k, v]) => {
-            const otherNode = this.optimisticObjGraph.getNode(v);
-
-            if (!otherNode) return [k, undefined];
-
-            const [relationName, relation] =
-              Object.entries(this.schema[resourceType].relations).find(
-                (r) => r[1].relationalColumn === k || r[1].foreignColumn === k
-              ) ?? [];
-
-            const otherNodeType = relation?.entity.name;
-
-            if (!otherNodeType || !relation) return [k, undefined];
-
-            return [
-              relationName,
-              this.optimisticRawObjPool[otherNodeType]?.[
-                (otherNode as GraphNode).id
-              ],
-            ];
-          })
-        ),
-        ...Object.fromEntries(
-          Array.from(node.referencedBy.entries()).map(([k, v]) => {
-            const isMany = v instanceof Set;
-
-            const otherNode = isMany
-              ? Array.from(v.values()).flatMap((v) => {
-                  const node = this.optimisticObjGraph.getNode(v);
-
-                  return node ? [node] : [];
-                })
-              : this.optimisticObjGraph.getNode(v);
-
-            if (!otherNode) return [k, undefined];
-
-            const [relationName, relation] =
-              Object.entries(this.schema[resourceType].relations).find(
-                (r) => r[1].entity.name === k
-              ) ?? [];
-
-            const otherNodeType = relation?.entity.name;
-
-            if (!otherNodeType || !relation)
-              return [k, isMany ? [] : undefined];
-
-            return [
-              relationName,
-              isMany
-                ? {
-                    value: (otherNode as GraphNode[]).map(
-                      (v) => this.optimisticRawObjPool[otherNodeType]?.[v.id]
-                    ),
-                  }
-                : this.optimisticRawObjPool[otherNodeType]?.[
-                    (otherNode as GraphNode).id
-                  ],
-            ];
-          })
-        ),
-      },
-    } as MaterializedLiveType<LiveObjectAny>;
-
-    return inferValue(materializedObj);
-  }
-
   public subscribe(query: RawQueryRequest, listener: (v: any[]) => void) {
     const key = hash(query);
+
+    // Handles single object subscriptions
 
     const entry = this.collectionSubscriptions.get(key);
 
@@ -209,16 +131,6 @@ export class OptimisticStore {
         delete this.querySnapshots[key];
       }
     };
-
-    // if (path.length === 2) {
-    //   const node = this.optimisticObjGraph.getNode(path[1]);
-
-    //   if (!node) throw new Error("Node not found");
-
-    //   return this.optimisticObjGraph.subscribe(path[1], listener);
-    // }
-
-    // throw new Error("Not implemented");
   }
 
   public addMutation(
