@@ -1,128 +1,23 @@
-import { Kysely, PostgresDialect, type PostgresPool, type Selectable } from "kysely";
-import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
+/** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
+import {
+  Kysely,
+  PostgresDialect,
+  type PostgresPool,
+  type Selectable,
+} from "kysely";
+import { jsonObjectFrom } from "kysely/helpers/postgres";
 import {
   type IncludeClause,
   type InferLiveObject,
   inferValue,
   type LiveObjectAny,
-  type LiveObjectMutationInput,
   type LiveTypeAny,
   type MaterializedLiveType,
   type Schema,
   type WhereClause,
-} from "../schema";
-import type { Simplify } from "../utils";
-
-export abstract class Storage {
-  /** @internal */
-  public abstract updateSchema(opts: Schema<any>): Promise<void>;
-
-  /** @internal */
-  public abstract rawFindById<T extends LiveObjectAny>(
-    resourceName: string,
-    id: string,
-    include?: IncludeClause<T>
-  ): Promise<MaterializedLiveType<T> | undefined>;
-
-  public abstract findOne<T extends LiveObjectAny>(
-    resource: T,
-    id: string,
-    options?: {
-      include?: IncludeClause<T>;
-    }
-  ): Promise<InferLiveObject<T> | undefined>;
-
-  /** @internal */
-  public abstract rawFind<T extends LiveObjectAny>(
-    resourceName: string,
-    where?: Record<string, any>,
-    include?: Record<string, any>
-  ): Promise<Record<string, MaterializedLiveType<T>>>;
-
-  public abstract find<T extends LiveObjectAny>(
-    resource: T,
-    options?: {
-      where?: WhereClause<T>;
-      include?: IncludeClause<T>;
-    }
-  ): Promise<Record<string, InferLiveObject<T>>>;
-
-  /** @internal */
-  public abstract rawUpsert<T extends LiveObjectAny>(
-    resourceName: string,
-    resourceId: string,
-    value: MaterializedLiveType<T>
-  ): Promise<MaterializedLiveType<T>>;
-
-  public async insert<T extends LiveObjectAny>(
-    resource: T,
-    value: Simplify<LiveObjectMutationInput<T>>
-  ): Promise<InferLiveObject<T>> {
-    const now = new Date().toISOString();
-
-    return inferValue(
-      await this.rawUpsert(
-        resource.name,
-        value.id as string,
-        {
-          value: Object.fromEntries(
-            Object.entries(value).map(([k, v]) => [
-              k,
-              {
-                value: v,
-                _meta: {
-                  timestamp: now,
-                },
-              },
-            ])
-          ),
-        } as unknown as MaterializedLiveType<T>
-      )
-    )! as InferLiveObject<T>;
-  }
-
-  public async update<T extends LiveObjectAny>(
-    resource: T,
-    resourceId: string,
-    value: LiveObjectMutationInput<T>
-  ): Promise<InferLiveObject<T>> {
-    const now = new Date().toISOString();
-
-    const { id, ...rest } = value;
-
-    return inferValue(
-      await this.rawUpsert(resource.name, resourceId, {
-        value: Object.fromEntries(
-          Object.entries(rest).map(([k, v]) => [
-            k,
-            {
-              value: v,
-              _meta: {
-                timestamp: now,
-              },
-            },
-          ])
-        ),
-      } as unknown as MaterializedLiveType<T>)
-    )! as InferLiveObject<T>;
-  }
-}
-
-type SimpleKyselyQueryInterface = {
-  where: (
-    column: string,
-    operator: string,
-    value: any
-  ) => SimpleKyselyQueryInterface;
-  leftJoin: (
-    table: string,
-    field1: string,
-    field2: string
-  ) => SimpleKyselyQueryInterface;
-  executeTakeFirst: () => Promise<Record<string, any>>;
-  execute: () => Promise<Record<string, any>[]>;
-  select: (eb: (eb: any) => any) => SimpleKyselyQueryInterface;
-};
+} from "../../schema";
+import { Storage } from "./interface";
+import { applyInclude, applyWhere } from "./sql-utils";
 
 export class SQLStorage extends Storage {
   private db: Kysely<{ [x: string]: Selectable<any> }>;
@@ -246,7 +141,9 @@ export class SQLStorage extends Storage {
     id: string,
     include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined> {
-    let query = (await this.db
+    if (!this.schema) throw new Error("Schema not initialized");
+
+    let query = await this.db
       .selectFrom(resourceName)
       .where("id", "=", id)
       .selectAll(resourceName)
@@ -257,9 +154,9 @@ export class SQLStorage extends Storage {
             .selectAll(`${resourceName}_meta`)
             .whereRef(`${resourceName}_meta.id`, "=", `${resourceName}.id`)
         ).as("_meta")
-      )) as unknown as SimpleKyselyQueryInterface;
+      );
 
-    query = this.applyInclude(resourceName, query, include);
+    query = applyInclude(this.schema, resourceName, query, include);
 
     const rawValue = await query.executeTakeFirst();
 
@@ -292,6 +189,8 @@ export class SQLStorage extends Storage {
     where?: WhereClause<T>,
     include?: IncludeClause<T>
   ): Promise<Record<string, MaterializedLiveType<T>>> {
+    if (!this.schema) throw new Error("Schema not initialized");
+
     let query = this.db
       .selectFrom(resourceName)
       .selectAll(resourceName)
@@ -302,11 +201,11 @@ export class SQLStorage extends Storage {
             .selectAll(`${resourceName}_meta`)
             .whereRef(`${resourceName}_meta.id`, "=", `${resourceName}.id`)
         ).as("_meta")
-      ) as unknown as SimpleKyselyQueryInterface;
+      );
 
-    query = this.applyWhere(resourceName, query, where);
+    query = applyWhere(this.schema, resourceName, query, where);
 
-    query = this.applyInclude(resourceName, query, include);
+    query = applyInclude(this.schema, resourceName, query, include);
 
     const rawResult = await query.execute();
 
@@ -440,107 +339,5 @@ export class SQLStorage extends Storage {
         return acc;
       }, {} as any),
     } as unknown as MaterializedLiveType<T>;
-  }
-
-  private applyWhere<T extends LiveObjectAny>(
-    resourceName: string,
-    query: SimpleKyselyQueryInterface,
-    where?: WhereClause<T>
-  ) {
-    if (!where) return query;
-
-    if (!this.schema) throw new Error("Schema not initialized");
-
-    const resourceSchema = this.schema[resourceName];
-
-    if (!resourceSchema) throw new Error("Resource not found");
-
-    for (const [key, val] of Object.entries(where)) {
-      if (resourceSchema.fields[key]) {
-        query = query.where(`${resourceName}.${key}`, "=", val);
-      } else if (resourceSchema.relations[key]) {
-        const relation = resourceSchema.relations[key];
-        const otherResourceName = relation.entity.name;
-
-        const otherColumnName =
-          relation.type === "one" ? "id" : relation.foreignColumn;
-
-        const selfColumn =
-          relation.type === "one" ? relation.relationalColumn : "id";
-
-        query = query.leftJoin(
-          otherResourceName,
-          `${otherResourceName}.${otherColumnName}`,
-          `${resourceName}.${selfColumn}`
-        );
-        query = this.applyWhere(otherResourceName, query, val);
-      }
-    }
-
-    return query;
-  }
-
-  private applyInclude<T extends LiveObjectAny>(
-    resourceName: string,
-    query: SimpleKyselyQueryInterface,
-    include?: IncludeClause<T>
-  ) {
-    if (!include) return query;
-
-    if (!this.schema) throw new Error("Schema not initialized");
-
-    const resourceSchema = this.schema[resourceName];
-
-    if (!resourceSchema) throw new Error(`Resource not found: ${resourceName}`);
-
-    for (const [key, val] of Object.entries(include)) {
-      if (!resourceSchema.relations[key])
-        throw new Error(
-          `Relation ${key} not found in resource ${resourceName}`
-        );
-
-      const relation = resourceSchema.relations[key];
-      const otherResourceName = relation.entity.name;
-
-      const otherColumnName =
-        relation.type === "one" ? "id" : relation.foreignColumn;
-
-      const selfColumn =
-        relation.type === "one" ? relation.relationalColumn : "id";
-
-      const aggFunc = relation.type === "one" ? jsonObjectFrom : jsonArrayFrom;
-
-      query = query.select((eb) =>
-        (
-          aggFunc(
-            eb
-              .selectFrom(otherResourceName)
-              .selectAll(otherResourceName)
-              .whereRef(
-                `${otherResourceName}.${otherColumnName}`,
-                "=",
-                `${resourceName}.${selfColumn}`
-              )
-              .select((eb: any) =>
-                jsonObjectFrom(
-                  eb
-                    .selectFrom(`${otherResourceName}_meta`)
-                    .selectAll(`${otherResourceName}_meta`)
-                    .whereRef(
-                      `${otherResourceName}_meta.id`,
-                      "=",
-                      `${otherResourceName}.id`
-                    )
-                ).as("_meta")
-              )
-          ) as ReturnType<typeof jsonObjectFrom>
-        ).as(key)
-      );
-
-      // TODO support deep include
-      // query = this.applyInclude(otherResourceName, query, val);
-    }
-
-    return query;
   }
 }

@@ -301,6 +301,30 @@ describe("SQLStorage", () => {
   });
 
   test("should handle rawFindById", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     const mockRawValue = {
       id: "test-id",
       name: "John",
@@ -325,6 +349,24 @@ describe("SQLStorage", () => {
   });
 
   test("should return undefined when rawFindById finds no result", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     mockDb.executeTakeFirst.mockResolvedValue(undefined);
 
     const result = await storage.rawFindById("users", "nonexistent");
@@ -333,6 +375,30 @@ describe("SQLStorage", () => {
   });
 
   test("should handle findOne", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     const mockResource = { name: "users" } as LiveObjectAny;
     const mockRawValue = {
       id: "test-id",
@@ -348,6 +414,24 @@ describe("SQLStorage", () => {
   });
 
   test("should return undefined when findOne finds no result", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     const mockResource = { name: "users" } as LiveObjectAny;
     mockDb.executeTakeFirst.mockResolvedValue(undefined);
 
@@ -357,6 +441,30 @@ describe("SQLStorage", () => {
   });
 
   test("should handle rawFind", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     const mockRawResult = [
       {
         id: "user1",
@@ -396,6 +504,24 @@ describe("SQLStorage", () => {
   });
 
   test("should return empty object when rawFind finds no results", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     mockDb.execute.mockResolvedValue([]);
 
     const result = await storage.rawFind("users");
@@ -404,6 +530,30 @@ describe("SQLStorage", () => {
   });
 
   test("should handle find", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
     const mockResource = { name: "users" } as LiveObjectAny;
     const mockRawResult = [
       {

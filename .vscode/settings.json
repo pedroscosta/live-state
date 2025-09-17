@@ -6,6 +6,7 @@
   ],
   "biome.enabled": true,
   "editor.codeActionsOnSave": {
+    "source.removeUnusedImports": "always",
     "source.organizeImports": "never",
     "source.fixAll.biome": "explicit",
     "source.organizeImports.biome": "explicit"
