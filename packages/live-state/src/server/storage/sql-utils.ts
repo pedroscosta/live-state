@@ -24,7 +24,46 @@ export function applyWhere<T extends LiveObjectAny>(
 
   for (const [key, val] of Object.entries(where)) {
     if (resourceSchema.fields[key]) {
-      query = query.where(`${resourceName}.${key}`, "=", val);
+      if (val?.$eq !== undefined) {
+        query = query.where(
+          `${resourceName}.${key}`,
+          val.$eq === null ? "is" : "=",
+          val.$eq
+        );
+      } else if (val?.$in !== undefined) {
+        query = query.where(`${resourceName}.${key}`, "in", val.$in);
+      } else if (val?.$not !== undefined) {
+        if (val?.$not?.$in !== undefined) {
+          query = query.where(`${resourceName}.${key}`, "not in", val.$not.$in);
+        } else if (val?.$not?.$eq !== undefined) {
+          query = query.where(
+            `${resourceName}.${key}`,
+            val.$not.$eq === null ? "is not" : "!=",
+            val.$not.$eq
+          );
+        } else {
+          query = query.where(
+            `${resourceName}.${key}`,
+            val.$not === null ? "is not" : "!=",
+            val.$not
+          );
+        }
+      } else if (val?.$gt !== undefined) {
+        query = query.where(`${resourceName}.${key}`, ">", val.$gt);
+      } else if (val?.$gte !== undefined) {
+        query = query.where(`${resourceName}.${key}`, ">=", val.$gte);
+      } else if (val?.$lt !== undefined) {
+        query = query.where(`${resourceName}.${key}`, "<", val.$lt);
+      } else if (val?.$lte !== undefined) {
+        query = query.where(`${resourceName}.${key}`, "<=", val.$lte);
+      } else {
+        // Fallback to simple field equality
+        query = query.where(
+          `${resourceName}.${key}`,
+          val === null ? "is" : "=",
+          val
+        );
+      }
     } else if (resourceSchema.relations[key]) {
       const relation = resourceSchema.relations[key];
       const otherResourceName = relation.entity.name;
