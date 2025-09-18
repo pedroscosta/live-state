@@ -1,6 +1,9 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
+
 import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
+
 import type {
   LiveObjectAny,
   LiveObjectMutationInput,
@@ -99,54 +102,6 @@ export class Route<
     this.customMutations = customMutations ?? ({} as TCustomMutations);
   }
 
-  // TODO handle this as a custom mutation
-  private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
-    async ({ req, db }) => {
-      return {
-        data: await db.rawFind<TResourceSchema>(
-          req.resourceName,
-          req.where,
-          req.include
-        ),
-        acceptedValues: null,
-      };
-    };
-
-  // TODO handle this as a custom mutation
-  private handleSet: RequestHandler<
-    LiveObjectMutationInput<TResourceSchema>,
-    MutationResult<TResourceSchema>
-  > = async ({ req, db, schema }) => {
-    if (!req.input) throw new Error("Payload is required");
-    if (!req.resourceId) throw new Error("ResourceId is required");
-
-    const target = await db.rawFindById<TResourceSchema>(
-      req.resourceName,
-      req.resourceId
-    );
-
-    // TODO Handle where clause in the stored data, in the payload and in the final result
-
-    const [newRecord, acceptedValues] = schema[this.resourceName].mergeMutation(
-      "set",
-      req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
-      target
-    );
-
-    if (!acceptedValues) {
-      throw new Error("Mutation rejected");
-    }
-
-    return {
-      data: await db.rawUpsert<TResourceSchema>(
-        req.resourceName,
-        req.resourceId,
-        newRecord
-      ),
-      acceptedValues,
-    };
-  };
-
   public async handleRequest(opts: {
     req: ParsedRequest;
     db: Storage;
@@ -194,6 +149,7 @@ export class Route<
       (async (req) => next(req)) as NextFunction<any>
     )(opts.req);
   }
+
   public use(...middlewares: TMiddleware[]) {
     for (const middleware of middlewares) {
       this.middlewares.add(middleware);
@@ -209,6 +165,52 @@ export class Route<
       mutationFactory({ mutation: mutationCreator })
     );
   }
+
+  private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
+    async ({ req, db }) => {
+      return {
+        data: await db.rawFind<TResourceSchema>(
+          req.resourceName,
+          req.where,
+          req.include
+        ),
+        acceptedValues: null,
+      };
+    };
+
+  private handleSet: RequestHandler<
+    LiveObjectMutationInput<TResourceSchema>,
+    MutationResult<TResourceSchema>
+  > = async ({ req, db, schema }) => {
+    if (!req.input) throw new Error("Payload is required");
+    if (!req.resourceId) throw new Error("ResourceId is required");
+
+    const target = await db.rawFindById<TResourceSchema>(
+      req.resourceName,
+      req.resourceId
+    );
+
+    // TODO Handle where clause in the stored data, in the payload and in the final result
+
+    const [newRecord, acceptedValues] = schema[this.resourceName].mergeMutation(
+      "set",
+      req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
+      target
+    );
+
+    if (!acceptedValues) {
+      throw new Error("Mutation rejected");
+    }
+
+    return {
+      data: await db.rawUpsert<TResourceSchema>(
+        req.resourceName,
+        req.resourceId,
+        newRecord
+      ),
+      acceptedValues,
+    };
+  };
 }
 
 export class RouteFactory {
@@ -218,7 +220,7 @@ export class RouteFactory {
     this.middlewares = middlewares;
   }
 
-  createBasicRoute<T extends LiveObjectAny>(shape: T) {
+  collectionRoute<T extends LiveObjectAny>(shape: T) {
     return new Route<T, Middleware<any>, Record<string, never>>(shape.name).use(
       ...this.middlewares
     );

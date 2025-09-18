@@ -14,7 +14,7 @@ export const routerImpl = router({
   schema,
   routes: {
     groups: publicRoute
-      .createBasicRoute(schema.groups)
+      .collectionRoute(schema.groups)
       .withMutations(({ mutation }) => ({
         hello: mutation(z.string()).handler(async ({ req }) => {
           return {
@@ -54,7 +54,7 @@ export const routerImpl = router({
           });
         }),
       })),
-    cards: publicRoute.createBasicRoute(schema.cards),
+    cards: publicRoute.collectionRoute(schema.cards),
   },
 });
 

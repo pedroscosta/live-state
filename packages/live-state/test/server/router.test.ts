@@ -417,7 +417,7 @@ describe("RouteFactory", () => {
     const factory = RouteFactory.create();
     const mockShape = { name: "users" } as LiveObjectAny;
 
-    const route = factory.createBasicRoute(mockShape);
+    const route = factory.collectionRoute(mockShape);
 
     expect(route).toBeInstanceOf(Route);
     expect(route.resourceName).toBe("users");
@@ -440,7 +440,7 @@ describe("RouteFactory", () => {
     const factory = RouteFactory.create().use(middleware1, middleware2);
     const mockShape = { name: "users" } as LiveObjectAny;
 
-    const route = factory.createBasicRoute(mockShape);
+    const route = factory.collectionRoute(mockShape);
 
     expect(route.middlewares.has(middleware1)).toBe(true);
     expect(route.middlewares.has(middleware2)).toBe(true);
