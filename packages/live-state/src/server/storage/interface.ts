@@ -106,4 +106,12 @@ export abstract class Storage {
       } as unknown as MaterializedLiveType<T>)
     ) as InferLiveObject<T>;
   }
+
+  public abstract transaction<T>(
+    fn: (opts: {
+      trx: Storage;
+      commit: () => Promise<void>;
+      rollback: () => Promise<void>;
+    }) => Promise<T>
+  ): Promise<T>;
 }

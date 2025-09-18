@@ -53,6 +53,24 @@ export const routerImpl = router({
             name: "Updated",
           });
         }),
+        transaction: mutation().handler(async ({ req, db }) => {
+          return db.transaction(async ({ trx, commit, rollback }) => {
+            await trx.insert(schema.groups, {
+              id: generateId(),
+              name: "Transaction",
+            });
+            const rand = Math.random();
+            if (rand < 0.25) {
+              throw new Error("Transaction failed");
+            } else if (rand >= 0.25 && rand < 0.5) {
+              await rollback();
+              return "Transaction rolled back";
+            } else {
+              await commit();
+              return "Transaction successful";
+            }
+          });
+        }),
       })),
     cards: publicRoute.collectionRoute(schema.cards),
   },
