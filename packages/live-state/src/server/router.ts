@@ -1,5 +1,6 @@
-import { z, type ZodTypeAny } from "zod";
-import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
+import { z } from "zod";
+import type * as z3 from "zod/v3";
+import type * as z4 from "zod/v4/core";
 import type {
   LiveObjectAny,
   LiveObjectMutationInput,
@@ -7,6 +8,7 @@ import type {
   MaterializedLiveType,
   Schema,
 } from "../schema";
+import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
 
 export type RouteRecord = Record<string, AnyRoute>;
 
@@ -52,14 +54,14 @@ export type RequestHandler<
 }) => Promise<TResult>;
 
 export type Mutation<
-  TInputValidator extends ZodTypeAny, // TODO use StandardSchema instead
+  TInputValidator extends z3.ZodTypeAny | z4.$ZodType, // TODO use StandardSchema instead
   THandler extends RequestHandler<z.infer<TInputValidator>, any, any>,
 > = {
   inputValidator: TInputValidator;
   handler: THandler;
 };
 
-const mutationCreator = <TInputValidator extends ZodTypeAny>(
+const mutationCreator = <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
   validator?: TInputValidator
 ) => {
   return {
