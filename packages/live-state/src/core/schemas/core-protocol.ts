@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export const querySchema = z.object({
   resource: z.string(),
-  where: z.record(z.any()).optional(),
-  include: z.record(z.any()).optional(),
+  where: z.record(z.string(), z.any()).optional(),
+  include: z.record(z.string(), z.any()).optional(),
   lastSyncedAt: z.string().optional(),
   limit: z.number().optional(),
   sort: z
@@ -15,6 +15,7 @@ export type RawQueryRequest = z.infer<typeof querySchema>;
 
 export const defaultPayloadSchema = z
   .record(
+    z.string(),
     z.object({
       value: z.string().or(z.number()).or(z.boolean()).or(z.date()).nullable(),
       _meta: z
