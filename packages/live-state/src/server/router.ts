@@ -10,6 +10,7 @@ import type {
   LiveTypeAny,
   MaterializedLiveType,
   Schema,
+  WhereClause,
 } from "../schema";
 import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
 
@@ -80,6 +81,14 @@ const mutationCreator = <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
   };
 };
 
+export type AuthorizationHandler<TShape extends LiveObjectAny> = (
+  req: ParsedRequest["context"]
+) => WhereClause<TShape>;
+
+export type Authorization<TShape extends LiveObjectAny> = {
+  read?: AuthorizationHandler<TShape>;
+};
+
 export class Route<
   TResourceSchema extends LiveObjectAny,
   TMiddleware extends Middleware<any>,
@@ -92,14 +101,17 @@ export class Route<
   readonly resourceName: TResourceSchema["name"];
   readonly middlewares: Set<TMiddleware>;
   readonly customMutations: TCustomMutations;
+  readonly authorization?: Authorization<TResourceSchema>;
 
   public constructor(
     resourceName: TResourceSchema["name"],
-    customMutations?: TCustomMutations
+    customMutations?: TCustomMutations,
+    authorization?: Authorization<TResourceSchema>
   ) {
     this.resourceName = resourceName;
     this.middlewares = new Set();
     this.customMutations = customMutations ?? ({} as TCustomMutations);
+    this.authorization = authorization;
   }
 
   public async handleRequest(opts: {
@@ -168,10 +180,14 @@ export class Route<
 
   private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
     async ({ req, db }) => {
+      const authorizationWhereClause = this.authorization?.read?.(req.context);
+
       return {
         data: await db.rawFind<TResourceSchema>(
           req.resourceName,
-          req.where,
+          req.where && authorizationWhereClause
+            ? { $and: [req.where, authorizationWhereClause] }
+            : (authorizationWhereClause ?? req.where),
           req.include
         ),
         acceptedValues: null,
@@ -220,10 +236,15 @@ export class RouteFactory {
     this.middlewares = middlewares;
   }
 
-  collectionRoute<T extends LiveObjectAny>(shape: T) {
-    return new Route<T, Middleware<any>, Record<string, never>>(shape.name).use(
-      ...this.middlewares
-    );
+  collectionRoute<T extends LiveObjectAny>(
+    shape: T,
+    authorization?: Authorization<T>
+  ) {
+    return new Route<T, Middleware<any>, Record<string, never>>(
+      shape.name,
+      undefined,
+      authorization
+    ).use(...this.middlewares);
   }
 
   use(...middlewares: Middleware<any>[]) {
