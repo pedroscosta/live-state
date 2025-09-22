@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
-import type { SelectQueryBuilder } from "kysely";
+import type { Expression, ExpressionBuilder, SelectQueryBuilder } from "kysely";
 import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
 import type {
   IncludeClause,
@@ -8,82 +8,136 @@ import type {
   WhereClause,
 } from "../../schema";
 
-export function applyWhere<T extends LiveObjectAny>(
+function innerApplyWhere<T extends LiveObjectAny>(
   schema: Schema<any>,
   resourceName: string,
-  query: SelectQueryBuilder<any, any, any>,
-  where?: WhereClause<T>
-) {
-  if (!where) return query;
-
+  eb: ExpressionBuilder<any, any>,
+  where: WhereClause<T>
+): Expression<any> {
   if (!schema) throw new Error("Schema not initialized");
 
   const resourceSchema = schema[resourceName];
 
   if (!resourceSchema) throw new Error("Resource not found");
 
-  for (const [key, val] of Object.entries(where)) {
-    if (resourceSchema.fields[key]) {
-      if (val?.$eq !== undefined) {
-        query = query.where(
-          `${resourceName}.${key}`,
-          val.$eq === null ? "is" : "=",
-          val.$eq
-        );
-      } else if (val?.$in !== undefined) {
-        query = query.where(`${resourceName}.${key}`, "in", val.$in);
-      } else if (val?.$not !== undefined) {
-        if (val?.$not?.$in !== undefined) {
-          query = query.where(`${resourceName}.${key}`, "not in", val.$not.$in);
-        } else if (val?.$not?.$eq !== undefined) {
-          query = query.where(
-            `${resourceName}.${key}`,
-            val.$not.$eq === null ? "is not" : "!=",
-            val.$not.$eq
-          );
-        } else {
-          query = query.where(
-            `${resourceName}.${key}`,
-            val.$not === null ? "is not" : "!=",
-            val.$not
-          );
-        }
-      } else if (val?.$gt !== undefined) {
-        query = query.where(`${resourceName}.${key}`, ">", val.$gt);
-      } else if (val?.$gte !== undefined) {
-        query = query.where(`${resourceName}.${key}`, ">=", val.$gte);
-      } else if (val?.$lt !== undefined) {
-        query = query.where(`${resourceName}.${key}`, "<", val.$lt);
-      } else if (val?.$lte !== undefined) {
-        query = query.where(`${resourceName}.${key}`, "<=", val.$lte);
-      } else {
-        // Fallback to simple field equality
-        query = query.where(
-          `${resourceName}.${key}`,
-          val === null ? "is" : "=",
-          val
-        );
-      }
-    } else if (resourceSchema.relations[key]) {
-      const relation = resourceSchema.relations[key];
-      const otherResourceName = relation.entity.name;
+  const isOr = where.$or;
+  const isExplictAnd = where.$and;
 
-      const otherColumnName =
-        relation.type === "one" ? "id" : relation.foreignColumn;
+  return (isOr ? eb.or : eb.and)(
+    isOr
+      ? where.$or.map((w: WhereClause<T>) =>
+          innerApplyWhere(schema, resourceName, eb, w)
+        )
+      : isExplictAnd
+        ? where.$and.map((w: WhereClause<T>) =>
+            innerApplyWhere(schema, resourceName, eb, w)
+          )
+        : Object.entries(where)
+            .map(([key, val]) => {
+              if (resourceSchema.fields[key]) {
+                if (val?.$eq !== undefined) {
+                  return eb(
+                    `${resourceName}.${key}`,
+                    val.$eq === null ? "is" : "=",
+                    val.$eq
+                  );
+                } else if (val?.$in !== undefined) {
+                  return eb(`${resourceName}.${key}`, "in", val.$in);
+                } else if (val?.$not !== undefined) {
+                  if (val?.$not?.$in !== undefined) {
+                    return eb(`${resourceName}.${key}`, "not in", val.$not.$in);
+                  } else if (val?.$not?.$eq !== undefined) {
+                    return eb(
+                      `${resourceName}.${key}`,
+                      val.$not.$eq === null ? "is not" : "!=",
+                      val.$not.$eq
+                    );
+                  } else {
+                    return eb(
+                      `${resourceName}.${key}`,
+                      val.$not === null ? "is not" : "!=",
+                      val.$not
+                    );
+                  }
+                } else if (val?.$gt !== undefined) {
+                  return eb(`${resourceName}.${key}`, ">", val.$gt);
+                } else if (val?.$gte !== undefined) {
+                  return eb(`${resourceName}.${key}`, ">=", val.$gte);
+                } else if (val?.$lt !== undefined) {
+                  return eb(`${resourceName}.${key}`, "<", val.$lt);
+                } else if (val?.$lte !== undefined) {
+                  return eb(`${resourceName}.${key}`, "<=", val.$lte);
+                } else {
+                  // Fallback to simple field equality
+                  return eb(
+                    `${resourceName}.${key}`,
+                    val === null ? "is" : "=",
+                    val
+                  );
+                }
+              } else if (resourceSchema.relations[key]) {
+                const relation = resourceSchema.relations[key];
+                const otherResourceName = relation.entity.name;
 
-      const selfColumn =
-        relation.type === "one" ? relation.relationalColumn : "id";
+                const otherColumnName =
+                  relation.type === "one" ? "id" : relation.foreignColumn;
 
-      query = query.leftJoin(
-        otherResourceName,
-        `${otherResourceName}.${otherColumnName}`,
-        `${resourceName}.${selfColumn}`
-      );
-      query = applyWhere(schema, otherResourceName, query, val);
-    }
+                const selfColumn =
+                  relation.type === "one" ? relation.relationalColumn : "id";
+
+                return innerApplyWhere(schema, otherResourceName, eb, val);
+              }
+              return null;
+            })
+            .filter(Boolean)
+  );
+}
+
+function applyJoins<T extends LiveObjectAny>(
+  schema: Schema<any>,
+  resourceName: string,
+  query: SelectQueryBuilder<any, any, any>,
+  where?: WhereClause<T>
+) {
+  const resourceSchema = schema[resourceName];
+
+  if (!resourceSchema) throw new Error("Resource not found");
+
+  if (!where) return query;
+
+  for (const key of Object.keys(where)) {
+    if (!resourceSchema.relations[key]) continue;
+
+    const relation = resourceSchema.relations[key];
+    const otherResourceName = relation.entity.name;
+
+    const otherColumnName =
+      relation.type === "one" ? "id" : relation.foreignColumn;
+
+    const selfColumn =
+      relation.type === "one" ? relation.relationalColumn : "id";
+
+    query = query.leftJoin(
+      otherResourceName,
+      `${otherResourceName}.${otherColumnName}`,
+      `${resourceName}.${selfColumn}`
+    );
   }
 
   return query;
+}
+
+export function applyWhere<T extends LiveObjectAny>(
+  schema: Schema<any>,
+  resourceName: string,
+  query: SelectQueryBuilder<any, any, any>,
+  where?: WhereClause<T>
+) {
+  if (!where || Object.keys(where).length === 0) return query;
+
+  query = applyJoins(schema, resourceName, query, where);
+
+  return query.where((eb) => innerApplyWhere(schema, resourceName, eb, where));
 }
 
 export function applyInclude<T extends LiveObjectAny>(
