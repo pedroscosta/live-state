@@ -183,6 +183,10 @@ describe("SQLStorage", () => {
       select: vi.fn().mockReturnThis(),
       executeTakeFirst: vi.fn().mockResolvedValue(undefined),
       execute: vi.fn().mockResolvedValue([]),
+      insertInto: vi.fn().mockReturnThis(),
+      values: vi.fn().mockReturnThis(),
+      updateTable: vi.fn().mockReturnThis(),
+      set: vi.fn().mockReturnThis(),
       transaction: vi.fn().mockReturnValue({
         execute: vi.fn().mockImplementation((fn) =>
           fn({
@@ -583,25 +587,24 @@ describe("SQLStorage", () => {
       },
     };
 
-    // Mock transaction to simulate new record (no existing record found)
-    const mockTrx = {
-      selectFrom: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis(),
-      executeTakeFirst: vi.fn().mockResolvedValue(undefined), // No existing record
-      insertInto: vi.fn().mockReturnThis(),
+    // Mock db to simulate new record (no existing record found)
+    mockDb.executeTakeFirst.mockResolvedValue(undefined); // No existing record
+    
+    // Mock insertInto chain for both tables
+    const mockInsertInto = {
       values: vi.fn().mockReturnThis(),
       execute: vi.fn().mockResolvedValue(undefined),
     };
-
-    mockDb.transaction.mockReturnValue({
-      execute: vi.fn().mockImplementation((fn) => fn(mockTrx)),
-    });
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
 
     const result = await storage.rawUpsert("users", "test-id", mockValue);
 
-    expect(mockTrx.insertInto).toHaveBeenCalledWith("users");
-    expect(mockTrx.insertInto).toHaveBeenCalledWith("users_meta");
+    expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
+    expect(mockDb.where).toHaveBeenCalledWith("id", "=", "test-id");
+    expect(mockDb.insertInto).toHaveBeenCalledWith("users");
+    expect(mockDb.insertInto).toHaveBeenCalledWith("users_meta");
+    expect(mockInsertInto.values).toHaveBeenCalledWith({ name: "John", id: "test-id" });
+    expect(mockInsertInto.values).toHaveBeenCalledWith({ name: "2023-01-01T00:00:00.000Z", id: "test-id" });
     expect(result).toEqual(mockValue);
   });
 
@@ -616,25 +619,26 @@ describe("SQLStorage", () => {
       },
     };
 
-    // Mock transaction to simulate existing record
-    const mockTrx = {
-      selectFrom: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis(),
-      executeTakeFirst: vi.fn().mockResolvedValue({ id: "test-id" }), // Existing record
-      updateTable: vi.fn().mockReturnThis(),
+    // Mock db to simulate existing record
+    mockDb.executeTakeFirst.mockResolvedValue({ id: "test-id" }); // Existing record
+    
+    // Mock updateTable chain for both tables
+    const mockUpdateTable = {
       set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
       execute: vi.fn().mockResolvedValue(undefined),
     };
-
-    mockDb.transaction.mockReturnValue({
-      execute: vi.fn().mockImplementation((fn) => fn(mockTrx)),
-    });
+    mockDb.updateTable.mockReturnValue(mockUpdateTable);
 
     const result = await storage.rawUpsert("users", "test-id", mockValue);
 
-    expect(mockTrx.updateTable).toHaveBeenCalledWith("users");
-    expect(mockTrx.updateTable).toHaveBeenCalledWith("users_meta");
+    expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
+    expect(mockDb.where).toHaveBeenCalledWith("id", "=", "test-id");
+    expect(mockDb.updateTable).toHaveBeenCalledWith("users");
+    expect(mockDb.updateTable).toHaveBeenCalledWith("users_meta");
+    expect(mockUpdateTable.set).toHaveBeenCalledWith({ name: "John" });
+    expect(mockUpdateTable.set).toHaveBeenCalledWith({ name: "2023-01-01T00:00:00.000Z" });
+    expect(mockUpdateTable.where).toHaveBeenCalledWith("id", "=", "test-id");
     expect(result).toEqual(mockValue);
   });
 
