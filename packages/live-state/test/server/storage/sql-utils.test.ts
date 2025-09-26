@@ -14,6 +14,7 @@ import {
   DummyDriver,
   Kysely,
   OperatorNode,
+  ParensNode,
   PostgresAdapter,
   PostgresIntrospector,
   PostgresQueryCompiler,
@@ -146,9 +147,10 @@ describe("applyWhere", () => {
       // Verify query structure
       expect(query.kind).toEqual("SelectQueryNode");
       expect(query.where).toBeDefined();
-      expect(query.where?.where.kind).toEqual("AndNode");
+      expect(query.where?.where.kind).toEqual("ParensNode");
+      expect((query.where?.where as ParensNode).node.kind).toEqual("AndNode");
 
-      const andNode = query.where?.where as AndNode;
+      const andNode = (query.where?.where as ParensNode).node as AndNode;
       const first = andNode.left as BinaryOperationNode;
       const second = andNode.right as BinaryOperationNode;
 
@@ -606,6 +608,94 @@ describe("applyWhere", () => {
       expect(rightOperand.column?.kind).toEqual("ColumnNode");
       expect((leftOperand.column as ColumnNode).column.name).toEqual("id");
       expect((rightOperand.column as ColumnNode).column.name).toEqual("userId");
+    });
+  });
+
+  describe("$and and $or operators", () => {
+    test("should handle $and operator", () => {
+      const result = applyWhere(schema, "users", baseUserQuery, {
+        $and: [{ name: "John" }, { age: { $gt: 25 } }],
+      });
+      const compiled = result.compile();
+      const query = compiled.query as SelectQueryNode;
+
+      // Verify query structure
+      expect(query.kind).toEqual("SelectQueryNode");
+      expect(query.where).toBeDefined();
+      expect(query.where?.where.kind).toEqual("ParensNode");
+      expect((query.where?.where as ParensNode).node.kind).toEqual("AndNode");
+
+      const andNode = (query.where?.where as ParensNode).node as AndNode;
+      const first = andNode.left as BinaryOperationNode;
+      const second = andNode.right as BinaryOperationNode;
+
+      expect(first.kind).toEqual("BinaryOperationNode");
+      expect(second.kind).toEqual("BinaryOperationNode");
+
+      expect(first.operator.kind).toEqual("OperatorNode");
+      expect(second.operator.kind).toEqual("OperatorNode");
+
+      expect((first.operator as OperatorNode).operator).toEqual("=");
+      expect((second.operator as OperatorNode).operator).toEqual(">");
+
+      expect(first.leftOperand.kind).toEqual("ReferenceNode");
+      expect(second.leftOperand.kind).toEqual("ReferenceNode");
+
+      expect(first.rightOperand.kind).toEqual("ValueNode");
+      expect(second.rightOperand.kind).toEqual("ValueNode");
+
+      expect((first.leftOperand as ReferenceNode).column.kind).toEqual(
+        "ColumnNode"
+      );
+      expect((second.leftOperand as ReferenceNode).column.kind).toEqual(
+        "ColumnNode"
+      );
+
+      expect((first.rightOperand as ValueNode).value).toEqual("John");
+      expect((second.rightOperand as ValueNode).value).toEqual(25);
+    });
+
+    test("should handle $or operator", () => {
+      const result = applyWhere(schema, "users", baseUserQuery, {
+        $or: [{ name: "John" }, { age: { $gt: 25 } }],
+      });
+      const compiled = result.compile();
+      const query = compiled.query as SelectQueryNode;
+
+      // Verify query structure
+      expect(query.kind).toEqual("SelectQueryNode");
+      expect(query.where).toBeDefined();
+      expect(query.where?.where.kind).toEqual("ParensNode");
+      expect((query.where?.where as ParensNode).node.kind).toEqual("OrNode");
+
+      const orNode = (query.where?.where as ParensNode).node as OrNode;
+      const first = orNode.left as BinaryOperationNode;
+      const second = orNode.right as BinaryOperationNode;
+
+      expect(first.kind).toEqual("BinaryOperationNode");
+      expect(second.kind).toEqual("BinaryOperationNode");
+
+      expect(first.operator.kind).toEqual("OperatorNode");
+      expect(second.operator.kind).toEqual("OperatorNode");
+
+      expect((first.operator as OperatorNode).operator).toEqual("=");
+      expect((second.operator as OperatorNode).operator).toEqual(">");
+
+      expect(first.leftOperand.kind).toEqual("ReferenceNode");
+      expect(second.leftOperand.kind).toEqual("ReferenceNode");
+
+      expect(first.rightOperand.kind).toEqual("ValueNode");
+      expect(second.rightOperand.kind).toEqual("ValueNode");
+
+      expect((first.leftOperand as ReferenceNode).column.kind).toEqual(
+        "ColumnNode"
+      );
+      expect((second.leftOperand as ReferenceNode).column.kind).toEqual(
+        "ColumnNode"
+      );
+
+      expect((first.rightOperand as ValueNode).value).toEqual("John");
+      expect((second.rightOperand as ValueNode).value).toEqual(25);
     });
   });
 });
