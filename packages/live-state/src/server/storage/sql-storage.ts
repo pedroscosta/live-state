@@ -23,13 +23,29 @@ export class SQLStorage extends Storage {
   private db: Kysely<{ [x: string]: Selectable<any> }>;
   private schema?: Schema<any>;
 
-  public constructor(pool: PostgresPool) {
+  public constructor(pool: PostgresPool);
+  /** @internal */
+  public constructor(
+    db: Kysely<{ [x: string]: Selectable<any> }>,
+    schema: Schema<any>
+  );
+  public constructor(
+    poolOrDb: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>,
+    schema?: Schema<any>
+  ) {
     super();
-    this.db = new Kysely({
-      dialect: new PostgresDialect({
-        pool,
-      }),
-    });
+
+    if (poolOrDb instanceof Kysely) {
+      this.db = poolOrDb;
+    } else {
+      this.db = new Kysely({
+        dialect: new PostgresDialect({
+          pool: poolOrDb,
+        }),
+      });
+    }
+
+    this.schema = schema;
   }
 
   /** @internal */
@@ -255,51 +271,79 @@ export class SQLStorage extends Storage {
     resourceId: string,
     value: MaterializedLiveType<T>
   ): Promise<MaterializedLiveType<T>> {
-    await this.db.transaction().execute(async (trx) => {
-      const exists = !!(await trx
-        .selectFrom(resourceName)
-        .select("id")
-        .where("id", "=", resourceId)
-        .executeTakeFirst());
+    const exists = !!(await this.db
+      .selectFrom(resourceName)
+      .select("id")
+      .where("id", "=", resourceId)
+      .executeTakeFirst());
 
-      const values: Record<string, any> = {};
-      const metaValues: Record<string, string> = {};
+    const values: Record<string, any> = {};
+    const metaValues: Record<string, string> = {};
 
-      for (const [key, val] of Object.entries(value.value)) {
-        const metaVal = val._meta?.timestamp;
-        if (!metaVal) continue;
-        values[key] = val.value;
-        metaValues[key] = metaVal;
-      }
+    for (const [key, val] of Object.entries(value.value)) {
+      const metaVal = val._meta?.timestamp;
+      if (!metaVal) continue;
+      values[key] = val.value;
+      metaValues[key] = metaVal;
+    }
 
-      if (exists) {
-        await Promise.all([
-          trx
-            .updateTable(resourceName)
-            .set(values)
-            .where("id", "=", resourceId)
-            .execute(),
-          trx
-            .updateTable(`${resourceName}_meta`)
-            .set(metaValues)
-            .where("id", "=", resourceId)
-            .execute(),
-        ]);
-      } else {
-        await Promise.all([
-          trx
-            .insertInto(resourceName)
-            .values({ ...values, id: resourceId })
-            .execute(),
-          trx
-            .insertInto(`${resourceName}_meta`)
-            .values({ ...metaValues, id: resourceId })
-            .execute(),
-        ]);
-      }
-    });
+    if (exists) {
+      await Promise.all([
+        this.db
+          .updateTable(resourceName)
+          .set(values)
+          .where("id", "=", resourceId)
+          .execute(),
+        this.db
+          .updateTable(`${resourceName}_meta`)
+          .set(metaValues)
+          .where("id", "=", resourceId)
+          .execute(),
+      ]);
+    } else {
+      await Promise.all([
+        this.db
+          .insertInto(resourceName)
+          .values({ ...values, id: resourceId })
+          .execute(),
+        this.db
+          .insertInto(`${resourceName}_meta`)
+          .values({ ...metaValues, id: resourceId })
+          .execute(),
+      ]);
+    }
 
     return value;
+  }
+
+  public async transaction<T>(
+    fn: (opts: {
+      trx: Storage;
+      commit: () => Promise<void>;
+      rollback: () => Promise<void>;
+    }) => Promise<T>
+  ): Promise<T> {
+    if (!this.schema) throw new Error("Schema not initialized");
+
+    const trx = await this.db.startTransaction().execute();
+
+    try {
+      return await fn({
+        trx: new SQLStorage(trx as typeof this.db, this.schema),
+        commit: () => trx.commit().execute(),
+        rollback: () => trx.rollback().execute(),
+      }).then((v) => {
+        if (trx.isCommitted || trx.isRolledBack) return v;
+
+        return trx
+          .commit()
+          .execute()
+          .then(() => v);
+      });
+    } catch (e) {
+      await trx.rollback().execute();
+      throw e;
+    }
   }
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
