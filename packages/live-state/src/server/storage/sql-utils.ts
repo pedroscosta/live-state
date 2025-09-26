@@ -21,14 +21,14 @@ function innerApplyWhere<T extends LiveObjectAny>(
   if (!resourceSchema) throw new Error("Resource not found");
 
   const isOr = where.$or;
-  const isExplictAnd = where.$and;
+  const isExplicitAnd = where.$and;
 
   return (isOr ? eb.or : eb.and)(
     isOr
       ? where.$or.map((w: WhereClause<T>) =>
           innerApplyWhere(schema, resourceName, eb, w)
         )
-      : isExplictAnd
+      : isExplicitAnd
         ? where.$and.map((w: WhereClause<T>) =>
             innerApplyWhere(schema, resourceName, eb, w)
           )
