@@ -482,3 +482,11 @@ export type WhereClause<T extends LiveObjectAny> =
 export type IncludeClause<T extends LiveObjectAny> = {
   [K in keyof T["relations"]]?: boolean;
 };
+
+export type InferInsert<T extends LiveObjectAny> =
+  InferLiveObjectWithoutRelations<T>;
+
+export type InferUpdate<T extends LiveObjectAny> = Omit<
+  LiveObjectMutationInput<T>,
+  "id"
+>;

@@ -7,6 +7,6 @@
     "stripInternal": true,
     "rootDir": ".."
   },
-  "include": ["./test"],
+  "include": ["."],
   "exclude": ["node_modules", "dist"]
 }

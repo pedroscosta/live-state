@@ -1,9 +1,9 @@
 import { stringify } from "qs";
-import type { ClientOptions } from "..";
 import { consumeGeneratable } from "../../core/utils";
 import {
   type IncludeClause,
   type InferLiveObject,
+  type InferUpdate,
   inferValue,
   type LiveObjectAny,
   type LiveObjectMutationInput,
@@ -13,6 +13,7 @@ import {
 } from "../../schema";
 import type { AnyRouter } from "../../server";
 import type { Simplify } from "../../utils";
+import type { ClientOptions } from "..";
 import { createObservable } from "../utils";
 
 type GetOptions<T extends LiveObjectAny> = {
@@ -32,9 +33,7 @@ type FetchClient<TRouter extends AnyRouter> = {
       >
     >;
     upsert: (
-      input: Simplify<
-        LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
-      >
+      input: Simplify<InferUpdate<TRouter["routes"][K]["_resourceSchema"]>>
     ) => Promise<void>;
   };
 };

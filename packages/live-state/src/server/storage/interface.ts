@@ -2,10 +2,11 @@
 
 import {
   type IncludeClause,
+  type InferInsert,
   type InferLiveObject,
+  type InferUpdate,
   inferValue,
   type LiveObjectAny,
-  type LiveObjectMutationInput,
   type MaterializedLiveType,
   type Schema,
   type WhereClause,
@@ -55,14 +56,14 @@ export abstract class Storage {
 
   public async insert<T extends LiveObjectAny>(
     resource: T,
-    value: Simplify<LiveObjectMutationInput<T>>
+    value: Simplify<InferInsert<T>>
   ): Promise<InferLiveObject<T>> {
     const now = new Date().toISOString();
 
     return inferValue(
       await this.rawUpsert(
         resource.name,
-        value.id as string,
+        (value as any).id as string,
         {
           value: Object.fromEntries(
             Object.entries(value).map(([k, v]) => [
@@ -83,12 +84,12 @@ export abstract class Storage {
   public async update<T extends LiveObjectAny>(
     resource: T,
     resourceId: string,
-    value: LiveObjectMutationInput<T>
+    value: InferUpdate<T>
   ): Promise<InferLiveObject<T>> {
     const now = new Date().toISOString();
 
     // biome-ignore lint/correctness/noUnusedVariables: id is ignored on purpose
-    const { id, ...rest } = value;
+    const { id, ...rest } = value as any;
 
     return inferValue(
       await this.rawUpsert(resource.name, resourceId, {
