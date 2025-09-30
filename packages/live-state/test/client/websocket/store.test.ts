@@ -570,6 +570,7 @@ describe("OptimisticStore", () => {
       resource: "users",
       resourceId: "user1",
       payload: data.user1,
+      procedure: "INSERT",
     });
     expect(addMutationSpy).toHaveBeenCalledWith("users", {
       id: "user2",
@@ -577,6 +578,7 @@ describe("OptimisticStore", () => {
       resource: "users",
       resourceId: "user2",
       payload: data.user2,
+      procedure: "INSERT",
     });
   });
 

@@ -3,6 +3,7 @@ import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import {
   type ClientMessage,
   type clQueryMsgSchema,
+  type DefaultMutationMessage,
   type MutationMessage,
   type ServerMessage,
   serverMessageSchema,
@@ -127,7 +128,10 @@ class InnerClient implements QueryExecutor {
         const { resource } = parsedMessage;
 
         try {
-          this.store.addMutation(resource, parsedMessage);
+          this.store.addMutation(
+            resource,
+            parsedMessage as DefaultMutationMessage
+          );
         } catch (e) {
           console.error("Error merging mutation from the server:", e);
         }
@@ -188,11 +192,12 @@ class InnerClient implements QueryExecutor {
   public mutate(
     routeName: string,
     resourceId: string,
+    procedure: "INSERT" | "UPDATE",
     payload: Partial<
       Omit<Simplify<LiveObjectMutationInput<LiveObjectAny>>["value"], "id">
     >
   ) {
-    const mutationMessage: MutationMessage = {
+    const mutationMessage: DefaultMutationMessage = {
       id: generateId(),
       type: "MUTATE",
       resource: routeName,
@@ -202,6 +207,7 @@ class InnerClient implements QueryExecutor {
         new Date().toISOString()
       ),
       resourceId,
+      procedure,
     };
 
     this.store?.addMutation(routeName, mutationMessage, true);
@@ -316,12 +322,12 @@ export const createClient = <TRouter extends AnyRouter>(
 
           if (method === "insert") {
             const { id, ...input } = argumentsList[0];
-            return ogClient.mutate(route, id, input);
+            return ogClient.mutate(route, id, "INSERT", input);
           }
 
           if (method === "update") {
             const [id, input] = argumentsList;
-            return ogClient.mutate(route, id, input);
+            return ogClient.mutate(route, id, "UPDATE", input);
           }
 
           return ogClient.genericMutate(route, method, argumentsList[0]);

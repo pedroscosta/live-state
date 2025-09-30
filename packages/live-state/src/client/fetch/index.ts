@@ -2,6 +2,7 @@ import { stringify } from "qs";
 import { consumeGeneratable } from "../../core/utils";
 import {
   type IncludeClause,
+  type InferInsert,
   type InferLiveObject,
   type InferUpdate,
   inferValue,
@@ -32,7 +33,11 @@ type FetchClient<TRouter extends AnyRouter> = {
         Simplify<InferLiveObject<TRouter["routes"][K]["_resourceSchema"]>>
       >
     >;
-    upsert: (
+    insert: (
+      input: Simplify<InferInsert<TRouter["routes"][K]["_resourceSchema"]>>
+    ) => Promise<void>;
+    update: (
+      id: string,
       input: Simplify<InferUpdate<TRouter["routes"][K]["_resourceSchema"]>>
     ) => Promise<void>;
   };
@@ -79,9 +84,29 @@ export const createClient = <TRouter extends AnyRouter>(
         );
       }
 
-      if (method === "upsert") {
+      if (method === "insert") {
         const { id, ...rest } = argumentsList[0];
-        return fetch(`${opts.url}/${resource}/set`, {
+        return fetch(`${opts.url}/${resource}/insert`, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            resourceId: id,
+            payload: opts.schema[resource].encodeMutation(
+              "set",
+              rest as LiveObjectMutationInput<LiveObjectAny>,
+              new Date().toISOString()
+            ),
+          }),
+        });
+      }
+
+      if (method === "update") {
+        const id = argumentsList[0];
+        const { id: _id, ...rest } = argumentsList[1];
+        return fetch(`${opts.url}/${resource}/update`, {
           method: "POST",
           headers: {
             ...headers,

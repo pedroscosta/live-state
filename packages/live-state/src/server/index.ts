@@ -1,4 +1,4 @@
-import type { RawMutationRequest } from "../core/schemas/core-protocol";
+import type { DefaultMutation } from "../core/schemas/core-protocol";
 import type { Schema } from "../schema";
 import type { AnyRouter } from "./router";
 import type { Storage } from "./storage";
@@ -29,7 +29,7 @@ export type ContextProvider = (
 
 export type RequestType = ParsedRequest["type"];
 
-export type MutationHandler = (mutation: RawMutationRequest) => void;
+export type MutationHandler = (mutation: DefaultMutation) => void;
 
 export type NextFunction<T> = (req: ParsedRequest) => Promise<T> | T;
 
@@ -105,7 +105,8 @@ export class Server<TRouter extends AnyRouter> {
       result &&
       opts.req.type === "MUTATE" &&
       result.acceptedValues &&
-      Object.keys(result.acceptedValues).length > 0
+      Object.keys(result.acceptedValues).length > 0 &&
+      (opts.req.procedure === "INSERT" || opts.req.procedure === "UPDATE")
     ) {
       // TODO refactor this to be called by the storage instead of the server
       this.mutationSubscriptions.forEach((handler) => {
@@ -115,6 +116,7 @@ export class Server<TRouter extends AnyRouter> {
           resource: opts.req.resourceName,
           payload: result.acceptedValues ?? {},
           resourceId: opts.req.resourceId!,
+          procedure: opts.req.procedure as "INSERT" | "UPDATE",
         });
       });
     }

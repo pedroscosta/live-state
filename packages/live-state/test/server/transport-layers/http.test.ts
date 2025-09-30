@@ -119,7 +119,7 @@ describe("httpTransportLayer", () => {
     });
   });
 
-  test("should handle POST request with set mutation", async () => {
+  test("should handle POST request for insert mutation", async () => {
     const requestBody = {
       resourceId: "user1",
       payload: {
@@ -132,7 +132,7 @@ describe("httpTransportLayer", () => {
       },
     };
 
-    const request = new Request("http://localhost/users/set", {
+    const request = new Request("http://localhost/users/insert", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -165,7 +165,7 @@ describe("httpTransportLayer", () => {
           },
         },
         resourceId: "user1",
-        procedure: undefined,
+        procedure: "INSERT",
       }),
     });
   });
@@ -208,7 +208,7 @@ describe("httpTransportLayer", () => {
       payload: { name: "John" },
     };
 
-    const request = new Request("http://localhost/users/set", {
+    const request = new Request("http://localhost/users/insert", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -326,7 +326,7 @@ describe("httpTransportLayer", () => {
   });
 
   test("should handle POST request without body", async () => {
-    const request = new Request("http://localhost/users/set", {
+    const request = new Request("http://localhost/users/insert", {
       method: "POST",
       headers: {
         "content-type": "application/json",

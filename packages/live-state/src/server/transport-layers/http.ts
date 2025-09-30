@@ -1,13 +1,13 @@
 import cookie from "cookie";
 import qs from "qs";
-import type { AnyRouter, Server } from "..";
 import type { DefaultMutation } from "../../core/schemas/core-protocol";
 import {
+  type HttpMutation,
   httpDefaultMutationSchema,
   httpGenericMutationSchema,
-  type HttpMutation,
   httpQuerySchema,
 } from "../../core/schemas/http";
+import type { AnyRouter, Server } from "..";
 
 export const httpTransportLayer = (
   server: Server<AnyRouter>
@@ -95,7 +95,7 @@ export const httpTransportLayer = (
 
           let body: HttpMutation;
 
-          if (procedure === "set") {
+          if (procedure === "insert" || procedure === "update") {
             const { success, data, error } =
               httpDefaultMutationSchema.safeParse(rawBody);
             if (!success) {
@@ -133,7 +133,10 @@ export const httpTransportLayer = (
               input: body.payload,
               context: initialContext,
               resourceId: (body as DefaultMutation).resourceId,
-              procedure: procedure !== "set" ? procedure : undefined,
+              procedure:
+                procedure === "insert" || procedure === "update"
+                  ? procedure.toUpperCase()
+                  : procedure,
               query: {},
             },
           });

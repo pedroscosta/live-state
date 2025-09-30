@@ -142,7 +142,11 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               },
             });
 
-            if ((parsedMessage as GenericMutation).procedure) {
+            if (
+              (parsedMessage as GenericMutation).procedure &&
+              (parsedMessage as GenericMutation).procedure !== "INSERT" &&
+              (parsedMessage as GenericMutation).procedure !== "UPDATE"
+            ) {
               reply({
                 id: parsedMessage.id,
                 type: "REPLY",
