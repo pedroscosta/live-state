@@ -27,7 +27,12 @@ export const defaultMutationMsgSchema = defaultMutationSchema.extend({
   id: msgId,
 });
 
-export type DefaultMutationMessage = z.infer<typeof defaultMutationMsgSchema>;
+export type DefaultMutationMessage = Omit<
+  z.infer<typeof defaultMutationMsgSchema>,
+  "resourceId"
+> & {
+  resourceId: string;
+};
 
 export const genericMutationMsgSchema = genericMutationSchema.extend({
   id: msgId,

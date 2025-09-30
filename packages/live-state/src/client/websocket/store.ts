@@ -3,7 +3,6 @@ import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import type { DefaultMutationMessage } from "../../core/schemas/web-socket";
 import {
   type IncludeClause,
-  type InferLiveType,
   inferValue,
   type LiveObjectAny,
   type LiveString,
@@ -15,7 +14,7 @@ import {
 import { hash } from "../../utils";
 import type { ClientOptions } from "..";
 import { applyWhere, filterWithLimit } from "../utils";
-import { type GraphNode, ObjectGraph } from "./obj-graph";
+import { ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 
 type RawObjPool = Record<
@@ -309,6 +308,7 @@ export class OptimisticStore {
         type: "MUTATE",
         resource: resourceType,
         resourceId: id,
+        procedure: "INSERT", // this is not used by the store, but it's required by the schema
         payload,
       });
     });
