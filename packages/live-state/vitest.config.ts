@@ -14,5 +14,10 @@ export default defineConfig({
         "src/index.ts",
       ],
     },
+    typecheck: {
+      enabled: true,
+      tsconfig: "./test/tsconfig.json",
+      include: ["src/**/*.test-d.ts"],
+    },
   },
 });

@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { Promisify } from "../core/utils";
-import type { LiveObjectMutationInput } from "../schema";
+import type { InferInsert, InferUpdate } from "../schema";
 import type { AnyRouter } from "../server";
 import type { Simplify } from "../utils";
 import type { QueryBuilder } from "./query";
@@ -14,18 +14,11 @@ export type Client<TRouter extends AnyRouter> = {
   mutate: {
     [K in keyof TRouter["routes"]]: {
       insert: (
-        input: Simplify<
-          LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
-        >
+        input: Simplify<InferInsert<TRouter["routes"][K]["_resourceSchema"]>>
       ) => void;
       update: (
         id: string,
-        value: Omit<
-          Simplify<
-            LiveObjectMutationInput<TRouter["routes"][K]["_resourceSchema"]>
-          >,
-          "id"
-        >
+        value: Simplify<InferUpdate<TRouter["routes"][K]["_resourceSchema"]>>
       ) => void;
     } & {
       [K2 in keyof TRouter["routes"][K]["customMutations"]]: (
