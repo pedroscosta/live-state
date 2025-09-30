@@ -128,7 +128,10 @@ class InnerClient implements QueryExecutor {
         const { resource } = parsedMessage;
 
         try {
-          this.store.addMutation(resource, parsedMessage);
+          this.store.addMutation(
+            resource,
+            parsedMessage as DefaultMutationMessage
+          );
         } catch (e) {
           console.error("Error merging mutation from the server:", e);
         }
