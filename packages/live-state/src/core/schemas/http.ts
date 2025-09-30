@@ -20,6 +20,7 @@ export const httpDefaultMutationSchema = defaultMutationSchema.omit({
   id: true,
   type: true,
   resource: true,
+  procedure: true,
 });
 
 export const httpMutationSchema = z.union([

@@ -205,6 +205,7 @@ describe("webSocketAdapter", () => {
         },
       },
       id: "msg-1",
+      procedure: "INSERT",
     };
 
     (mockServer.handleRequest as Mock).mockResolvedValue({
@@ -225,7 +226,7 @@ describe("webSocketAdapter", () => {
           },
         },
         resourceId: "user1",
-        procedure: undefined,
+        procedure: "INSERT",
         context: expect.objectContaining({
           messageId: "msg-1",
         }),
@@ -293,6 +294,7 @@ describe("webSocketAdapter", () => {
         },
       },
       id: "msg-1",
+      procedure: "INSERT",
     };
 
     (mockServer.handleRequest as Mock).mockRejectedValue(

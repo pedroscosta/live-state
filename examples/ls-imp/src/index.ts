@@ -45,7 +45,7 @@ export const routerImpl = router({
         customInsert: mutation(z.string()).handler(async ({ req, db }) => {
           return db.insert(schema.groups, {
             id: generateId(),
-            name: req.input,
+            name: req.input!,
           });
         }),
         customUpdate: mutation(z.string()).handler(async ({ req, db }) => {
@@ -72,7 +72,16 @@ export const routerImpl = router({
           });
         }),
       })),
-    cards: publicRoute.collectionRoute(schema.cards),
+    cards: publicRoute.collectionRoute(schema.cards, {
+      // read: (ctx) => {
+      //   console.log("Auth context", ctx);
+      //   return {
+      //     counter: {
+      //       $gte: 1,
+      //     },
+      //   };
+      // },
+    }),
   },
 });
 

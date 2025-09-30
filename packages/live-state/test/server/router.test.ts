@@ -29,7 +29,7 @@ describe("Router", () => {
   });
 
   test("should create router with router helper function", () => {
-    const mockSchema = { users: {} } as Schema<any>;
+    const mockSchema = { users: {} as unknown } as Schema<any>;
     const routes = { users: {} as any };
 
     const routerInstance = router({ schema: mockSchema, routes });
@@ -48,7 +48,8 @@ describe("Route", () => {
     mockStorage = {
       rawFind: vi.fn().mockResolvedValue({}),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawUpsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
     } as unknown as Storage;
 
     mockResource = {
@@ -162,6 +163,7 @@ describe("Route", () => {
       resourceName: "users",
       resourceId: "user1",
       input: { name: "John" },
+      procedure: "UPDATE",
       headers: {},
       cookies: {},
       query: {},
@@ -172,7 +174,7 @@ describe("Route", () => {
     const mockNewData = { value: { name: { value: "John" } } };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
 
     const result = await route.handleRequest({
       req: mockRequest,
@@ -186,7 +188,7 @@ describe("Route", () => {
       { name: "John" },
       mockExistingData
     );
-    expect(mockStorage.rawUpsert).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -199,6 +201,7 @@ describe("Route", () => {
       type: "MUTATE",
       resourceName: "users",
       resourceId: "user1",
+      procedure: "INSERT",
       headers: {},
       cookies: {},
       query: {},
@@ -220,6 +223,7 @@ describe("Route", () => {
       type: "MUTATE",
       resourceName: "users",
       input: { name: "John" },
+      procedure: "INSERT",
       headers: {},
       cookies: {},
       query: {},
@@ -246,6 +250,7 @@ describe("Route", () => {
       cookies: {},
       query: {},
       context: {},
+      procedure: "INSERT",
     };
 
     (mockResource.mergeMutation as Mock).mockReturnValue([{}, null]);
@@ -450,5 +455,649 @@ describe("RouteFactory", () => {
     const factory = routeFactory();
 
     expect(factory).toBeInstanceOf(RouteFactory);
+  });
+
+  test("should create route with authorization", () => {
+    const factory = RouteFactory.create();
+    const mockShape = { name: "users" } as LiveObjectAny;
+    const mockAuth = {
+      read: vi.fn().mockReturnValue({ userId: "123" }),
+    };
+
+    const route = factory.collectionRoute(mockShape, mockAuth);
+
+    expect(route).toBeInstanceOf(Route);
+    expect(route.resourceName).toBe("users");
+    expect(route.authorization).toBe(mockAuth);
+  });
+});
+
+describe("Route Authorization", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should apply authorization to QUERY requests", async () => {
+    const authHandler = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(authHandler).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      { userId: "123" },
+      undefined
+    );
+  });
+
+  test("should merge authorization with existing where clause", async () => {
+    const authHandler = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      where: { active: true },
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      { $and: [{ active: true }, { userId: "123" }] },
+      undefined
+    );
+  });
+
+  test("should handle QUERY without authorization", async () => {
+    const route = new Route("users");
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      where: { active: true },
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      { active: true },
+      undefined
+    );
+  });
+});
+
+describe("Route INSERT/UPDATE Edge Cases", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should throw error when INSERT on existing resource", async () => {
+    const route = new Route("users");
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Resource already exists");
+  });
+
+  test("should throw error when UPDATE on non-existing resource", async () => {
+    const route = new Route("users");
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Resource not found");
+  });
+
+  test("should handle successful INSERT", async () => {
+    const route = new Route("users");
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const mockNewData = { value: { name: { value: "John" } } };
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
+    expect(mockResource.mergeMutation).toHaveBeenCalledWith(
+      "set",
+      { name: "John" },
+      undefined
+    );
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {});
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should handle successful UPDATE", async () => {
+    const route = new Route("users");
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    const mockNewData = { value: { name: { value: "John" } } };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
+    expect(mockResource.mergeMutation).toHaveBeenCalledWith(
+      "set",
+      { name: "John" },
+      mockExistingData
+    );
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+});
+
+describe("Route Error Handling", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should throw error when MUTATE request missing procedure", async () => {
+    const route = new Route("users");
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Procedure is required for mutations");
+  });
+
+  test("should throw error for unknown procedure", async () => {
+    const route = new Route("users");
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UNKNOWN_PROCEDURE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Invalid request");
+  });
+
+  test("should handle middleware errors", async () => {
+    const route = new Route("users");
+    const errorMiddleware = vi.fn(() => {
+      throw new Error("Middleware error");
+    });
+
+    route.use(errorMiddleware);
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Middleware error");
+  });
+
+  test("should handle async middleware", async () => {
+    const route = new Route("users");
+    const executionOrder: string[] = [];
+
+    const asyncMiddleware = vi.fn(async ({ next, req }) => {
+      executionOrder.push("async-middleware-start");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const result = await next(req);
+      executionOrder.push("async-middleware-end");
+      return result;
+    });
+
+    route.use(asyncMiddleware);
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(executionOrder).toEqual([
+      "async-middleware-start",
+      "async-middleware-end",
+    ]);
+    expect(asyncMiddleware).toHaveBeenCalled();
+  });
+
+  test("should handle middleware that modifies request", async () => {
+    const route = new Route("users");
+
+    const modifyingMiddleware = vi.fn(({ next, req }) => {
+      const modifiedReq = {
+        ...req,
+        context: { ...req.context, modified: true },
+      };
+      return next(modifiedReq);
+    });
+
+    route.use(modifyingMiddleware);
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(modifyingMiddleware).toHaveBeenCalled();
+    expect(mockStorage.rawFind).toHaveBeenCalled();
+  });
+});
+
+describe("Route Custom Mutations Advanced", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should handle custom mutation with no input validator", async () => {
+    const customHandler = vi.fn().mockResolvedValue({ success: true });
+    const customMutations = {
+      noInputAction: {
+        inputValidator: z.undefined(),
+        handler: customHandler,
+      },
+    };
+
+    const route = new Route("users", customMutations);
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      procedure: "noInputAction",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(customHandler).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        input: undefined,
+      }),
+      db: mockStorage,
+      schema: mockSchema,
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  test("should handle custom mutation that throws error", async () => {
+    const customHandler = vi.fn().mockRejectedValue(new Error("Custom error"));
+    const customMutations = {
+      errorAction: {
+        inputValidator: z.object({}),
+        handler: customHandler,
+      },
+    };
+
+    const route = new Route("users", customMutations);
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      procedure: "errorAction",
+      input: {},
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Custom error");
+  });
+
+  test("should handle custom mutation with complex validation", async () => {
+    const customHandler = vi.fn().mockResolvedValue({ result: "processed" });
+    const customMutations = {
+      complexAction: {
+        inputValidator: z.object({
+          name: z.string().min(3),
+          email: z.string().email(),
+          age: z.number().min(18),
+        }),
+        handler: customHandler,
+      },
+    };
+
+    const route = new Route("users", customMutations);
+    const validInput = {
+      name: "John Doe",
+      email: "john@example.com",
+      age: 25,
+    };
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      procedure: "complexAction",
+      input: validInput,
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(customHandler).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        input: validInput,
+      }),
+      db: mockStorage,
+      schema: mockSchema,
+    });
+    expect(result).toEqual({ result: "processed" });
+  });
+
+  test("should reject invalid complex validation", async () => {
+    const customHandler = vi.fn();
+    const customMutations = {
+      complexAction: {
+        inputValidator: z.object({
+          name: z.string().min(3),
+          email: z.string().email(),
+          age: z.number().min(18),
+        }),
+        handler: customHandler,
+      },
+    };
+
+    const route = new Route("users", customMutations);
+    const invalidInput = {
+      name: "Jo", // Too short
+      email: "invalid-email", // Invalid email
+      age: 16, // Too young
+    };
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      procedure: "complexAction",
+      input: invalidInput,
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow();
+
+    expect(customHandler).not.toHaveBeenCalled();
+  });
+
+  test("should handle withMutations with multiple mutations", () => {
+    const route = new Route("users");
+
+    const newRoute = route.withMutations(({ mutation }) => ({
+      action1: mutation(z.object({ data: z.string() })).handler(async () => ({
+        success: true,
+      })),
+      action2: mutation(z.object({ value: z.number() })).handler(async () => ({
+        count: 1,
+      })),
+      action3: mutation().handler(async () => ({ empty: true })),
+    }));
+
+    expect(newRoute.customMutations.action1).toBeDefined();
+    expect(newRoute.customMutations.action2).toBeDefined();
+    expect(newRoute.customMutations.action3).toBeDefined();
+    expect(Object.keys(newRoute.customMutations)).toHaveLength(3);
   });
 });

@@ -267,6 +267,7 @@ describe("Server", () => {
       type: "MUTATE",
       resourceName: "users",
       resourceId: "user1",
+      procedure: "INSERT",
       context: { messageId: "msg123" },
       headers: {},
       cookies: {},
@@ -281,6 +282,7 @@ describe("Server", () => {
       resource: "users",
       payload: { name: "John" },
       resourceId: "user1",
+      procedure: "INSERT",
     });
     expect(handler2).toHaveBeenCalledWith({
       id: "msg123",
@@ -288,6 +290,7 @@ describe("Server", () => {
       resource: "users",
       payload: { name: "John" },
       resourceId: "user1",
+      procedure: "INSERT",
     });
   });
 
