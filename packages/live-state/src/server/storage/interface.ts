@@ -48,7 +48,14 @@ export abstract class Storage {
   ): Promise<Record<string, InferLiveObject<T>>>;
 
   /** @internal */
-  public abstract rawUpsert<T extends LiveObjectAny>(
+  public abstract rawInsert<T extends LiveObjectAny>(
+    resourceName: string,
+    resourceId: string,
+    value: MaterializedLiveType<T>
+  ): Promise<MaterializedLiveType<T>>;
+
+  /** @internal */
+  public abstract rawUpdate<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>
@@ -61,7 +68,7 @@ export abstract class Storage {
     const now = new Date().toISOString();
 
     return inferValue(
-      await this.rawUpsert(
+      await this.rawInsert(
         resource.name,
         (value as any).id as string,
         {
@@ -92,7 +99,7 @@ export abstract class Storage {
     const { id, ...rest } = value as any;
 
     return inferValue(
-      await this.rawUpsert(resource.name, resourceId, {
+      await this.rawUpdate(resource.name, resourceId, {
         value: Object.fromEntries(
           Object.entries(rest).map(([k, v]) => [
             k,

@@ -33,13 +33,31 @@ export function Board(): JSX.Element {
         <Button
           className="w-sm"
           onClick={() => {
-            client.groups.upsert({
+            client.groups.insert({
               id: ulid().toLowerCase(),
               name: `New Group ${Object.keys(groups ?? {}).length + 1} (fetch)`,
             });
           }}
         >
           Add Group (fetch)
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            client.groups.get().then((res) => {
+              const group = Object.entries(res)[0];
+
+              if (!group) {
+                return;
+              }
+
+              client.groups.update(group[0], {
+                name: `Updated Group ${Math.random().toString(36).substring(2, 15)} (fetch)`,
+              });
+            });
+          }}
+        >
+          Update Group (fetch)
         </Button>
         <Button
           className="w-sm"

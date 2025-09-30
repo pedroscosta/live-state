@@ -35,6 +35,7 @@ const baseMutationSchema = z.object({
   id: z.string().optional(),
   type: z.literal("MUTATE"),
   resource: z.string(),
+  resourceId: z.string().optional(),
 });
 
 export const genericMutationSchema = baseMutationSchema.extend({
@@ -45,15 +46,20 @@ export const genericMutationSchema = baseMutationSchema.extend({
 export type GenericMutation = z.infer<typeof genericMutationSchema>;
 
 export const defaultMutationSchema = baseMutationSchema.extend({
-  resourceId: z.string(),
+  procedure: z.enum(["INSERT", "UPDATE"]),
   payload: defaultPayloadSchema,
 });
 
-export type DefaultMutation = z.infer<typeof defaultMutationSchema>;
+export type DefaultMutation = Omit<
+  z.infer<typeof defaultMutationSchema>,
+  "resourceId"
+> & {
+  resourceId: string;
+};
 
 export const mutationSchema = z.union([
-  genericMutationSchema,
   defaultMutationSchema,
+  genericMutationSchema,
 ]);
 
 export type RawMutationRequest = z.infer<typeof mutationSchema>;

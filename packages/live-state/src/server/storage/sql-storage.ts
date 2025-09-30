@@ -46,6 +46,9 @@ export class SQLStorage extends Storage {
     }
 
     this.schema = schema;
+
+    this.rawInsert = this.rawInsert.bind(this);
+    this.rawUpdate = this.rawUpdate.bind(this);
   }
 
   /** @internal */
@@ -266,17 +269,11 @@ export class SQLStorage extends Storage {
   }
 
   /** @internal */
-  public async rawUpsert<T extends LiveObjectAny>(
+  public async rawInsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>
   ): Promise<MaterializedLiveType<T>> {
-    const exists = !!(await this.db
-      .selectFrom(resourceName)
-      .select("id")
-      .where("id", "=", resourceId)
-      .executeTakeFirst());
-
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
 
@@ -287,31 +284,48 @@ export class SQLStorage extends Storage {
       metaValues[key] = metaVal;
     }
 
-    if (exists) {
-      await Promise.all([
-        this.db
-          .updateTable(resourceName)
-          .set(values)
-          .where("id", "=", resourceId)
-          .execute(),
-        this.db
-          .updateTable(`${resourceName}_meta`)
-          .set(metaValues)
-          .where("id", "=", resourceId)
-          .execute(),
-      ]);
-    } else {
-      await Promise.all([
-        this.db
-          .insertInto(resourceName)
-          .values({ ...values, id: resourceId })
-          .execute(),
+    await this.db
+      .insertInto(resourceName)
+      .values({ ...values, id: resourceId })
+      .execute()
+      .then(() => {
         this.db
           .insertInto(`${resourceName}_meta`)
           .values({ ...metaValues, id: resourceId })
-          .execute(),
-      ]);
+          .execute();
+      });
+
+    return value;
+  }
+
+  /** @internal */
+  public async rawUpdate<T extends LiveObjectAny>(
+    resourceName: string,
+    resourceId: string,
+    value: MaterializedLiveType<T>
+  ): Promise<MaterializedLiveType<T>> {
+    const values: Record<string, any> = {};
+    const metaValues: Record<string, string> = {};
+
+    for (const [key, val] of Object.entries(value.value)) {
+      const metaVal = val._meta?.timestamp;
+      if (!metaVal) continue;
+      values[key] = val.value;
+      metaValues[key] = metaVal;
     }
+
+    await Promise.all([
+      this.db
+        .updateTable(resourceName)
+        .set(values)
+        .where("id", "=", resourceId)
+        .execute(),
+      this.db
+        .updateTable(`${resourceName}_meta`)
+        .set(metaValues)
+        .where("id", "=", resourceId)
+        .execute(),
+    ]);
 
     return value;
   }

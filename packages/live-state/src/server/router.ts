@@ -128,25 +128,28 @@ export class Route<
             schema: opts.schema,
           });
         } else if (req.type === "MUTATE") {
-          if (!req.procedure) {
+          if (!req.procedure)
+            throw new Error("Procedure is required for mutations");
+          const customProcedure = this.customMutations[req.procedure];
+
+          if (customProcedure) {
+            const validInput = customProcedure.inputValidator.parse(req.input);
+
+            req.input = validInput;
+
+            return customProcedure.handler({
+              req,
+              db: opts.db,
+              schema: opts.schema,
+            });
+          } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
             return this.handleSet({
               req: req as ParsedRequest<
                 LiveObjectMutationInput<TResourceSchema>
               >,
               db: opts.db,
               schema: opts.schema,
-            });
-          } else if (this.customMutations[req.procedure]) {
-            const validInput = this.customMutations[
-              req.procedure
-            ].inputValidator.parse(req.input);
-
-            req.input = validInput;
-
-            return this.customMutations[req.procedure].handler({
-              req,
-              db: opts.db,
-              schema: opts.schema,
+              operation: req.procedure,
             });
           }
         }
@@ -194,10 +197,17 @@ export class Route<
       };
     };
 
-  private handleSet: RequestHandler<
-    LiveObjectMutationInput<TResourceSchema>,
-    MutationResult<TResourceSchema>
-  > = async ({ req, db, schema }) => {
+  private handleSet = async ({
+    req,
+    db,
+    schema,
+    operation,
+  }: {
+    req: ParsedRequest<LiveObjectMutationInput<TResourceSchema>>;
+    db: Storage;
+    schema: Schema<any>;
+    operation: "INSERT" | "UPDATE";
+  }): Promise<MutationResult<TResourceSchema>> => {
     if (!req.input) throw new Error("Payload is required");
     if (!req.resourceId) throw new Error("ResourceId is required");
 
@@ -206,7 +216,11 @@ export class Route<
       req.resourceId
     );
 
-    // TODO Handle where clause in the stored data, in the payload and in the final result
+    if (operation === "INSERT" && target) {
+      throw new Error("Resource already exists");
+    } else if (operation === "UPDATE" && !target) {
+      throw new Error("Resource not found");
+    }
 
     const [newRecord, acceptedValues] = schema[this.resourceName].mergeMutation(
       "set",
@@ -218,8 +232,19 @@ export class Route<
       throw new Error("Mutation rejected");
     }
 
+    if (operation === "INSERT") {
+      return {
+        data: await db.rawInsert<TResourceSchema>(
+          req.resourceName,
+          req.resourceId,
+          newRecord
+        ),
+        acceptedValues,
+      };
+    }
+
     return {
-      data: await db.rawUpsert<TResourceSchema>(
+      data: await db.rawUpdate<TResourceSchema>(
         req.resourceName,
         req.resourceId,
         newRecord
