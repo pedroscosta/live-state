@@ -594,6 +594,422 @@ describe("Route Authorization", () => {
   });
 });
 
+describe("Route UPDATE Authorization", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should pass pre-mutation authorization for UPDATE operations", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, {
+      update: { preMutation: preMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data that matches the authorization check
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } }, // This will be used for pre-mutation authorization
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
+      value: { userId: { value: "123" } },
+    });
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should fail pre-mutation authorization for UPDATE operations", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
+    const route = new Route("users", undefined, {
+      update: { preMutation: preMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data that will fail authorization
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } }, // This will be checked against the auth requirement of userId: "456"
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+
+    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawUpdate).not.toHaveBeenCalled();
+  });
+
+  test("should pass post-mutation authorization for UPDATE operations", async () => {
+    const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, {
+      update: { postMutation: postMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should fail post-mutation authorization for UPDATE operations", async () => {
+    const postMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
+    const route = new Route("users", undefined, {
+      update: { postMutation: postMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+
+    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+  });
+
+  test("should work with both pre and post mutation authorization", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, {
+      update: {
+        preMutation: preMutationAuth,
+        postMutation: postMutationAuth,
+      },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data that matches the authorization check
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } }, // This will be used for pre-mutation authorization
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
+      value: { userId: { value: "123" } },
+    });
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should fail when pre-mutation passes but post-mutation fails", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const postMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
+    const route = new Route("users", undefined, {
+      update: {
+        preMutation: preMutationAuth,
+        postMutation: postMutationAuth,
+      },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data that matches the pre-mutation authorization
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } }, // This will pass pre-mutation authorization
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+
+    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
+      value: { userId: { value: "123" } },
+    });
+  });
+
+  test("should handle UPDATE operations without authorization", async () => {
+    const route = new Route("users");
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    const mockNewData = { value: { name: { value: "John" } } };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should handle complex authorization where clauses", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue({
+      $and: [{ userId: "123" }, { role: "admin" }],
+    });
+    const route = new Route("users", undefined, {
+      update: { preMutation: preMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123", role: "admin" },
+    };
+
+    const mockExistingData = {
+      value: {
+        id: { value: "user1" },
+        userId: { value: "123" },
+        role: { value: "admin" },
+      },
+    };
+    const mockNewData = {
+      value: {
+        name: { value: "John" },
+        userId: { value: "123" },
+        role: { value: "admin" },
+      },
+    };
+
+    // Reset and mock mergeMutation to return data that matches the complex authorization check
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" }, role: { value: "admin" } } }, // This will match the $and clause
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      userId: "123",
+      role: "admin",
+    });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
+      value: { userId: { value: "123" }, role: { value: "admin" } },
+    });
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+});
+
 describe("Route INSERT/UPDATE Edge Cases", () => {
   let mockStorage: Storage;
   let mockSchema: Schema<any>;

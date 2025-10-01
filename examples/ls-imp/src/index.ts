@@ -88,6 +88,18 @@ export const routerImpl = router({
       //     },
       //   };
       // },
+      // update: {
+      //   preMutation: (ctx) => {
+      //     return {
+      //       counter: { $gte: 0 },
+      //     };
+      //   },
+      //   postMutation: (ctx) => {
+      //     return {
+      //       counter: { $gte: 2 },
+      //     };
+      //   },
+      // },
     }),
   },
 });

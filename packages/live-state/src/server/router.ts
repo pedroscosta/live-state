@@ -91,6 +91,10 @@ export type AuthorizationHandler<TShape extends LiveObjectAny> = (
 export type Authorization<TShape extends LiveObjectAny> = {
   read?: AuthorizationHandler<TShape>;
   insert?: AuthorizationHandler<TShape>;
+  update?: {
+    preMutation?: AuthorizationHandler<TShape>;
+    postMutation?: AuthorizationHandler<TShape>;
+  };
 };
 
 export class Route<
@@ -265,12 +269,40 @@ export class Route<
         };
       }
 
+      if (this.authorization?.update?.preMutation) {
+        const authorizationWhereClause = this.authorization.update.preMutation(
+          req.context
+        );
+        const authorized = applyWhere(
+          inferValue(newRecord) as Record<string, any>,
+          authorizationWhereClause
+        );
+        if (!authorized) {
+          throw new Error("Not authorized");
+        }
+      }
+
+      const result = await trx.rawUpdate<TResourceSchema>(
+        req.resourceName,
+        req.resourceId!,
+        newRecord
+      );
+
+      if (this.authorization?.update?.postMutation) {
+        const authorizationWhereClause = this.authorization.update.postMutation(
+          req.context
+        );
+        const authorized = applyWhere(
+          inferValue(result) as Record<string, any>,
+          authorizationWhereClause
+        );
+        if (!authorized) {
+          throw new Error("Not authorized");
+        }
+      }
+
       return {
-        data: await trx.rawUpdate<TResourceSchema>(
-          req.resourceName,
-          req.resourceId!,
-          newRecord
-        ),
+        data: result,
         acceptedValues,
       };
     });
