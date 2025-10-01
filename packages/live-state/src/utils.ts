@@ -83,7 +83,7 @@ export const applyWhere = <T extends object>(
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
         return false;
 
-      return applyWhere(obj[k as keyof T] as object, v);
+      return applyWhere(obj[k as keyof T] as object, v, not);
     }
 
     return not
