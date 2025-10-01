@@ -81,6 +81,13 @@ export const routerImpl = router({
       //     },
       //   };
       // },
+      // insert: (ctx) => {
+      //   return {
+      //     counter: {
+      //       $gte: 1,
+      //     },
+      //   };
+      // },
     }),
   },
 });

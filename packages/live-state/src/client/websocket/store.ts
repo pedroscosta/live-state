@@ -11,9 +11,9 @@ import {
   type Schema,
   type WhereClause,
 } from "../../schema";
-import { hash } from "../../utils";
+import { applyWhere, hash } from "../../utils";
 import type { ClientOptions } from "..";
-import { applyWhere, filterWithLimit } from "../utils";
+import { filterWithLimit } from "../utils";
 import { ObjectGraph } from "./obj-graph";
 import { KVStorage } from "./storage";
 

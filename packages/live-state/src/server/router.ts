@@ -1,17 +1,20 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
+/** biome-ignore-all lint/style/noNonNullAssertion: false positive */
 
 import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
 
-import type {
-  LiveObjectAny,
-  LiveObjectMutationInput,
-  LiveTypeAny,
-  MaterializedLiveType,
-  Schema,
-  WhereClause,
+import {
+  inferValue,
+  type LiveObjectAny,
+  type LiveObjectMutationInput,
+  type LiveTypeAny,
+  type MaterializedLiveType,
+  type Schema,
+  type WhereClause,
 } from "../schema";
+import { applyWhere } from "../utils";
 import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
 
 export type RouteRecord = Record<string, AnyRoute>;
@@ -87,6 +90,7 @@ export type AuthorizationHandler<TShape extends LiveObjectAny> = (
 
 export type Authorization<TShape extends LiveObjectAny> = {
   read?: AuthorizationHandler<TShape>;
+  insert?: AuthorizationHandler<TShape>;
 };
 
 export class Route<
@@ -222,35 +226,54 @@ export class Route<
       throw new Error("Resource not found");
     }
 
-    const [newRecord, acceptedValues] = schema[this.resourceName].mergeMutation(
-      "set",
-      req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
-      target
-    );
+    return db.transaction(async ({ trx }) => {
+      const [newRecord, acceptedValues] = schema[
+        this.resourceName
+      ].mergeMutation(
+        "set",
+        req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
+        target
+      );
 
-    if (!acceptedValues) {
-      throw new Error("Mutation rejected");
-    }
+      if (!acceptedValues) {
+        throw new Error("Mutation rejected");
+      }
 
-    if (operation === "INSERT") {
-      return {
-        data: await db.rawInsert<TResourceSchema>(
+      if (operation === "INSERT") {
+        const result = await trx.rawInsert<TResourceSchema>(
           req.resourceName,
-          req.resourceId,
+          req.resourceId!,
+          newRecord
+        );
+
+        if (this.authorization?.insert) {
+          const authorizationWhereClause = this.authorization.insert(
+            req.context
+          );
+          const authorized = applyWhere(
+            inferValue(result) as Record<string, any>,
+            authorizationWhereClause
+          );
+          if (!authorized) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return {
+          data: result,
+          acceptedValues,
+        };
+      }
+
+      return {
+        data: await trx.rawUpdate<TResourceSchema>(
+          req.resourceName,
+          req.resourceId!,
           newRecord
         ),
         acceptedValues,
       };
-    }
-
-    return {
-      data: await db.rawUpdate<TResourceSchema>(
-        req.resourceName,
-        req.resourceId,
-        newRecord
-      ),
-      acceptedValues,
-    };
+    });
   };
 }
 
