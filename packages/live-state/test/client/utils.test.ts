@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import {
-  applyWhere,
   createObservable,
   type ObservableHandler,
 } from "../../src/client/utils";
+import { applyWhere } from "../../src/utils";
 
 describe("createObservable", () => {
   test("should create observable with basic get handler", () => {

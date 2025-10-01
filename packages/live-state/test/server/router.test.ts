@@ -50,6 +50,13 @@ describe("Route", () => {
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
     } as unknown as Storage;
 
     mockResource = {
@@ -483,6 +490,13 @@ describe("Route Authorization", () => {
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
     } as unknown as Storage;
 
     mockResource = {
@@ -591,6 +605,13 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
     } as unknown as Storage;
 
     mockResource = {
@@ -746,6 +767,13 @@ describe("Route Error Handling", () => {
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
     } as unknown as Storage;
 
     mockResource = {
@@ -913,6 +941,13 @@ describe("Route Custom Mutations Advanced", () => {
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
     } as unknown as Storage;
 
     mockResource = {
