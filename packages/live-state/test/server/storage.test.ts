@@ -1776,4 +1776,817 @@ describe("SQLStorage", () => {
     });
     expect(result).toEqual(mockValue);
   });
+
+  test("should handle nested transaction when db.isTransaction is true", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    // Set up the database to simulate being in a transaction
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    const mockFn = vi.fn().mockResolvedValue("nested-transaction-result");
+
+    const result = await storage.transaction(mockFn);
+
+    // Verify the function was called with the correct parameters
+    expect(mockFn).toHaveBeenCalledWith({
+      trx: storage,
+      commit: expect.any(Function),
+      rollback: expect.any(Function),
+    });
+
+    // Verify the result is returned correctly
+    expect(result).toBe("nested-transaction-result");
+
+    // Verify commit and rollback functions work
+    const { commit, rollback } = mockFn.mock.calls[0][0];
+
+    await commit();
+    expect(mockSavepoint.releaseSavepoint).toHaveBeenCalled();
+
+    await rollback();
+    expect(mockSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with commit function", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    const result = await storage.transaction(async ({ commit }) => {
+      await commit();
+      return "committed-result";
+    });
+
+    expect(result).toBe("committed-result");
+    expect(mockSavepoint.releaseSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with rollback function", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    const result = await storage.transaction(async ({ rollback }) => {
+      await rollback();
+      return "rolled-back-result";
+    });
+
+    expect(result).toBe("rolled-back-result");
+    expect(mockSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with error in function", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    await expect(
+      storage.transaction(async () => {
+        throw new Error("Nested transaction error");
+      })
+    ).rejects.toThrow("Nested transaction error");
+
+    // When an error occurs in nested transaction, savepoint should be rolled back
+    expect(mockSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with savepoint creation and release", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    const result = await storage.transaction(
+      async ({ trx, commit, rollback }) => {
+        // Test that we can call commit and rollback
+        await commit();
+        await rollback();
+        return "nested-result";
+      }
+    );
+
+    expect(result).toBe("nested-result");
+    expect(mockControlledTransaction.savepoint).toHaveBeenCalled();
+    expect(mockSavepoint.releaseSavepoint).toHaveBeenCalled();
+    expect(mockSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with manual commit not affecting outer transaction", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations for nested transaction
+    const mockNestedSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockNestedSavepoint),
+    });
+
+    // Test that manual commit in nested transaction doesn't affect outer transaction
+    const result = await storage.transaction(async ({ commit }) => {
+      // Manually commit the nested transaction (releases savepoint)
+      await commit();
+      return "nested-committed";
+    });
+
+    expect(result).toBe("nested-committed");
+    // Verify savepoint was released for the nested transaction
+    expect(mockNestedSavepoint.releaseSavepoint).toHaveBeenCalledTimes(2); // Once manually, once automatically
+    // Verify the outer transaction remains active
+    expect(mockDb.isTransaction).toBe(true);
+    // Verify no rollback occurred
+    expect(mockNestedSavepoint.rollbackToSavepoint).not.toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with manual rollback not affecting outer transaction", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations for nested transaction
+    const mockNestedSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockNestedSavepoint),
+    });
+
+    // Test that manual rollback in nested transaction doesn't affect outer transaction
+    const result = await storage.transaction(async ({ rollback }) => {
+      // Manually rollback the nested transaction
+      await rollback();
+      return "nested-rolled-back";
+    });
+
+    expect(result).toBe("nested-rolled-back");
+    // Verify savepoint was rolled back for the nested transaction
+    expect(mockNestedSavepoint.rollbackToSavepoint).toHaveBeenCalledTimes(1);
+    // Verify the outer transaction remains active and not rolled back
+    expect(mockDb.isTransaction).toBe(true);
+    // Verify release savepoint is still called at the end (auto-release after rollback)
+    expect(mockNestedSavepoint.releaseSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with error and automatic savepoint rollback", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    // Test that error in nested transaction triggers automatic savepoint rollback
+    await expect(
+      storage.transaction(async () => {
+        throw new Error("Nested transaction error");
+      })
+    ).rejects.toThrow("Nested transaction error");
+
+    expect(mockSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+    // The outer transaction should still be active
+    expect(mockDb.isTransaction).toBe(true);
+  });
+
+  test("should handle nested transaction with multiple levels of nesting", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations for multiple levels
+    const mockSavepoint1 = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockSavepoint2 = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi
+        .fn()
+        .mockReturnValueOnce({
+          execute: vi.fn().mockResolvedValue(mockSavepoint1),
+        })
+        .mockReturnValueOnce({
+          execute: vi.fn().mockResolvedValue(mockSavepoint2),
+        }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    // Test multiple levels of nesting
+    const result = await storage.transaction(async ({ trx }) => {
+      const innerResult = await trx.transaction(async ({ trx: innerTrx }) => {
+        return "inner-nested-result";
+      });
+      return `outer-${innerResult}`;
+    });
+
+    expect(result).toBe("outer-inner-nested-result");
+    expect(mockControlledTransaction.savepoint).toHaveBeenCalledTimes(2);
+    expect(mockSavepoint1.releaseSavepoint).toHaveBeenCalled();
+    expect(mockSavepoint2.releaseSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with savepoint when transaction is already committed", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations with already committed transaction
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: true, // Already committed
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    const result = await storage.transaction(async ({ commit }) => {
+      await commit();
+      return "nested-result";
+    });
+
+    expect(result).toBe("nested-result");
+    expect(mockSavepoint.releaseSavepoint).toHaveBeenCalled();
+    // Should not call releaseSavepoint again since transaction is already committed
+    expect(mockSavepoint.releaseSavepoint).toHaveBeenCalledTimes(1);
+  });
+
+  test("should handle nested transaction with savepoint when transaction is already rolled back", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations with already rolled back transaction
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: true, // Already rolled back
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    const result = await storage.transaction(async ({ rollback }) => {
+      await rollback();
+      return "nested-result";
+    });
+
+    expect(result).toBe("nested-result");
+    expect(mockSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+    // Should not call releaseSavepoint since transaction is already rolled back
+    expect(mockSavepoint.releaseSavepoint).not.toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with savepoint error handling", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock savepoint operations with error
+    const mockSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockRejectedValue(new Error("Savepoint error")),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    const mockControlledTransaction = {
+      savepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockSavepoint),
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.savepoint = mockControlledTransaction.savepoint;
+
+    // Test that savepoint errors are handled gracefully
+    await expect(
+      storage.transaction(async ({ commit }) => {
+        await commit();
+        return "nested-result";
+      })
+    ).rejects.toThrow("Savepoint error");
+
+    expect(mockSavepoint.releaseSavepoint).toHaveBeenCalled();
+  });
+
+  test("should isolate nested transaction from outer transaction - comprehensive scenario", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock outer transaction
+    const mockOuterTrx = {
+      commit: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollback: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+      isTransaction: true,
+      savepoint: vi.fn(),
+    };
+
+    // Mock nested transaction savepoint
+    const mockNestedSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    mockOuterTrx.savepoint.mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockNestedSavepoint),
+    });
+
+    mockDb.startTransaction = vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockOuterTrx),
+    });
+
+    // Simulate outer transaction calling nested transaction
+    const result = await storage.transaction(async ({ trx }) => {
+      // This creates the outer transaction
+      // Now create a nested transaction
+      const nestedStorage = new SQLStorage(mockOuterTrx as any, mockSchema);
+
+      try {
+        await nestedStorage.transaction(async ({ rollback }) => {
+          // Simulate some operation in nested transaction
+          await rollback(); // Rollback nested transaction
+          return "nested-rolled-back";
+        });
+      } catch (e) {
+        // Nested transaction error shouldn't affect outer
+      }
+
+      return "outer-completed";
+    });
+
+    expect(result).toBe("outer-completed");
+    // Outer transaction should be committed (automatically)
+    expect(mockOuterTrx.commit).toHaveBeenCalled();
+    // Nested savepoint operations should have been called
+    expect(mockOuterTrx.savepoint).toHaveBeenCalled();
+    // Nested savepoint should have been rolled back
+    expect(mockNestedSavepoint.rollbackToSavepoint).toHaveBeenCalled();
+    // Nested savepoint should still be released after rollback
+    expect(mockNestedSavepoint.releaseSavepoint).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction commit followed by outer transaction rollback", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock outer transaction
+    const mockOuterTrx = {
+      commit: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollback: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+      isTransaction: true,
+      savepoint: vi.fn(),
+    };
+
+    // Mock nested transaction savepoint
+    const mockNestedSavepoint = {
+      releaseSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollbackToSavepoint: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      isCommitted: false,
+      isRolledBack: false,
+    };
+
+    mockOuterTrx.savepoint.mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockNestedSavepoint),
+    });
+
+    mockDb.startTransaction = vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockOuterTrx),
+    });
+
+    // Test that nested commit doesn't prevent outer rollback
+    await expect(
+      storage.transaction(async ({ trx, rollback }) => {
+        // Create nested transaction
+        const nestedStorage = new SQLStorage(mockOuterTrx as any, mockSchema);
+
+        await nestedStorage.transaction(async ({ commit }) => {
+          await commit(); // Commit nested transaction (releases savepoint)
+          return "nested-committed";
+        });
+
+        // Now throw error to trigger outer transaction rollback
+        throw new Error("Outer transaction error");
+      })
+    ).rejects.toThrow("Outer transaction error");
+
+    // Outer transaction should be rolled back due to error
+    expect(mockOuterTrx.rollback).toHaveBeenCalled();
+    // Nested savepoint should have been released (committed)
+    expect(mockNestedSavepoint.releaseSavepoint).toHaveBeenCalled();
+    // Nested savepoint should not be rolled back (it was committed)
+    expect(mockNestedSavepoint.rollbackToSavepoint).not.toHaveBeenCalled();
+  });
 });
