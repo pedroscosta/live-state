@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
 import {
+  type ControlledTransaction,
   Kysely,
   PostgresDialect,
   type PostgresPool,
@@ -338,6 +339,16 @@ export class SQLStorage extends Storage {
     }) => Promise<T>
   ): Promise<T> {
     if (!this.schema) throw new Error("Schema not initialized");
+
+    if (this.db.isTransaction) {
+      return fn({
+        trx: this,
+        commit: () =>
+          (this.db as ControlledTransaction<any>).commit().execute(),
+        rollback: () =>
+          (this.db as ControlledTransaction<any>).rollback().execute(),
+      });
+    }
 
     const trx = await this.db.startTransaction().execute();
 

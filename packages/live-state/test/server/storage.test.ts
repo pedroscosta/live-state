@@ -1776,4 +1776,185 @@ describe("SQLStorage", () => {
     });
     expect(result).toEqual(mockValue);
   });
+
+  test("should handle nested transaction when db.isTransaction is true", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock the database to be in a transaction
+    const mockControlledTransaction = {
+      commit: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      rollback: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+
+    // Set up the database to simulate being in a transaction
+    mockDb.isTransaction = true;
+    mockDb.commit = mockControlledTransaction.commit;
+    mockDb.rollback = mockControlledTransaction.rollback;
+
+    const mockFn = vi.fn().mockResolvedValue("nested-transaction-result");
+
+    const result = await storage.transaction(mockFn);
+
+    // Verify the function was called with the correct parameters
+    expect(mockFn).toHaveBeenCalledWith({
+      trx: storage,
+      commit: expect.any(Function),
+      rollback: expect.any(Function),
+    });
+
+    // Verify the result is returned correctly
+    expect(result).toBe("nested-transaction-result");
+
+    // Verify commit and rollback functions work
+    const { commit, rollback } = mockFn.mock.calls[0][0];
+
+    await commit();
+    expect(mockControlledTransaction.commit).toHaveBeenCalled();
+    expect(mockControlledTransaction.commit().execute).toHaveBeenCalled();
+
+    await rollback();
+    expect(mockControlledTransaction.rollback).toHaveBeenCalled();
+    expect(mockControlledTransaction.rollback().execute).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with commit function", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock the database to be in a transaction
+    const mockCommitExecute = vi.fn().mockResolvedValue(undefined);
+    const mockControlledTransaction = {
+      commit: vi.fn().mockReturnValue({
+        execute: mockCommitExecute,
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.commit = mockControlledTransaction.commit;
+
+    const result = await storage.transaction(async ({ commit }) => {
+      await commit();
+      return "committed-result";
+    });
+
+    expect(result).toBe("committed-result");
+    expect(mockControlledTransaction.commit).toHaveBeenCalled();
+    expect(mockCommitExecute).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with rollback function", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock the database to be in a transaction
+    const mockRollbackExecute = vi.fn().mockResolvedValue(undefined);
+    const mockControlledTransaction = {
+      rollback: vi.fn().mockReturnValue({
+        execute: mockRollbackExecute,
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.rollback = mockControlledTransaction.rollback;
+
+    const result = await storage.transaction(async ({ rollback }) => {
+      await rollback();
+      return "rolled-back-result";
+    });
+
+    expect(result).toBe("rolled-back-result");
+    expect(mockControlledTransaction.rollback).toHaveBeenCalled();
+    expect(mockRollbackExecute).toHaveBeenCalled();
+  });
+
+  test("should handle nested transaction with error in function", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+    await storage.updateSchema(mockSchema);
+
+    // Mock the database to be in a transaction
+    const mockRollbackExecute = vi.fn().mockResolvedValue(undefined);
+    const mockControlledTransaction = {
+      rollback: vi.fn().mockReturnValue({
+        execute: mockRollbackExecute,
+      }),
+    };
+
+    mockDb.isTransaction = true;
+    mockDb.rollback = mockControlledTransaction.rollback;
+
+    await expect(
+      storage.transaction(async () => {
+        throw new Error("Nested transaction error");
+      })
+    ).rejects.toThrow("Nested transaction error");
+
+    // In nested transactions, rollback is not automatically called on error
+    // The error is just propagated up
+    expect(mockControlledTransaction.rollback).not.toHaveBeenCalled();
+  });
 });

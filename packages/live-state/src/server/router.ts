@@ -30,7 +30,7 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Record<keyof TSchema, AnyRoute>, // TODO Make this partial
+  TRoutes extends Record<keyof TSchema, AnyRoute>,
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
