@@ -36,8 +36,8 @@ export class SQLStorage extends Storage {
   ) {
     super();
 
-    if (poolOrDb instanceof Kysely) {
-      this.db = poolOrDb;
+    if (this.isKyselyLike(poolOrDb)) {
+      this.db = poolOrDb as Kysely<{ [x: string]: Selectable<any> }>;
     } else {
       this.db = new Kysely({
         dialect: new PostgresDialect({
@@ -341,13 +341,37 @@ export class SQLStorage extends Storage {
     if (!this.schema) throw new Error("Schema not initialized");
 
     if (this.db.isTransaction) {
-      return fn({
-        trx: this,
-        commit: () =>
-          (this.db as ControlledTransaction<any>).commit().execute(),
-        rollback: () =>
-          (this.db as ControlledTransaction<any>).rollback().execute(),
-      });
+      const savepointName = Math.random().toString(36).substring(2, 15);
+
+      const trx = await (this.db as ControlledTransaction<any>)
+        .savepoint(savepointName)
+        .execute();
+
+      try {
+        return await fn({
+          trx: this,
+          commit: () =>
+            trx
+              .releaseSavepoint(savepointName)
+              .execute()
+              .then(() => {}),
+          rollback: () =>
+            trx
+              .rollbackToSavepoint(savepointName)
+              .execute()
+              .then(() => {}),
+        }).then((v) => {
+          if (trx.isCommitted || trx.isRolledBack) return v;
+
+          return trx
+            .releaseSavepoint(savepointName)
+            .execute()
+            .then(() => v);
+        });
+      } catch (e) {
+        await trx.rollbackToSavepoint(savepointName).execute();
+        throw e;
+      }
     }
 
     const trx = await this.db.startTransaction().execute();
@@ -408,5 +432,25 @@ export class SQLStorage extends Storage {
         return acc;
       }, {} as any),
     } as unknown as MaterializedLiveType<T>;
+  }
+
+  private isKyselyLike(
+    value: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>
+  ): value is Kysely<{ [x: string]: Selectable<any> }> {
+    if (value instanceof Kysely) return true;
+    if (!value || typeof value !== "object") return false;
+
+    const candidate = value as unknown as Record<string, unknown>;
+    const hasSelectFrom = typeof candidate.selectFrom === "function";
+    const hasStartTransaction =
+      typeof candidate.startTransaction === "function";
+    const hasSavepoint = typeof candidate.savepoint === "function";
+    const hasIsTransaction =
+      typeof candidate.isTransaction === "boolean" ||
+      typeof candidate.isTransaction === "function";
+
+    return (
+      hasSelectFrom || hasStartTransaction || hasSavepoint || hasIsTransaction
+    );
   }
 }
