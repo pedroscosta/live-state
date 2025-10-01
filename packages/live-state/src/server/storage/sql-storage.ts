@@ -369,7 +369,12 @@ export class SQLStorage extends Storage {
             .then(() => v);
         });
       } catch (e) {
-        await trx.rollbackToSavepoint(savepointName).execute();
+        await trx
+          .rollbackToSavepoint(savepointName)
+          .execute()
+          .catch(() => {
+            // Ignoring this error because it's already rolled back
+          });
         throw e;
       }
     }
