@@ -455,7 +455,8 @@ export class SQLStorage extends Storage {
       typeof candidate.isTransaction === "function";
 
     return (
-      hasSelectFrom || hasStartTransaction || hasSavepoint || hasIsTransaction
+      (hasSelectFrom && hasStartTransaction) ||
+      (hasSavepoint && hasIsTransaction)
     );
   }
 }
