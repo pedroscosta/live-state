@@ -207,93 +207,44 @@ export class OptimisticStore {
 
     this.kvStorage.setMeta("mutationStack", this.optimisticMutationStack);
 
-    const rawValue = this.rawObjPool[routeName]?.[mutation.resourceId];
+    this.updateRawObjPool(
+      routeName,
+      mutation.resourceId,
+      mutation.payload,
+      prevValue
+    );
+  }
 
-    const newOptimisticValue = (
-      this.optimisticMutationStack[routeName] ?? []
-    ).reduce((acc, mut) => {
-      if (mut.resourceId !== mutation.resourceId) return acc;
+  public undoMutation(routeName: string, mutationId: string) {
+    if (!this.optimisticMutationStack[routeName]) return;
 
-      return this.schema[routeName].mergeMutation(
-        "set",
-        mut.payload as Record<string, MaterializedLiveType<LiveTypeAny>>,
-        acc
-      )[0];
-    }, rawValue);
+    const mutationIdx = this.optimisticMutationStack[routeName]?.findIndex(
+      (m) => m.id === mutationId
+    );
 
-    if (newOptimisticValue) {
-      this.optimisticRawObjPool[routeName] ??= {};
-      this.optimisticRawObjPool[routeName][mutation.resourceId] = {
-        value: {
-          ...newOptimisticValue.value,
-          id: { value: mutation.resourceId },
-        },
-      } as MaterializedLiveType<LiveTypeAny>;
-    }
+    if (mutationIdx === -1) return;
 
-    if (!this.optimisticObjGraph.hasNode(mutation.resourceId))
-      this.optimisticObjGraph.createNode(
-        mutation.resourceId,
-        routeName as string,
-        Object.values(schema.relations).flatMap((k) =>
-          k.type === "many" ? [k.entity.name] : []
-        )
-      );
+    const mutation = this.optimisticMutationStack[routeName][mutationIdx];
+    console.log("Removing mutation", mutation);
 
-    if (Object.keys(schema.relations).length > 0) {
-      // This maps the column name to the relation name (if it's a `one` relation)
-      const schemaRelationalFields = Object.fromEntries(
-        Object.entries(schema.relations).flatMap(([k, r]) =>
-          r.type === "one" ? [[r.relationalColumn as string, k]] : []
-        )
-      );
+    const prevValue =
+      this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
 
-      Object.entries(mutation.payload).forEach(([k, v]) => {
-        const rel = schema.relations[schemaRelationalFields[k]];
+    this.optimisticMutationStack[routeName].splice(mutationIdx, 1);
 
-        if (!v || !schemaRelationalFields[k]) return;
+    this.kvStorage.setMeta("mutationStack", this.optimisticMutationStack);
 
-        const prevRelation = prevValue?.value[
-          k as keyof (typeof prevValue)["value"]
-        ] as MaterializedLiveType<LiveString> | undefined;
-
-        const [, updatedRelation] = rel.mergeMutation(
-          "set",
-          v as { value: string; _meta: { timestamp: string } },
-          prevRelation
-        );
-
-        if (!updatedRelation) return;
-
-        if (!this.optimisticObjGraph.hasNode(updatedRelation.value)) {
-          const otherNodeType = rel.entity.name;
-
-          this.optimisticObjGraph.createNode(
-            updatedRelation.value,
-            otherNodeType,
-            Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
-              r.type === "many" ? [r.entity.name] : []
-            )
-          );
-        }
-
-        if (prevRelation?.value) {
-          this.optimisticObjGraph.removeLink(
-            mutation.resourceId,
-            rel.entity.name
-          );
-        }
-
-        this.optimisticObjGraph.createLink(
-          mutation.resourceId,
-          updatedRelation.value
-        );
-      });
-    }
-
-    this.notifyCollectionSubscribers(routeName);
-
-    this.optimisticObjGraph.notifySubscribers(mutation.resourceId);
+    this.updateRawObjPool(
+      routeName,
+      mutation.resourceId,
+      Object.fromEntries(
+        Object.entries(mutation.payload).map(([k]) => [
+          k,
+          { value: null, _meta: {} },
+        ])
+      ),
+      prevValue
+    );
   }
 
   public loadConsolidatedState(
@@ -312,6 +263,105 @@ export class OptimisticStore {
         payload,
       });
     });
+  }
+
+  private updateRawObjPool(
+    routeName: string,
+    resourceId: string,
+    payload: DefaultMutationMessage["payload"],
+    prevValue?: MaterializedLiveType<LiveObjectAny>
+  ) {
+    if (!this.schema[routeName]) return;
+
+    const rawValue = this.rawObjPool[routeName]?.[resourceId];
+
+    const newOptimisticValue = (
+      this.optimisticMutationStack[routeName] ?? []
+    ).reduce((acc, mut) => {
+      if (mut.resourceId !== resourceId) return acc;
+
+      return this.schema[routeName].mergeMutation(
+        "set",
+        mut.payload as Record<string, MaterializedLiveType<LiveTypeAny>>,
+        acc
+      )[0];
+    }, rawValue);
+
+    this.optimisticRawObjPool[routeName] ??= {};
+    if (newOptimisticValue) {
+      this.optimisticRawObjPool[routeName][resourceId] = {
+        value: {
+          ...newOptimisticValue.value,
+          id: { value: resourceId },
+        },
+      } as MaterializedLiveType<LiveTypeAny>;
+    } else {
+      delete this.optimisticRawObjPool[routeName][resourceId];
+    }
+
+    if (!this.optimisticObjGraph.hasNode(resourceId) && !newOptimisticValue)
+      return;
+
+    if (!this.optimisticObjGraph.hasNode(resourceId))
+      this.optimisticObjGraph.createNode(
+        resourceId,
+        routeName as string,
+        Object.values(this.schema[routeName].relations).flatMap((k) =>
+          k.type === "many" ? [k.entity.name] : []
+        )
+      );
+
+    if (Object.keys(this.schema[routeName].relations).length > 0) {
+      // This maps the column name to the relation name (if it's a `one` relation)
+      const schemaRelationalFields = Object.fromEntries(
+        Object.entries(this.schema[routeName].relations).flatMap(([k, r]) =>
+          r.type === "one" ? [[r.relationalColumn as string, k]] : []
+        )
+      );
+
+      Object.entries(payload).forEach(([k, v]) => {
+        const rel = this.schema[routeName].relations[schemaRelationalFields[k]];
+
+        if (!schemaRelationalFields[k]) return;
+
+        const prevRelation = prevValue?.value[
+          k as keyof (typeof prevValue)["value"]
+        ] as MaterializedLiveType<LiveString> | undefined;
+
+        const [, updatedRelation] = rel.mergeMutation(
+          "set",
+          v as {
+            value: string;
+            _meta: { timestamp: string };
+          },
+          prevRelation
+        );
+
+        if (!updatedRelation) return;
+
+        if (!this.optimisticObjGraph.hasNode(updatedRelation.value)) {
+          const otherNodeType = rel.entity.name;
+
+          this.optimisticObjGraph.createNode(
+            updatedRelation.value,
+            otherNodeType,
+            Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
+              r.type === "many" ? [r.entity.name] : []
+            )
+          );
+        }
+
+        if (prevRelation?.value) {
+          this.optimisticObjGraph.removeLink(resourceId, rel.entity.name);
+        }
+
+        this.optimisticObjGraph.createLink(resourceId, updatedRelation.value);
+      });
+    }
+
+    this.notifyCollectionSubscribers(routeName);
+
+    this.optimisticObjGraph.notifySubscribers(resourceId);
   }
 
   private materializeOneWithInclude(

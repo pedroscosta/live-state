@@ -136,12 +136,7 @@ class InnerClient implements QueryExecutor {
           console.error("Error merging mutation from the server:", e);
         }
       } else if (parsedMessage.type === "REJECT") {
-        // TODO handle reject
-        // this.removeOptimisticMutation(
-        //   parsedMessage.resource,
-        //   parsedMessage._id,
-        //   true
-        // );
+        this.store.undoMutation(parsedMessage.resource, parsedMessage.id);
       } else if (parsedMessage.type === "REPLY") {
         const { id, data } = parsedMessage;
 
