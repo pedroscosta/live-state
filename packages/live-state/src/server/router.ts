@@ -6,6 +6,7 @@ import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
 
 import {
+  type InferLiveObjectWithRelationalIds,
   inferValue,
   type LiveObjectAny,
   type LiveObjectMutationInput,
@@ -14,7 +15,7 @@ import {
   type Schema,
   type WhereClause,
 } from "../schema";
-import { applyWhere } from "../utils";
+import { applyWhere, type Simplify } from "../utils";
 import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
 
 export type RouteRecord = Record<string, AnyRoute>;
@@ -84,16 +85,22 @@ const mutationCreator = <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
   };
 };
 
-export type AuthorizationHandler<TShape extends LiveObjectAny> = (
-  req: ParsedRequest["context"]
-) => WhereClause<TShape>;
+export type ReadAuthorizationHandler<TShape extends LiveObjectAny> = (opts: {
+  ctx: ParsedRequest["context"];
+}) => WhereClause<TShape> | boolean;
+
+export type MutationAuthorizationHandler<TShape extends LiveObjectAny> =
+  (opts: {
+    ctx: ParsedRequest["context"];
+    value: Simplify<InferLiveObjectWithRelationalIds<TShape>>;
+  }) => WhereClause<TShape> | boolean;
 
 export type Authorization<TShape extends LiveObjectAny> = {
-  read?: AuthorizationHandler<TShape>;
-  insert?: AuthorizationHandler<TShape>;
+  read?: ReadAuthorizationHandler<TShape>;
+  insert?: MutationAuthorizationHandler<TShape>;
   update?: {
-    preMutation?: AuthorizationHandler<TShape>;
-    postMutation?: AuthorizationHandler<TShape>;
+    preMutation?: MutationAuthorizationHandler<TShape>;
+    postMutation?: MutationAuthorizationHandler<TShape>;
   };
 };
 
@@ -191,14 +198,22 @@ export class Route<
 
   private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
     async ({ req, db }) => {
-      const authorizationWhereClause = this.authorization?.read?.(req.context);
+      const authorizationClause = this.authorization?.read?.({
+        ctx: req.context,
+      });
+
+      if (typeof authorizationClause === "boolean" && !authorizationClause) {
+        throw new Error("Not authorized");
+      }
 
       return {
         data: await db.rawFind<TResourceSchema>(
           req.resourceName,
-          req.where && authorizationWhereClause
-            ? { $and: [req.where, authorizationWhereClause] }
-            : (authorizationWhereClause ?? req.where),
+          req.where && authorizationClause && authorizationClause !== true
+            ? { $and: [req.where, authorizationClause] }
+            : authorizationClause && authorizationClause !== true
+              ? authorizationClause
+              : req.where,
           req.include
         ),
         acceptedValues: null,
@@ -251,13 +266,25 @@ export class Route<
         );
 
         if (this.authorization?.insert) {
-          const authorizationWhereClause = this.authorization.insert(
-            req.context
-          );
-          const authorized = applyWhere(
-            inferValue(result) as Record<string, any>,
-            authorizationWhereClause
-          );
+          const inferredValue = inferValue(result) as Simplify<
+            InferLiveObjectWithRelationalIds<TResourceSchema>
+          >;
+
+          (inferredValue as any)["id"] =
+            (inferredValue as any)["id"] ?? req.resourceId!;
+
+          const authorizationClause = this.authorization.insert({
+            ctx: req.context,
+            value: inferredValue as Simplify<
+              InferLiveObjectWithRelationalIds<TResourceSchema>
+            >,
+          });
+
+          const authorized =
+            typeof authorizationClause === "boolean"
+              ? authorizationClause
+              : applyWhere(inferredValue, authorizationClause);
+
           if (!authorized) {
             throw new Error("Not authorized");
           }
@@ -270,13 +297,23 @@ export class Route<
       }
 
       if (this.authorization?.update?.preMutation) {
-        const authorizationWhereClause = this.authorization.update.preMutation(
-          req.context
-        );
-        const authorized = applyWhere(
-          inferValue(newRecord) as Record<string, any>,
-          authorizationWhereClause
-        );
+        const inferredValue = inferValue(target) as Simplify<
+          InferLiveObjectWithRelationalIds<TResourceSchema>
+        >;
+
+        (inferredValue as any)["id"] =
+          (inferredValue as any)["id"] ?? req.resourceId!;
+
+        const authorizationClause = this.authorization.update.preMutation({
+          ctx: req.context,
+          value: inferredValue,
+        });
+
+        const authorized =
+          typeof authorizationClause === "boolean"
+            ? authorizationClause
+            : applyWhere(inferredValue, authorizationClause);
+
         if (!authorized) {
           throw new Error("Not authorized");
         }
@@ -289,13 +326,23 @@ export class Route<
       );
 
       if (this.authorization?.update?.postMutation) {
-        const authorizationWhereClause = this.authorization.update.postMutation(
-          req.context
-        );
-        const authorized = applyWhere(
-          inferValue(result) as Record<string, any>,
-          authorizationWhereClause
-        );
+        const inferredValue = inferValue(result) as Simplify<
+          InferLiveObjectWithRelationalIds<TResourceSchema>
+        >;
+
+        (inferredValue as any)["id"] =
+          (inferredValue as any)["id"] ?? req.resourceId!;
+
+        const authorizationClause = this.authorization.update.postMutation({
+          ctx: req.context,
+          value: inferredValue,
+        });
+
+        const authorized =
+          typeof authorizationClause === "boolean"
+            ? authorizationClause
+            : applyWhere(inferredValue, authorizationClause);
+
         if (!authorized) {
           throw new Error("Not authorized");
         }
@@ -338,8 +385,4 @@ export class RouteFactory {
 
 export const routeFactory = RouteFactory.create;
 
-export type AnyRoute = Route<
-  LiveObjectAny,
-  Middleware<any>,
-  Record<string, any>
->;
+export type AnyRoute = Route<any, Middleware<any>, Record<string, any>>;

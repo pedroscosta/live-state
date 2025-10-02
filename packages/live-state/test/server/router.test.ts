@@ -532,7 +532,7 @@ describe("Route Authorization", () => {
       schema: mockSchema,
     });
 
-    expect(authHandler).toHaveBeenCalledWith({ userId: "123" });
+    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
       "users",
       { userId: "123" },
@@ -589,6 +589,125 @@ describe("Route Authorization", () => {
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
       "users",
       { active: true },
+      undefined
+    );
+  });
+
+  test("should handle QUERY authorization with boolean false", async () => {
+    const authHandler = vi.fn().mockReturnValue(false);
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+
+    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
+  });
+
+  test("should handle QUERY authorization with boolean true", async () => {
+    const authHandler = vi.fn().mockReturnValue(true);
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      where: { active: true },
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      { active: true },
+      undefined
+    );
+  });
+
+  test("should handle QUERY authorization with where clause only", async () => {
+    const authHandler = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      { userId: "123" },
+      undefined
+    );
+  });
+
+  test("should handle QUERY authorization with complex where clause", async () => {
+    const authHandler = vi.fn().mockReturnValue({
+      $and: [{ userId: "123" }, { role: "admin" }],
+    });
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      where: { active: true },
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123", role: "admin" },
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(authHandler).toHaveBeenCalledWith({
+      ctx: {
+        userId: "123",
+        role: "admin",
+      },
+    });
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      {
+        $and: [
+          { active: true },
+          { $and: [{ userId: "123" }, { role: "admin" }] },
+        ],
+      },
       undefined
     );
   });
@@ -669,7 +788,10 @@ describe("Route UPDATE Authorization", () => {
       schema: mockSchema,
     });
 
-    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", userId: "123" },
+    });
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -718,7 +840,10 @@ describe("Route UPDATE Authorization", () => {
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", userId: "123" },
+    });
     expect(mockStorage.rawUpdate).not.toHaveBeenCalled();
   });
 
@@ -754,7 +879,10 @@ describe("Route UPDATE Authorization", () => {
       schema: mockSchema,
     });
 
-    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(postMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
     expect(result).toEqual({
       data: mockNewData,
@@ -796,7 +924,10 @@ describe("Route UPDATE Authorization", () => {
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(postMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
   });
 
@@ -845,8 +976,14 @@ describe("Route UPDATE Authorization", () => {
       schema: mockSchema,
     });
 
-    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
-    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", userId: "123" },
+    });
+    expect(postMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -903,8 +1040,14 @@ describe("Route UPDATE Authorization", () => {
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(preMutationAuth).toHaveBeenCalledWith({ userId: "123" });
-    expect(postMutationAuth).toHaveBeenCalledWith({ userId: "123" });
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", userId: "123" },
+    });
+    expect(postMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -997,12 +1140,282 @@ describe("Route UPDATE Authorization", () => {
     });
 
     expect(preMutationAuth).toHaveBeenCalledWith({
-      userId: "123",
-      role: "admin",
+      ctx: {
+        userId: "123",
+        role: "admin",
+      },
+      value: {
+        id: "user1",
+        userId: "123",
+        role: "admin",
+      },
     });
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" }, role: { value: "admin" } },
     });
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+});
+
+describe("Route INSERT Authorization", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should pass INSERT authorization", async () => {
+    const insertAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const route = new Route("users", undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data that matches the authorization check
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } }, // This will be used for authorization
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(insertAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
+      value: { userId: { value: "123" } },
+    });
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should fail INSERT authorization", async () => {
+    const insertAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
+    const route = new Route("users", undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data that will fail authorization
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } }, // This will be checked against the auth requirement of userId: "456"
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+
+    expect(insertAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
+      value: { userId: { value: "123" } },
+    });
+  });
+
+  test("should handle INSERT authorization with boolean false", async () => {
+    const insertAuth = vi.fn().mockReturnValue(false);
+    const route = new Route("users", undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+
+    expect(insertAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+  });
+
+  test("should handle INSERT authorization with boolean true", async () => {
+    const insertAuth = vi.fn().mockReturnValue(true);
+    const route = new Route("users", undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    // Reset and mock mergeMutation to return data
+    (mockResource.mergeMutation as Mock).mockReset();
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(insertAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should handle INSERT without authorization", async () => {
+    const route = new Route("users");
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {},
+    };
+
+    const mockNewData = { value: { name: { value: "John" } } };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {});
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1550,5 +1963,411 @@ describe("Route Custom Mutations Advanced", () => {
     expect(newRoute.customMutations.action2).toBeDefined();
     expect(newRoute.customMutations.action3).toBeDefined();
     expect(Object.keys(newRoute.customMutations)).toHaveLength(3);
+  });
+});
+
+describe("Route Authorization Error Handling", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should handle authorization handler throwing error", async () => {
+    const authHandler = vi.fn().mockImplementation(() => {
+      throw new Error("Authorization error");
+    });
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Authorization error");
+
+    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
+  });
+
+  test("should handle insert authorization handler throwing error", async () => {
+    const insertAuth = vi.fn().mockImplementation(() => {
+      throw new Error("Insert authorization error");
+    });
+    const route = new Route("users", undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Insert authorization error");
+
+    expect(insertAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+  });
+
+  test("should handle update pre-mutation authorization handler throwing error", async () => {
+    const preMutationAuth = vi.fn().mockImplementation(() => {
+      throw new Error("Pre-mutation authorization error");
+    });
+    const route = new Route("users", undefined, {
+      update: { preMutation: preMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Pre-mutation authorization error");
+
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", userId: "123" },
+    });
+  });
+
+  test("should handle update post-mutation authorization handler throwing error", async () => {
+    const postMutationAuth = vi.fn().mockImplementation(() => {
+      throw new Error("Post-mutation authorization error");
+    });
+    const route = new Route("users", undefined, {
+      update: { postMutation: postMutationAuth },
+    });
+
+    const mockRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    await expect(
+      route.handleRequest({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Post-mutation authorization error");
+
+    expect(postMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+  });
+});
+
+describe("Route Complex Authorization Scenarios", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should handle all authorization types together", async () => {
+    const readAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const insertAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+    const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
+
+    const route = new Route("users", undefined, {
+      read: readAuth,
+      insert: insertAuth,
+      update: {
+        preMutation: preMutationAuth,
+        postMutation: postMutationAuth,
+      },
+    });
+
+    // Test read authorization
+    const readRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    await route.handleRequest({
+      req: readRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(readAuth).toHaveBeenCalledWith({ ctx: { userId: "123" } });
+
+    // Test insert authorization
+    const insertRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockNewData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    await route.handleRequest({
+      req: insertRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(insertAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+
+    // Test update authorization
+    const updateRequest: ParsedRequest = {
+      type: "MUTATE",
+      resourceName: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      query: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" }, userId: { value: "123" } },
+    };
+    const mockUpdatedData = {
+      value: { name: { value: "John" }, userId: { value: "123" } },
+    };
+
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { userId: { value: "123" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockUpdatedData);
+
+    await route.handleRequest({
+      req: updateRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(preMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", userId: "123" },
+    });
+    expect(postMutationAuth).toHaveBeenCalledWith({
+      ctx: { userId: "123" },
+      value: { id: "user1", name: "John", userId: "123" },
+    });
+  });
+
+  test("should handle authorization with complex context", async () => {
+    const authHandler = vi.fn().mockReturnValue({
+      $and: [
+        { userId: "123" },
+        { role: "admin" },
+        { department: "engineering" },
+      ],
+    });
+    const route = new Route("users", undefined, { read: authHandler });
+
+    const mockRequest: ParsedRequest = {
+      type: "QUERY",
+      resourceName: "users",
+      where: { active: true },
+      headers: {},
+      cookies: {},
+      query: {},
+      context: {
+        userId: "123",
+        role: "admin",
+        department: "engineering",
+        permissions: ["read", "write"],
+      },
+    };
+
+    await route.handleRequest({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(authHandler).toHaveBeenCalledWith({
+      ctx: {
+        userId: "123",
+        role: "admin",
+        department: "engineering",
+        permissions: ["read", "write"],
+      },
+    });
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      "users",
+      {
+        $and: [
+          { active: true },
+          {
+            $and: [
+              { userId: "123" },
+              { role: "admin" },
+              { department: "engineering" },
+            ],
+          },
+        ],
+      },
+      undefined
+    );
   });
 });

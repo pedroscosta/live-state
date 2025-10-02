@@ -73,6 +73,11 @@ export const routerImpl = router({
         }),
       })),
     cards: publicRoute.collectionRoute(schema.cards, {
+      // insert: ({ ctx, value }) => {
+      //   console.log("Insert auth context", ctx);
+      //   console.log("Insert auth value", value);
+      //   return Math.random() < 0.5;
+      // },
       // read: (ctx) => {
       //   console.log("Auth context", ctx);
       //   return {
