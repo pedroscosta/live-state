@@ -403,8 +403,6 @@ export class SQLStorage extends Storage {
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
     value: Record<string, any>
   ): MaterializedLiveType<T> {
-    if (!value._meta) throw new Error("Missing _meta");
-
     return {
       value: Object.entries(value).reduce((acc, [key, val]) => {
         if (key === "_meta") return acc;
