@@ -315,9 +315,6 @@ export class SQLStorage extends Storage {
       metaValues[key] = metaVal;
     }
 
-    console.log("values", values);
-    console.log("metaValues", metaValues);
-
     await Promise.all([
       this.db
         .updateTable(resourceName)
