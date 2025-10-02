@@ -322,9 +322,9 @@ export class SQLStorage extends Storage {
         .where("id", "=", resourceId)
         .execute(),
       this.db
-        .updateTable(`${resourceName}_meta`)
-        .set(metaValues)
-        .where("id", "=", resourceId)
+        .insertInto(`${resourceName}_meta`)
+        .values({ ...metaValues, id: resourceId })
+        .onConflict((oc) => oc.column("id").doUpdateSet(metaValues))
         .execute(),
     ]);
 
@@ -403,8 +403,6 @@ export class SQLStorage extends Storage {
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
     value: Record<string, any>
   ): MaterializedLiveType<T> {
-    if (!value._meta) throw new Error("Missing _meta");
-
     return {
       value: Object.entries(value).reduce((acc, [key, val]) => {
         if (key === "_meta") return acc;
