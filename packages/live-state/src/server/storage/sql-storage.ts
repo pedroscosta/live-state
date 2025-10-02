@@ -315,6 +315,9 @@ export class SQLStorage extends Storage {
       metaValues[key] = metaVal;
     }
 
+    console.log("values", values);
+    console.log("metaValues", metaValues);
+
     await Promise.all([
       this.db
         .updateTable(resourceName)
@@ -322,9 +325,9 @@ export class SQLStorage extends Storage {
         .where("id", "=", resourceId)
         .execute(),
       this.db
-        .updateTable(`${resourceName}_meta`)
-        .set(metaValues)
-        .where("id", "=", resourceId)
+        .insertInto(`${resourceName}_meta`)
+        .values({ ...metaValues, id: resourceId })
+        .onConflict((oc) => oc.column("id").doUpdateSet(metaValues))
         .execute(),
     ]);
 
