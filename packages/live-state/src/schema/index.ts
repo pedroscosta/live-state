@@ -13,7 +13,7 @@ import {
 export * from "./atomic-types";
 export * from "./live-type";
 
-type InferLiveObjectWithoutRelations<T extends LiveObjectAny> = {
+export type InferLiveObjectWithoutRelations<T extends LiveObjectAny> = {
   [K in keyof T["fields"]]: InferLiveType<T["fields"][K]>;
 };
 
@@ -32,24 +32,11 @@ export type InferLiveObject<
     : {});
 
 type InferRelationalColumns<T extends Record<string, RelationAny>> = {
-  [K in keyof T as T[K] extends Relation<
-    any,
-    any,
-    any,
-    infer ColumnName,
-    any,
-    any
-  >
-    ? ColumnName extends string
-      ? ColumnName
-      : never
-    : never]: T[K]["type"] extends "one"
-    ? T[K] extends Relation<infer Entity, any, any, any, any, any>
-      ? T[K]["required"] extends true
-        ? InferIndex<Entity>
-        : InferIndex<Entity> | undefined
-      : never
-    : never;
+  [K in keyof T as T[K]["type"] extends "many"
+    ? never
+    : T[K]["relationalColumn"]]: T[K]["required"] extends true
+    ? InferIndex<T[K]["entity"]>
+    : InferIndex<T[K]["entity"]> | null;
 };
 
 export type InferLiveObjectWithRelationalIds<T extends LiveObjectAny> =
