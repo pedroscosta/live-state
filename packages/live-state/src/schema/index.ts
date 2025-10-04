@@ -1,5 +1,9 @@
 /** biome-ignore-all lint/complexity/noBannedTypes: false positive */
-import type { LiveString } from "./atomic-types";
+import type {
+  LiveAtomicType,
+  LiveString,
+  NullableLiveType,
+} from "./atomic-types";
 import {
   type InferIndex,
   type InferLiveType,
@@ -470,8 +474,17 @@ export type IncludeClause<T extends LiveObjectAny> = {
   [K in keyof T["relations"]]?: boolean;
 };
 
-export type InferInsert<T extends LiveObjectAny> =
-  InferLiveObjectWithoutRelations<T>;
+type GetFieldType<T> = T extends NullableLiveType<any> ? T["inner"] : T;
+type HasDefaultValue<T> =
+  T extends LiveAtomicType<any, undefined> ? false : true;
+
+export type InferInsert<T extends LiveObjectAny> = {
+  [K in keyof T["fields"]]: HasDefaultValue<
+    GetFieldType<T["fields"][K]>
+  > extends true
+    ? InferLiveType<T["fields"][K]> | undefined
+    : InferLiveType<T["fields"][K]>;
+};
 
 export type InferUpdate<T extends LiveObjectAny> = Omit<
   LiveObjectMutationInput<T>,

@@ -7,7 +7,7 @@ import {
   type StorageFieldType,
 } from "./live-type";
 
-class NullableLiveType<T extends LiveTypeAny> extends LiveType<
+export class NullableLiveType<T extends LiveTypeAny> extends LiveType<
   T["_value"] | null,
   T["_meta"],
   T["_encodeInput"],
@@ -81,7 +81,7 @@ type LiveAtomicTypeMeta = {
   timestamp: string | null;
 } & LiveTypeMeta;
 
-class LiveAtomicType<Value> extends LiveType<
+export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
   Value,
   LiveAtomicTypeMeta,
   Value,
@@ -91,7 +91,7 @@ class LiveAtomicType<Value> extends LiveType<
   readonly convertFunc?: (value: any) => Value;
   readonly isIndex: boolean;
   readonly isUnique: boolean;
-  readonly defaultValue?: Value;
+  readonly defaultValue: DefaultValue;
   readonly foreignReference?: string;
   readonly isPrimary: boolean;
 
@@ -100,7 +100,7 @@ class LiveAtomicType<Value> extends LiveType<
     convertFunc?: (value: any) => Value,
     index?: boolean,
     unique?: boolean,
-    defaultValue?: Value,
+    defaultValue?: DefaultValue,
     references?: string,
     primary?: boolean
   ) {
@@ -109,7 +109,7 @@ class LiveAtomicType<Value> extends LiveType<
     this.convertFunc = convertFunc;
     this.isIndex = index ?? false;
     this.isUnique = unique ?? false;
-    this.defaultValue = defaultValue;
+    this.defaultValue = defaultValue as DefaultValue;
     this.foreignReference = references;
     this.isPrimary = primary ?? false;
   }
@@ -198,7 +198,7 @@ class LiveAtomicType<Value> extends LiveType<
       this.convertFunc,
       this.isIndex,
       true,
-      this.defaultValue,
+      this.defaultValue as undefined,
       this.foreignReference,
       this.isPrimary
     );
@@ -210,14 +210,14 @@ class LiveAtomicType<Value> extends LiveType<
       this.convertFunc,
       true,
       this.isUnique,
-      this.defaultValue,
+      this.defaultValue as undefined,
       this.foreignReference,
       this.isPrimary
     );
   }
 
   default(value: Value) {
-    return new LiveAtomicType<Value>(
+    return new LiveAtomicType<Value, Value>(
       this.storageType,
       this.convertFunc,
       this.isIndex,
@@ -234,7 +234,7 @@ class LiveAtomicType<Value> extends LiveType<
       this.convertFunc,
       this.isIndex,
       this.isUnique,
-      this.defaultValue,
+      this.defaultValue as undefined,
       this.foreignReference,
       true
     );
