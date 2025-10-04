@@ -34,13 +34,13 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Record<keyof TSchema, AnyRoute>,
+  TRoutes extends Record<keyof TSchema, Route<any, any, any>>,
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
 }) => Router.create<TRoutes>({ ...opts });
 
-export type AnyRouter = Router<RouteRecord>;
+export type AnyRouter = Router<any>;
 
 export type QueryResult<TShape extends LiveObjectAny> = {
   data: Record<string, MaterializedLiveType<TShape>>;
@@ -385,4 +385,8 @@ export class RouteFactory {
 
 export const routeFactory = RouteFactory.create;
 
-export type AnyRoute = Route<any, Middleware<any>, Record<string, any>>;
+export type AnyRoute = Route<
+  LiveObjectAny,
+  Middleware<any>,
+  Record<string, any>
+>;
