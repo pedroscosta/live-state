@@ -479,11 +479,17 @@ type HasDefaultValue<T> =
   T extends LiveAtomicType<any, undefined> ? false : true;
 
 export type InferInsert<T extends LiveObjectAny> = {
-  [K in keyof T["fields"]]: HasDefaultValue<
+  [K in keyof T["fields"] as HasDefaultValue<
     GetFieldType<T["fields"][K]>
   > extends true
-    ? InferLiveType<T["fields"][K]> | undefined
-    : InferLiveType<T["fields"][K]>;
+    ? never
+    : K]: InferLiveType<T["fields"][K]>;
+} & {
+  [K in keyof T["fields"] as HasDefaultValue<
+    GetFieldType<T["fields"][K]>
+  > extends false
+    ? never
+    : K]?: InferLiveType<T["fields"][K]>;
 };
 
 export type InferUpdate<T extends LiveObjectAny> = Omit<
