@@ -5,6 +5,9 @@ import {
   object,
   reference,
   string,
+  number,
+  boolean,
+  timestamp,
 } from "../../src/schema";
 import { createClient } from "../../src/client";
 import { router as createRouter, routeFactory } from "../../src/server/router";
@@ -174,5 +177,493 @@ describe("websocket client", () => {
     expectTypeOf(commentMutate)
       .parameter(1)
       .toEqualTypeOf<{ content?: string; postId?: string }>();
+  });
+});
+
+/*
+ * Complex schemas with nullable, default values, and various combinations
+ */
+
+const complexUser = object("complexUsers", {
+  id: id(),
+  name: string(),
+  email: string().nullable(),
+  age: number().nullable(),
+  isActive: boolean().default(true),
+  score: number().default(0),
+  createdAt: timestamp().default(new Date()),
+  updatedAt: timestamp().nullable(),
+  bio: string().default("No bio provided").nullable(),
+  tags: string().nullable(),
+});
+
+const complexPost = object("complexPosts", {
+  id: id(),
+  title: string(),
+  content: string().nullable(),
+  authorId: reference("complexUsers.id"),
+  published: boolean().default(false),
+  views: number().default(0),
+  rating: number().nullable(),
+  publishedAt: timestamp().nullable(),
+  createdAt: timestamp().default(new Date()),
+  updatedAt: timestamp().nullable(),
+  metadata: string().nullable(),
+});
+
+const complexComment = object("complexComments", {
+  id: id(),
+  content: string(),
+  postId: reference("complexPosts.id"),
+  authorId: reference("complexUsers.id"),
+  isApproved: boolean().default(false),
+  likes: number().default(0),
+  createdAt: timestamp().default(new Date()),
+  updatedAt: timestamp().nullable(),
+  parentId: reference("complexComments.id").nullable(),
+});
+
+const complexUserRelations = createRelations(complexUser, ({ many }) => ({
+  posts: many(complexPost, "authorId"),
+  comments: many(complexComment, "authorId"),
+}));
+
+const complexPostRelations = createRelations(complexPost, ({ one, many }) => ({
+  author: one(complexUser, "authorId"),
+  comments: many(complexComment, "postId"),
+}));
+
+const complexCommentRelations = createRelations(
+  complexComment,
+  ({ one, many }) => {
+    const ret = {
+      post: one(complexPost, "postId"),
+      author: one(complexUser, "authorId"),
+      parent: one(complexComment, "parentId", false),
+      replies: many(complexComment, "parentId"),
+    };
+    return ret;
+  }
+);
+
+const complexCommentRelations2 = createRelations(
+  complexComment,
+  ({ one, many }) => ({
+    post: one(complexPost, "postId"),
+    author: one(complexUser, "authorId"),
+    parent: one(complexComment, "parentId", false),
+    replies: many(complexComment, "parentId"),
+  })
+);
+
+const complexSchema = createSchema({
+  complexUser,
+  complexPost,
+  complexComment,
+  complexUserRelations,
+  complexPostRelations,
+  complexCommentRelations,
+});
+
+const complexRouter = createRouter({
+  schema: complexSchema,
+  routes: {
+    complexUsers: publicRoute.collectionRoute(complexSchema.complexUsers),
+    complexPosts: publicRoute.collectionRoute(complexSchema.complexPosts),
+    complexComments: publicRoute.collectionRoute(complexSchema.complexComments),
+  },
+});
+
+const {
+  store: { query: complexQuery, mutate: complexMutate },
+} = createClient<typeof complexRouter>({
+  url: "ws://localhost:5001/ws",
+  schema: complexSchema,
+  storage: false,
+});
+
+describe("complex websocket client", () => {
+  test("should infer complex query types with nullable and default fields", () => {
+    const userQuery = complexQuery.complexUsers.get;
+    const postQuery = complexQuery.complexPosts.get;
+    const commentQuery = complexQuery.complexComments.get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        name: string;
+        email: string | null;
+        age: number | null;
+        isActive: boolean;
+        score: number;
+        createdAt: Date;
+        updatedAt: Date | null;
+        bio: string | null;
+        tags: string | null;
+      }[]
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        title: string;
+        content: string | null;
+        authorId: string;
+        published: boolean;
+        views: number;
+        rating: number | null;
+        publishedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date | null;
+        metadata: string | null;
+      }[]
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        content: string;
+        postId: string;
+        authorId: string;
+        isApproved: boolean;
+        likes: number;
+        createdAt: Date;
+        updatedAt: Date | null;
+        parentId: string | null;
+      }[]
+    >();
+  });
+
+  test("should infer complex query types with include", () => {
+    const userQuery = complexQuery.complexUsers.include({
+      posts: true,
+      comments: false,
+    }).get;
+
+    const postQuery = complexQuery.complexPosts.include({
+      author: true,
+      comments: true,
+    }).get;
+
+    const commentQuery = complexQuery.complexComments.include({
+      post: true,
+      author: true,
+      parent: true,
+      replies: true,
+    }).get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        name: string;
+        email: string | null;
+        age: number | null;
+        isActive: boolean;
+        score: number;
+        createdAt: Date;
+        updatedAt: Date | null;
+        bio: string | null;
+        tags: string | null;
+        posts: {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+        }[];
+      }[]
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        title: string;
+        content: string | null;
+        authorId: string;
+        published: boolean;
+        views: number;
+        rating: number | null;
+        publishedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date | null;
+        metadata: string | null;
+        author: {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+        };
+        comments: {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+        }[];
+      }[]
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        content: string;
+        postId: string;
+        authorId: string;
+        isApproved: boolean;
+        likes: number;
+        createdAt: Date;
+        updatedAt: Date | null;
+        parentId: string | null;
+        post: {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+        };
+        author: {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+        };
+        parent: {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+        } | null;
+        replies: {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+        }[];
+      }[]
+    >();
+  });
+
+  test("should infer complex insert types with defaults", () => {
+    const userMutate = complexMutate.complexUsers.insert;
+    const postMutate = complexMutate.complexPosts.insert;
+    const commentMutate = complexMutate.complexComments.insert;
+
+    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      name: string;
+      email: string | null;
+      age: number | null;
+      updatedAt: Date | null;
+      tags: string | null;
+      isActive?: boolean | undefined;
+      score?: number | undefined;
+      createdAt?: Date | undefined;
+      bio?: string | null | undefined;
+    }>();
+
+    expectTypeOf(postMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      title: string;
+      content: string | null;
+      authorId: string;
+      rating: number | null;
+      publishedAt: Date | null;
+      updatedAt: Date | null;
+      metadata: string | null;
+      published?: boolean | undefined;
+      views?: number | undefined;
+      createdAt?: Date | undefined;
+    }>();
+
+    expectTypeOf(commentMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      content: string;
+      postId: string;
+      authorId: string;
+      updatedAt: Date | null;
+      parentId: string | null;
+      isApproved?: boolean | undefined;
+      likes?: number | undefined;
+      createdAt?: Date | undefined;
+    }>();
+  });
+
+  test("should infer complex update types", () => {
+    const userMutate = complexMutate.complexUsers.update;
+    const postMutate = complexMutate.complexPosts.update;
+    const commentMutate = complexMutate.complexComments.update;
+
+    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
+      name?: string;
+      email?: string | null;
+      age?: number | null;
+      isActive?: boolean;
+      score?: number;
+      createdAt?: Date;
+      updatedAt?: Date | null;
+      bio?: string | null;
+      tags?: string | null;
+    }>();
+
+    expectTypeOf(postMutate).parameter(1).toEqualTypeOf<{
+      title?: string;
+      content?: string | null;
+      authorId?: string;
+      published?: boolean;
+      views?: number;
+      rating?: number | null;
+      publishedAt?: Date | null;
+      createdAt?: Date;
+      updatedAt?: Date | null;
+      metadata?: string | null;
+    }>();
+
+    expectTypeOf(commentMutate).parameter(1).toEqualTypeOf<{
+      content?: string;
+      postId?: string;
+      authorId?: string;
+      isApproved?: boolean;
+      likes?: number;
+      createdAt?: Date;
+      updatedAt?: Date | null;
+      parentId?: string | null;
+    }>();
+  });
+});
+
+/*
+ * Edge cases and combinations
+ */
+
+const edgeCaseUser = object("edgeCaseUsers", {
+  id: id(),
+  // Nullable with default
+  nickname: string().default("Anonymous").nullable(),
+  // Required field
+  email: string(),
+  // Nullable without default
+  phone: string().nullable(),
+  // Default without nullable
+  status: string().default("active"),
+  // Number with default
+  priority: number().default(1),
+  // Nullable number
+  score: number().nullable(),
+  // Boolean with default
+  verified: boolean().default(false),
+  // Timestamp with default
+  lastLogin: timestamp().default(new Date()),
+  // Nullable timestamp
+  deletedAt: timestamp().nullable(),
+});
+
+const edgeCaseSchema = createSchema({
+  edgeCaseUser,
+});
+
+const edgeCaseRouter = createRouter({
+  schema: edgeCaseSchema,
+  routes: {
+    edgeCaseUsers: publicRoute.collectionRoute(edgeCaseSchema.edgeCaseUsers),
+  },
+});
+
+const {
+  store: { query: edgeCaseQuery, mutate: edgeCaseMutate },
+} = createClient<typeof edgeCaseRouter>({
+  url: "ws://localhost:5001/ws",
+  schema: edgeCaseSchema,
+  storage: false,
+});
+
+describe("edge cases and combinations", () => {
+  test("should handle nullable with default values", () => {
+    const userQuery = edgeCaseQuery.edgeCaseUsers.get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        nickname: string | null;
+        email: string;
+        phone: string | null;
+        status: string;
+        priority: number;
+        score: number | null;
+        verified: boolean;
+        lastLogin: Date;
+        deletedAt: Date | null;
+      }[]
+    >();
+  });
+
+  test("should handle insert types with mixed nullable and default fields", () => {
+    const userMutate = edgeCaseMutate.edgeCaseUsers.insert;
+
+    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      email: string;
+      phone: string | null;
+      score: number | null;
+      deletedAt: Date | null;
+      nickname?: string | null | undefined;
+      status?: string | undefined;
+      priority?: number | undefined;
+      verified?: boolean | undefined;
+      lastLogin?: Date | undefined;
+    }>();
+  });
+
+  test("should handle update types with mixed nullable and default fields", () => {
+    const userMutate = edgeCaseMutate.edgeCaseUsers.update;
+
+    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
+      nickname?: string | null;
+      email?: string;
+      phone?: string | null;
+      status?: string;
+      priority?: number;
+      score?: number | null;
+      verified?: boolean;
+      lastLogin?: Date;
+      deletedAt?: Date | null;
+    }>();
   });
 });
