@@ -30,7 +30,12 @@ export type InferLiveObject<
         [K in keyof T["relations"] as Include[K] extends true
           ? K
           : never]: T["relations"][K]["type"] extends "one"
-          ? InferLiveObject<T["relations"][K]["entity"]>
+          ? T["fields"][Exclude<
+              T["relations"][K]["relationalColumn"],
+              undefined
+            >] extends NullableLiveType<any>
+            ? InferLiveObject<T["relations"][K]["entity"]> | null
+            : InferLiveObject<T["relations"][K]["entity"]>
           : InferLiveObject<T["relations"][K]["entity"]>[];
       }
     : {});
