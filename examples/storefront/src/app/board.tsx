@@ -33,7 +33,7 @@ export function Board(): JSX.Element {
         <Button
           className="w-sm"
           onClick={() => {
-            client.groups.insert({
+            client.mutate.groups.insert({
               id: ulid().toLowerCase(),
               name: `New Group ${Object.keys(groups ?? {}).length + 1} (fetch)`,
             });
@@ -44,14 +44,14 @@ export function Board(): JSX.Element {
         <Button
           className="w-sm"
           onClick={() => {
-            client.groups.get().then((res) => {
+            client.query.groups.get().then((res) => {
               const group = Object.entries(res)[0];
 
               if (!group) {
                 return;
               }
 
-              client.groups.update(group[0], {
+              client.mutate.groups.update(group[0], {
                 name: `Updated Group ${Math.random().toString(36).substring(2, 15)} (fetch)`,
               });
             });
@@ -62,12 +62,22 @@ export function Board(): JSX.Element {
         <Button
           className="w-sm"
           onClick={() => {
-            client.groups
-              .get({ where: { name: "New Group" }, include: { cards: true } })
+            client.query.groups
+              .where({ name: "New Group" })
+              .include({ cards: true })
+              .get()
               .then((res) => console.log(res));
           }}
         >
           Get Groups
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            client.mutate.groups.hello("Pedro").then((res) => console.log(res));
+          }}
+        >
+          Custom mutation (fetch)
         </Button>
       </div>
     </div>

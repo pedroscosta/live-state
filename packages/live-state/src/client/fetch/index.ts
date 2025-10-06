@@ -78,7 +78,7 @@ export const createClient = <TRouter extends AnyRouter>(
                 new Date().toISOString()
               ),
             }),
-          });
+          }).then((res) => res.json());
         }
 
         if (method === "update") {
@@ -99,7 +99,7 @@ export const createClient = <TRouter extends AnyRouter>(
                 new Date().toISOString()
               ),
             }),
-          });
+          }).then((res) => res.json());
         }
 
         return fetch(`${opts.url}/${route}/${method}`, {
@@ -108,8 +108,8 @@ export const createClient = <TRouter extends AnyRouter>(
             ...headers,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(argumentsList[0]),
-        });
+          body: JSON.stringify({ payload: argumentsList[0] }),
+        }).then((res) => res.json());
       },
     }) as unknown as Client<TRouter>["mutate"],
   };
