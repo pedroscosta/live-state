@@ -111,6 +111,6 @@ export const createClient = <TRouter extends AnyRouter>(
           body: JSON.stringify({ payload: argumentsList[0] }),
         }).then((res) => res.json());
       },
-    }) as unknown as Client<TRouter>["mutate"],
+    }) as unknown as Client<TRouter, true>["mutate"],
   };
 };
