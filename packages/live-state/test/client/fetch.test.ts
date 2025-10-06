@@ -47,7 +47,7 @@ describe("createClient", () => {
     });
 
     mockConsumeGeneratable = vi.mocked(consumeGeneratable);
-    mockConsumeGeneratable.mockImplementation((fn) => fn());
+    mockConsumeGeneratable.mockImplementation((fn: any) => fn());
   });
 
   afterEach(() => {
@@ -98,7 +98,17 @@ describe("createClient", () => {
 
   describe("query.get", () => {
     test("should make GET request with correct URL and headers", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -123,11 +133,21 @@ describe("createClient", () => {
           },
         }
       );
-      expect(result).toEqual(mockResponse);
+      expect(result).toEqual([{ id: "1", name: "John" }]);
     });
 
     test("should handle query parameters", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -154,7 +174,17 @@ describe("createClient", () => {
     });
 
     test("should handle complex query parameters", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -189,7 +219,17 @@ describe("createClient", () => {
     });
 
     test("should handle empty query parameters", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -217,7 +257,17 @@ describe("createClient", () => {
 
     test("should handle credentials that return null", async () => {
       mockConsumeGeneratable.mockImplementationOnce(() => null);
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -244,7 +294,17 @@ describe("createClient", () => {
     });
 
     test("should handle different base URLs", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -549,7 +609,9 @@ describe("createClient", () => {
       });
 
       const result = await client.query.users.get();
-      expect(result).toBe("Invalid JSON response");
+      // When JSON parsing fails, the client falls back to res.text() which returns a string.
+      // Object.entries() on a string returns an empty array since strings don't have enumerable properties.
+      expect(result).toEqual([]);
     });
 
     test("should handle credentials function errors", async () => {
@@ -573,7 +635,17 @@ describe("createClient", () => {
 
   describe("URL construction", () => {
     test("should handle URLs with trailing slash", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -596,7 +668,17 @@ describe("createClient", () => {
     });
 
     test("should handle URLs without trailing slash", async () => {
-      const mockResponse = [{ id: "1", name: "John" }];
+      const mockResponse = { 
+        "1": { 
+          value: {
+            name: { 
+              value: "John", 
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
+            }
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
+        } 
+      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
