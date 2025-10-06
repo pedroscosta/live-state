@@ -7,6 +7,16 @@ import { QueryBuilder, type QueryExecutor } from "../query";
 import type { Client } from "../types";
 import { createObservable } from "../utils";
 
+const safeFetch = async (...args: Parameters<typeof fetch>) => {
+  const res = await fetch(...args);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch: ${res.statusText}`, {
+      cause: await res.json(),
+    });
+  }
+  return res.json();
+};
+
 export const createClient = <TRouter extends AnyRouter>(
   opts: Omit<ClientOptions, "storage">
 ): Client<TRouter, true> => {
@@ -64,7 +74,7 @@ export const createClient = <TRouter extends AnyRouter>(
 
         if (method === "insert") {
           const { id, ...input } = argumentsList[0];
-          return fetch(`${opts.url}/${route}/insert`, {
+          return safeFetch(`${opts.url}/${route}/insert`, {
             method: "POST",
             headers: {
               ...headers,
@@ -78,14 +88,14 @@ export const createClient = <TRouter extends AnyRouter>(
                 new Date().toISOString()
               ),
             }),
-          }).then((res) => res.json());
+          });
         }
 
         if (method === "update") {
           const [id, input] = argumentsList;
 
           const { id: _id, ...rest } = input;
-          return fetch(`${opts.url}/${route}/update`, {
+          return safeFetch(`${opts.url}/${route}/update`, {
             method: "POST",
             headers: {
               ...headers,
@@ -99,17 +109,17 @@ export const createClient = <TRouter extends AnyRouter>(
                 new Date().toISOString()
               ),
             }),
-          }).then((res) => res.json());
+          });
         }
 
-        return fetch(`${opts.url}/${route}/${method}`, {
+        return safeFetch(`${opts.url}/${route}/${method}`, {
           method: "POST",
           headers: {
             ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ payload: argumentsList[0] }),
-        }).then((res) => res.json());
+        });
       },
     }) as unknown as Client<TRouter, true>["mutate"],
   };

@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "lib": ["DOM", "ES2015"],
+    "lib": ["DOM", "ESNext"],
     "outDir": "./dist",
     "types": ["node", ""],
     "stripInternal": true,
