@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/complexity/noBannedTypes: <explanation> */
 import type { RawQueryRequest } from "../core/schemas/core-protocol";
+import type { Awaitable, ConditionalPromise } from "../core/utils";
 import type {
   IncludeClause,
   InferLiveObject,
@@ -9,7 +10,7 @@ import type {
 import type { Simplify } from "../utils";
 
 export type QueryExecutor = {
-  get(query: RawQueryRequest): any[];
+  get(query: RawQueryRequest): Awaitable<any[]>;
   subscribe(
     query: RawQueryRequest,
     callback: (value: any[]) => void
@@ -28,6 +29,7 @@ export class QueryBuilder<
   TCollection extends LiveObjectAny,
   TInclude extends IncludeClause<TCollection> = {},
   TSingle extends boolean = false,
+  TShouldAwait extends boolean = false,
 > {
   private _collection: TCollection;
   private _client: QueryExecutor;
@@ -36,6 +38,7 @@ export class QueryBuilder<
   private _limit?: number;
   private _single?: TSingle;
   private _sort?: { key: string; direction: "asc" | "desc" }[];
+  private _shouldAwait?: TShouldAwait;
 
   private constructor(
     collection: TCollection,
@@ -44,7 +47,8 @@ export class QueryBuilder<
     include?: TInclude,
     limit?: number,
     single?: TSingle,
-    sort?: typeof this._sort
+    sort?: typeof this._sort,
+    shouldAwait?: TShouldAwait
   ) {
     this._collection = collection;
     this._client = client;
@@ -53,6 +57,7 @@ export class QueryBuilder<
     this._limit = limit;
     this._single = single;
     this._sort = sort;
+    this._shouldAwait = shouldAwait;
 
     this.get = this.get.bind(this);
     this.subscribe = this.subscribe.bind(this);
@@ -66,29 +71,34 @@ export class QueryBuilder<
       this._include,
       this._limit,
       this._single,
-      this._sort
+      this._sort,
+      this._shouldAwait
     );
   }
 
   include<TNewInclude extends IncludeClause<TCollection>>(
     include: TNewInclude
   ) {
-    return new QueryBuilder<TCollection, TInclude & TNewInclude, TSingle>(
+    return new QueryBuilder(
       this._collection,
       this._client,
       this._where,
       {
         ...this._include,
         ...include,
-      },
+      } as TInclude & TNewInclude,
       this._limit,
       this._single,
-      this._sort
+      this._sort,
+      this._shouldAwait
     );
   }
 
-  get(): InferQueryResult<TCollection, TInclude, TSingle> {
-    const result = this._client.get({
+  get(): ConditionalPromise<
+    InferQueryResult<TCollection, TInclude, TSingle>,
+    TShouldAwait
+  > {
+    const promiseOrResult = this._client.get({
       resource: this._collection.name,
       where: this._where,
       include: this._include,
@@ -96,9 +106,28 @@ export class QueryBuilder<
       sort: this._sort,
     });
 
+    if (this._shouldAwait && "then" in promiseOrResult) {
+      return new Promise((resolve, reject) => {
+        promiseOrResult
+          .then((result) => {
+            if (this._single) resolve(result[0]);
+            resolve(result as InferQueryResult<TCollection, TInclude, TSingle>);
+          })
+          .catch(reject);
+      }) as unknown as ConditionalPromise<
+        InferQueryResult<TCollection, TInclude, TSingle>,
+        TShouldAwait
+      >;
+    }
+
+    const result = promiseOrResult as any[];
+
     if (this._single) return result[0];
 
-    return result as InferQueryResult<TCollection, TInclude, TSingle>;
+    return result as unknown as ConditionalPromise<
+      InferQueryResult<TCollection, TInclude, TSingle>,
+      TShouldAwait
+    >;
   }
 
   subscribe(
@@ -128,7 +157,8 @@ export class QueryBuilder<
       this._include,
       limit,
       this._single,
-      this._sort
+      this._sort,
+      this._shouldAwait
     );
   }
 
@@ -144,7 +174,8 @@ export class QueryBuilder<
       this._include,
       1,
       true,
-      this._sort
+      this._sort,
+      this._shouldAwait
     );
   }
 
@@ -157,7 +188,8 @@ export class QueryBuilder<
       this._include,
       this._limit,
       this._single,
-      newSort as typeof this._sort
+      newSort as typeof this._sort,
+      this._shouldAwait
     );
   }
 
@@ -172,10 +204,20 @@ export class QueryBuilder<
   }
 
   /** @internal */
-  static _init<T extends LiveObjectAny>(
+  static _init<T extends LiveObjectAny, TShouldAwait extends boolean = false>(
     collection: T,
-    client: QueryExecutor
-  ): QueryBuilder<T> {
-    return new QueryBuilder<T>(collection, client);
+    client: QueryExecutor,
+    shouldAwait?: TShouldAwait
+  ): QueryBuilder<T, {}, false, TShouldAwait> {
+    return new QueryBuilder<T, {}, false, TShouldAwait>(
+      collection,
+      client,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (shouldAwait ?? false) as TShouldAwait
+    );
   }
 }

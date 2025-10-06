@@ -5,10 +5,16 @@ import type { AnyRouter } from "../server";
 import type { Simplify } from "../utils";
 import type { QueryBuilder } from "./query";
 
-export type Client<TRouter extends AnyRouter> = {
+export type Client<
+  TRouter extends AnyRouter,
+  TShouldAwait extends boolean = false,
+> = {
   query: {
     [K in keyof TRouter["routes"]]: QueryBuilder<
-      TRouter["routes"][K]["_resourceSchema"]
+      TRouter["routes"][K]["_resourceSchema"],
+      {},
+      false,
+      TShouldAwait
     >;
   };
   mutate: {
