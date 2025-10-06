@@ -100,6 +100,9 @@ describe("createClient", () => {
     test("should make GET request with correct URL and headers", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -126,6 +129,9 @@ describe("createClient", () => {
     test("should handle query parameters", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -150,6 +156,9 @@ describe("createClient", () => {
     test("should handle complex query parameters", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -182,6 +191,9 @@ describe("createClient", () => {
     test("should handle empty query parameters", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -207,6 +219,9 @@ describe("createClient", () => {
       mockConsumeGeneratable.mockImplementationOnce(() => null);
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -231,6 +246,9 @@ describe("createClient", () => {
     test("should handle different base URLs", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -272,6 +290,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -306,6 +326,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -334,6 +356,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -364,6 +388,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -397,6 +423,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -417,6 +445,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -447,6 +477,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -503,7 +535,11 @@ describe("createClient", () => {
 
     test("should handle JSON parsing errors", async () => {
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.reject(new Error("Invalid JSON")),
+        text: () => Promise.resolve("Invalid JSON response"),
       });
 
       const client = createClient({
@@ -512,7 +548,8 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await expect(client.query.users.get()).rejects.toThrow("Invalid JSON");
+      const result = await client.query.users.get();
+      expect(result).toBe("Invalid JSON response");
     });
 
     test("should handle credentials function errors", async () => {
@@ -538,6 +575,9 @@ describe("createClient", () => {
     test("should handle URLs with trailing slash", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -558,6 +598,9 @@ describe("createClient", () => {
     test("should handle URLs without trailing slash", async () => {
       const mockResponse = [{ id: "1", name: "John" }];
       mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -581,6 +624,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -602,6 +647,8 @@ describe("createClient", () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        statusText: "OK",
         json: () => Promise.resolve(mockResponse),
       });
 
