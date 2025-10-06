@@ -8,10 +8,10 @@ import {
   number,
   boolean,
   timestamp,
-} from "../src/schema";
-import { createClient } from "../src/client";
-import { createClient as createFetchClient } from "../src/client/fetch";
-import { router as createRouter, routeFactory } from "../src/server/router";
+} from "../../src/schema";
+import { createClient } from "../../src/client";
+import { createClient as createFetchClient } from "../../src/client/fetch";
+import { router as createRouter, routeFactory } from "../../src/server/router";
 import { describe, expectTypeOf, test } from "vitest";
 
 /*
