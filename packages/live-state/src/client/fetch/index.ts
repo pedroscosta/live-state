@@ -46,6 +46,9 @@ export const createClient = <TRouter extends AnyRouter>(
         }
       );
 
+      if (!res || typeof res !== 'object') {
+        return [];
+      }
       return Object.entries(res).map(([key, value]) => ({
         ...inferValue(value as any),
         id: key,
