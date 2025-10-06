@@ -1,6 +1,10 @@
 import { stringify } from "qs";
 import { consumeGeneratable } from "../../core/utils";
-import type { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
+import {
+  inferValue,
+  type LiveObjectAny,
+  type LiveObjectMutationInput,
+} from "../../schema";
 import type { AnyRouter } from "../../server";
 import type { ClientOptions } from "..";
 import { QueryBuilder, type QueryExecutor } from "../query";
@@ -42,7 +46,10 @@ export const createClient = <TRouter extends AnyRouter>(
         }
       );
 
-      return res as any[];
+      return Object.entries(res).map(([key, value]) => ({
+        ...inferValue(value as any),
+        id: key,
+      })) as any[];
     },
     subscribe: () => {
       throw new Error("Fetch client does not support subscriptions");
@@ -81,7 +88,7 @@ export const createClient = <TRouter extends AnyRouter>(
 
         if (method === "insert") {
           const { id, ...input } = argumentsList[0];
-          return safeFetch(`${opts.url}/${route}/insert`, {
+          await safeFetch(`${opts.url}/${route}/insert`, {
             method: "POST",
             headers: {
               ...headers,
@@ -96,13 +103,14 @@ export const createClient = <TRouter extends AnyRouter>(
               ),
             }),
           });
+          return;
         }
 
         if (method === "update") {
           const [id, input] = argumentsList;
 
           const { id: _id, ...rest } = input;
-          return safeFetch(`${opts.url}/${route}/update`, {
+          await safeFetch(`${opts.url}/${route}/update`, {
             method: "POST",
             headers: {
               ...headers,
@@ -117,9 +125,10 @@ export const createClient = <TRouter extends AnyRouter>(
               ),
             }),
           });
+          return;
         }
 
-        return safeFetch(`${opts.url}/${route}/${method}`, {
+        await safeFetch(`${opts.url}/${route}/${method}`, {
           method: "POST",
           headers: {
             ...headers,
