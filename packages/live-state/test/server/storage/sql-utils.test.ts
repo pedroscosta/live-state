@@ -14,6 +14,7 @@ import {
   DummyDriver,
   Kysely,
   OperatorNode,
+  OrNode,
   ParensNode,
   PostgresAdapter,
   PostgresIntrospector,
