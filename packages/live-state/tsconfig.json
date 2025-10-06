@@ -2,7 +2,7 @@
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
-    "lib": ["ES2015"],
+    "lib": ["ESNext"],
     "outDir": "./dist",
     "types": ["node"],
     "stripInternal": true,

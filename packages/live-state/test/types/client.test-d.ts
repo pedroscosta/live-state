@@ -10,6 +10,7 @@ import {
   timestamp,
 } from "../../src/schema";
 import { createClient } from "../../src/client";
+import { createClient as createFetchClient } from "../../src/client/fetch";
 import { router as createRouter, routeFactory } from "../../src/server/router";
 import { describe, expectTypeOf, test } from "vitest";
 
@@ -653,6 +654,567 @@ describe("edge cases and combinations", () => {
 
   test("should handle update types with mixed nullable and default fields", () => {
     const userMutate = edgeCaseMutate.edgeCaseUsers.update;
+
+    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
+      nickname?: string | null;
+      email?: string;
+      phone?: string | null;
+      status?: string;
+      priority?: number;
+      score?: number | null;
+      verified?: boolean;
+      lastLogin?: Date;
+      deletedAt?: Date | null;
+    }>();
+  });
+});
+
+/*
+ * Fetch client type tests
+ */
+
+const fetchClient = createFetchClient<typeof router>({
+  url: "http://localhost:3000",
+  schema,
+  credentials: async () => ({}),
+});
+
+describe("fetch client", () => {
+  test("should infer basic query types", () => {
+    const userQuery = fetchClient.query.users.get;
+    const postQuery = fetchClient.query.posts.get;
+    const commentQuery = fetchClient.query.comments.get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          name: string;
+        }[]
+      >
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          title: string;
+          authorId: string;
+        }[]
+      >
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          content: string;
+          postId: string;
+        }[]
+      >
+    >();
+  });
+
+  test("should infer basic query types with include", () => {
+    const userQuery = fetchClient.query.users.include({
+      comments: true,
+      posts: false,
+    }).get;
+
+    const postQuery = fetchClient.query.posts.include({
+      user: true,
+      comments: true,
+    }).get;
+
+    const commentQuery = fetchClient.query.comments.include({
+      post: true,
+    }).get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          name: string;
+          comments: { id: string; content: string; postId: string }[];
+        }[]
+      >
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          title: string;
+          authorId: string;
+          user: { id: string; name: string };
+          comments: { id: string; content: string; postId: string }[];
+        }[]
+      >
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          content: string;
+          postId: string;
+          post: { id: string; title: string; authorId: string };
+        }[]
+      >
+    >();
+  });
+
+  test("should infer insert types", () => {
+    const userMutate = fetchClient.mutate.users.insert;
+    const postMutate = fetchClient.mutate.posts.insert;
+    const commentMutate = fetchClient.mutate.comments.insert;
+
+    expectTypeOf(userMutate)
+      .parameter(0)
+      .toEqualTypeOf<{ id: string; name: string }>();
+    expectTypeOf(postMutate)
+      .parameter(0)
+      .toEqualTypeOf<{ id: string; title: string; authorId: string }>();
+    expectTypeOf(commentMutate)
+      .parameter(0)
+      .toEqualTypeOf<{ id: string; content: string; postId: string }>();
+  });
+
+  test("should infer update types", () => {
+    const userMutate = fetchClient.mutate.users.update;
+    const postMutate = fetchClient.mutate.posts.update;
+    const commentMutate = fetchClient.mutate.comments.update;
+
+    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{ name?: string }>();
+    expectTypeOf(postMutate)
+      .parameter(1)
+      .toEqualTypeOf<{ title?: string; authorId?: string }>();
+    expectTypeOf(commentMutate)
+      .parameter(1)
+      .toEqualTypeOf<{ content?: string; postId?: string }>();
+  });
+
+  test("should handle query chaining", () => {
+    const chainedQuery = fetchClient.query.users
+      .where({ name: "John" })
+      .include({ posts: true })
+      .limit(10)
+      .orderBy("name", "asc").get;
+
+    expectTypeOf(chainedQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          name: string;
+          posts: { id: string; title: string; authorId: string }[];
+        }[]
+      >
+    >();
+  });
+
+  test("should handle single result queries", () => {
+    const singleUserQuery = fetchClient.query.users.one("123").get;
+    const firstUserQuery = fetchClient.query.users.first().get;
+
+    expectTypeOf(singleUserQuery).returns.toEqualTypeOf<
+      Promise<
+        | {
+            id: string;
+            name: string;
+          }
+        | undefined
+      >
+    >();
+
+    expectTypeOf(firstUserQuery).returns.toEqualTypeOf<
+      Promise<
+        | {
+            id: string;
+            name: string;
+          }
+        | undefined
+      >
+    >();
+  });
+
+  test("should handle single result queries with include", () => {
+    const singleUserQuery = fetchClient.query.users
+      .include({ posts: true })
+      .one("123").get;
+
+    expectTypeOf(singleUserQuery).returns.toEqualTypeOf<
+      Promise<
+        | {
+            id: string;
+            name: string;
+            posts: { id: string; title: string; authorId: string }[];
+          }
+        | undefined
+      >
+    >();
+  });
+});
+
+/*
+ * Complex fetch client type tests
+ */
+
+const complexFetchClient = createFetchClient<typeof complexRouter>({
+  url: "http://localhost:3000",
+  schema: complexSchema,
+  credentials: async () => ({}),
+});
+
+describe("complex fetch client", () => {
+  test("should infer complex query types with nullable and default fields", () => {
+    const userQuery = complexFetchClient.query.complexUsers.get;
+    const postQuery = complexFetchClient.query.complexPosts.get;
+    const commentQuery = complexFetchClient.query.complexComments.get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+        }[]
+      >
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+        }[]
+      >
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+        }[]
+      >
+    >();
+  });
+
+  test("should infer complex query types with include", () => {
+    const userQuery = complexFetchClient.query.complexUsers.include({
+      posts: true,
+      comments: false,
+    }).get;
+
+    const postQuery = complexFetchClient.query.complexPosts.include({
+      author: true,
+      comments: true,
+    }).get;
+
+    const commentQuery = complexFetchClient.query.complexComments.include({
+      post: true,
+      author: true,
+      parent: true,
+      replies: true,
+    }).get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+          posts: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+          }[];
+        }[]
+      >
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+          };
+          comments: {
+            id: string;
+            content: string;
+            postId: string;
+            authorId: string;
+            isApproved: boolean;
+            likes: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            parentId: string | null;
+          }[];
+        }[]
+      >
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+          post: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+          };
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+          };
+          parent: {
+            id: string;
+            content: string;
+            postId: string;
+            authorId: string;
+            isApproved: boolean;
+            likes: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            parentId: string | null;
+          } | null;
+          replies: {
+            id: string;
+            content: string;
+            postId: string;
+            authorId: string;
+            isApproved: boolean;
+            likes: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            parentId: string | null;
+          }[];
+        }[]
+      >
+    >();
+  });
+
+  test("should infer complex insert types with defaults", () => {
+    const userMutate = complexFetchClient.mutate.complexUsers.insert;
+    const postMutate = complexFetchClient.mutate.complexPosts.insert;
+    const commentMutate = complexFetchClient.mutate.complexComments.insert;
+
+    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      name: string;
+      email: string | null;
+      age: number | null;
+      updatedAt: Date | null;
+      tags: string | null;
+      isActive?: boolean | undefined;
+      score?: number | undefined;
+      createdAt?: Date | undefined;
+      bio?: string | null | undefined;
+    }>();
+
+    expectTypeOf(postMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      title: string;
+      content: string | null;
+      authorId: string;
+      rating: number | null;
+      publishedAt: Date | null;
+      updatedAt: Date | null;
+      metadata: string | null;
+      published?: boolean | undefined;
+      views?: number | undefined;
+      createdAt?: Date | undefined;
+    }>();
+
+    expectTypeOf(commentMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      content: string;
+      postId: string;
+      authorId: string;
+      updatedAt: Date | null;
+      parentId: string | null;
+      isApproved?: boolean | undefined;
+      likes?: number | undefined;
+      createdAt?: Date | undefined;
+    }>();
+  });
+
+  test("should infer complex update types", () => {
+    const userMutate = complexFetchClient.mutate.complexUsers.update;
+    const postMutate = complexFetchClient.mutate.complexPosts.update;
+    const commentMutate = complexFetchClient.mutate.complexComments.update;
+
+    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
+      name?: string;
+      email?: string | null;
+      age?: number | null;
+      isActive?: boolean;
+      score?: number;
+      createdAt?: Date;
+      updatedAt?: Date | null;
+      bio?: string | null;
+      tags?: string | null;
+    }>();
+
+    expectTypeOf(postMutate).parameter(1).toEqualTypeOf<{
+      title?: string;
+      content?: string | null;
+      authorId?: string;
+      published?: boolean;
+      views?: number;
+      rating?: number | null;
+      publishedAt?: Date | null;
+      createdAt?: Date;
+      updatedAt?: Date | null;
+      metadata?: string | null;
+    }>();
+
+    expectTypeOf(commentMutate).parameter(1).toEqualTypeOf<{
+      content?: string;
+      postId?: string;
+      authorId?: string;
+      isApproved?: boolean;
+      likes?: number;
+      createdAt?: Date;
+      updatedAt?: Date | null;
+      parentId?: string | null;
+    }>();
+  });
+});
+
+/*
+ * Edge cases fetch client type tests
+ */
+
+const edgeCaseFetchClient = createFetchClient<typeof edgeCaseRouter>({
+  url: "http://localhost:3000",
+  schema: edgeCaseSchema,
+  credentials: async () => ({}),
+});
+
+describe("edge cases fetch client", () => {
+  test("should handle nullable with default values", () => {
+    const userQuery = edgeCaseFetchClient.query.edgeCaseUsers.get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          nickname: string | null;
+          email: string;
+          phone: string | null;
+          status: string;
+          priority: number;
+          score: number | null;
+          verified: boolean;
+          lastLogin: Date;
+          deletedAt: Date | null;
+        }[]
+      >
+    >();
+  });
+
+  test("should handle insert types with mixed nullable and default fields", () => {
+    const userMutate = edgeCaseFetchClient.mutate.edgeCaseUsers.insert;
+
+    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
+      id: string;
+      email: string;
+      phone: string | null;
+      score: number | null;
+      deletedAt: Date | null;
+      nickname?: string | null | undefined;
+      status?: string | undefined;
+      priority?: number | undefined;
+      verified?: boolean | undefined;
+      lastLogin?: Date | undefined;
+    }>();
+  });
+
+  test("should handle update types with mixed nullable and default fields", () => {
+    const userMutate = edgeCaseFetchClient.mutate.edgeCaseUsers.update;
 
     expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
       nickname?: string | null;
