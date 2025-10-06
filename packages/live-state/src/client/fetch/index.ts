@@ -9,12 +9,19 @@ import { createObservable } from "../utils";
 
 const safeFetch = async (...args: Parameters<typeof fetch>) => {
   const res = await fetch(...args);
+
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    data = await res.text().catch(() => undefined);
+  }
   if (!res.ok) {
-    throw new Error(`Failed to fetch: ${res.statusText}`, {
-      cause: await res.json(),
+    throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`, {
+      cause: data,
     });
   }
-  return res.json();
+  return data;
 };
 
 export const createClient = <TRouter extends AnyRouter>(
@@ -25,7 +32,7 @@ export const createClient = <TRouter extends AnyRouter>(
       const qs = stringify(query);
       const headers = (await consumeGeneratable(opts.credentials)) ?? {};
 
-      const res = await fetch(
+      const res = await safeFetch(
         `${opts.url}/${query.resource}${qs ? `?${qs}` : ""}`,
         {
           headers: {
@@ -33,7 +40,7 @@ export const createClient = <TRouter extends AnyRouter>(
             "Content-Type": "application/json",
           },
         }
-      ).then((res) => res.json());
+      );
 
       return res as any[];
     },
