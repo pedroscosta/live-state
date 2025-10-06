@@ -106,28 +106,21 @@ export class QueryBuilder<
       sort: this._sort,
     });
 
-    if (this._shouldAwait && "then" in promiseOrResult) {
-      return new Promise((resolve, reject) => {
-        promiseOrResult
-          .then((result) => {
-            if (this._single) resolve(result[0]);
-            resolve(result as InferQueryResult<TCollection, TInclude, TSingle>);
-          })
-          .catch(reject);
-      }) as unknown as ConditionalPromise<
+    if (this._shouldAwait) {
+      return Promise.resolve(promiseOrResult).then((result) =>
+        this._single ? result[0] : result
+      ) as ConditionalPromise<
         InferQueryResult<TCollection, TInclude, TSingle>,
         TShouldAwait
       >;
     }
 
-    const result = promiseOrResult as any[];
-
-    if (this._single) return result[0];
-
-    return result as unknown as ConditionalPromise<
-      InferQueryResult<TCollection, TInclude, TSingle>,
-      TShouldAwait
-    >;
+    return this._single
+      ? (promiseOrResult as any[])[0]
+      : (promiseOrResult as any[] as unknown as ConditionalPromise<
+          InferQueryResult<TCollection, TInclude, TSingle>,
+          TShouldAwait
+        >);
   }
 
   subscribe(
