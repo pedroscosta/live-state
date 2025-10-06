@@ -271,6 +271,7 @@ describe("createClient", () => {
     test("should make POST request for insert with correct payload", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -304,6 +305,7 @@ describe("createClient", () => {
       mockConsumeGeneratable.mockResolvedValueOnce(null);
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -331,6 +333,7 @@ describe("createClient", () => {
     test("should handle different routes for insert", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -360,6 +363,7 @@ describe("createClient", () => {
     test("should make POST request for update with correct payload", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -392,6 +396,7 @@ describe("createClient", () => {
     test("should exclude id from update payload", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -411,6 +416,7 @@ describe("createClient", () => {
     test("should handle different routes for update", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -440,6 +446,7 @@ describe("createClient", () => {
     test("should make POST request for custom methods", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -573,6 +580,7 @@ describe("createClient", () => {
     test("should encode mutation with timestamp", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
@@ -593,6 +601,7 @@ describe("createClient", () => {
     test("should handle different mutation types", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
+        ok: true,
         json: () => Promise.resolve(mockResponse),
       });
 
