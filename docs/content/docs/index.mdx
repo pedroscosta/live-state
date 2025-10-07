@@ -1,13 +1,33 @@
 ---
-title: Hello World
-description: Your first document
+title: Introduction
 ---
 
-Welcome to the docs! You can start writing documents in `/content/docs`.
+## What is Live State?
 
-## What is Next?
+Live State is a real‑time sync engine with a strongly‑typed schema, a simple server API, and a built‑in client store for React. It lets you:
 
-<Cards>
-  <Card title="Learn more about Next.js" href="https://nextjs.org/docs" />
-  <Card title="Learn more about Fumadocs" href="https://fumadocs.vercel.app" />
-</Cards>
+- Keep client UI in sync with the backend via WebSocket subscriptions
+- Mutate data optimistically with automatic conflict resolution
+- Define your domain using a type‑safe schema that maps to storage
+- Build routes with authorization hooks and custom mutations
+
+At a glance, you define a schema, mount the server adapter, and use the generated client to query and mutate data in real‑time from your app.
+
+## Key concepts
+
+- Schema: Declarative model of your domain (entities, fields, relations)
+- Router & Routes: Server-side request handling and authorization
+- Storage: Pluggable persistence (SQL storage included)
+- Client: Generated query/mutation API + live subscription store
+- React Utils: `SubscriptionProvider` and `useLiveQuery` for seamless UI updates
+
+## Why Live State?
+
+Traditional client/server data flows require a lot of glue: data fetching, cache management, websockets, optimistic updates, and conflict resolution. Live State unifies these concerns with a single developer experience and a consistent, typed protocol from server to client.
+
+## What’s next
+
+- Continue to Quick Start to set up a server and a React client
+- Explore the examples to see a full stack in action
+
+
