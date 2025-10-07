@@ -17,7 +17,7 @@ export const NavLink = ({
       href={href}
       className={cn(
         "text-foreground/80 transition-colors hover:text-foreground",
-        pathname.startsWith("/docs") ? "text-foreground" : ""
+        pathname.startsWith(href) && "text-foreground border-b border-primary"
       )}
     >
       {children}
