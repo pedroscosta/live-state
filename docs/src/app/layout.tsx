@@ -1,18 +1,21 @@
 import { RootProvider } from "fumadocs-ui/provider";
 import { RefreshCw } from "lucide-react";
-import { Inter } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { NavLink } from "../components/nav-link";
 import "./global.css";
 
-const inter = Inter({
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
 });
 
+console.log(jetbrainsMono.variable);
+
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.className} suppressHydrationWarning>
+    <html lang="en" className={`${jetbrainsMono.variable} ${jetbrainsMono.className}`}  suppressHydrationWarning>
       <body className="flex flex-col min-h-screen overflow-x-hidden w-screen">
         <header className="border-b h-14 w-full sticky top-0 bg-background flex items-center px-12 py-2 font-mono z-50">
           <Link

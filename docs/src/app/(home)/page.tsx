@@ -55,6 +55,21 @@ export default function HomePage() {
       <section id="features" className="-mt-[1px]">
         <Features />
       </section>
+      <footer className="py-8 border-x border-dashed">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+          <p className="text-sm text-muted-foreground">
+            Made with ♥ by{" "}
+            <a
+              href="https://x.com/pedroscosta_"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground hover:text-primary transition-colors font-medium"
+            >
+              @pedroscosta_
+            </a>
+          </p>
+        </div>
+      </footer>
     </main>
   );
 }

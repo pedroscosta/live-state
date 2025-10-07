@@ -1,12 +1,22 @@
 import { cn } from "@/lib/utils";
-import { CloudOff, DatabaseZap, Flame, Package } from "lucide-react";
+import { CloudOff, CodeXml, DatabaseZap, Flame, Package, TreePine, Zap, Shield } from "lucide-react";
 
 export function Features() {
   const features = [
     {
+      title: "Real-time sync",
+      description: "Instant updates across all connected clients.",
+      icon: <Zap />,
+    },
+    {
       title: "Offline-first",
       description: "Save changes locally and sync when you're back online.",
       icon: <CloudOff />,
+    },
+    {
+      title: "Type safe",
+      description: "Fully type safe query and mutations.",
+      icon: <CodeXml />,
     },
     {
       title: "Fine-grained reactivity",
@@ -20,10 +30,19 @@ export function Features() {
     },
     {
       title: "Works with any database",
-      description: "live-state works with any database, be it NoSQL or SQL.",
+      description: "Choose your favorite database.",
       icon: <DatabaseZap />,
     },
-    // TODO: Add more features -- Tree shakable, type safe, + 2 more features
+    {
+      title: "Tree shakable",
+      description: "Keep your bundle size small.",
+      icon: <TreePine />,
+    },
+    {
+      title: "Conflict resolution",
+      description: "Automatic conflict resolution for concurrent edits.",
+      icon: <Shield />,
+    },
   ];
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 text-left relative z-10 max-w-7xl mx-auto border-t">
