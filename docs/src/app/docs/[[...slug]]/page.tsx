@@ -1,12 +1,12 @@
-import { source } from '@/lib/source';
+import { createRelativeLink } from 'fumadocs-ui/mdx';
+import { notFound } from 'next/navigation';
 import {
-	DocsPage,
 	DocsBody,
 	DocsDescription,
+	DocsPage,
 	DocsTitle,
-} from 'fumadocs-ui/page';
-import { notFound } from 'next/navigation';
-import { createRelativeLink } from 'fumadocs-ui/mdx';
+} from '@/components/layout/page';
+import { source } from '@/lib/source';
 import { getMDXComponents } from '@/mdx-components';
 
 export default async function Page(props: {

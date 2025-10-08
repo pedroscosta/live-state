@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { NavLink } from '../components/nav-link';
 import './global.css';
-import { SidebarTrigger } from 'fumadocs-core/sidebar';
+import { SidebarTrigger } from '@/components/sidebar';
 
 const jetbrainsMono = JetBrains_Mono({
 	variable: '--font-mono',

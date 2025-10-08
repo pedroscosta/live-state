@@ -5,8 +5,8 @@ description: Install and run a minimal Live State server and client
 
 ## 1. Install
 
-```bash
-pnpm add @live-state/sync
+```npm
+npm install @live-state/sync
 ```
 
 ## 2. Define your schema
@@ -14,13 +14,13 @@ pnpm add @live-state/sync
 ```ts
 import { createSchema, object, id, string, number } from "@live-state/sync";
 
-const Task = object("tasks", {
+const tasks = object("tasks", {
   id: id(),
   title: string(),
   priority: number().default(0),
 });
 
-export const schema = createSchema({ Task });
+export const schema = createSchema({ tasks });
 ```
 
 ## 3. Create a server
@@ -33,10 +33,7 @@ import { router, server, SQLStorage, routeFactory } from "@live-state/sync/serve
 import { schema } from "./schema";
 
 const routes = routeFactory()
-  .collectionRoute(schema.tasks)
-  .use() // optional middlewares
-  ;
-
+  .collectionRoute(schema.tasks);
 const appRouter = router({
   schema,
   routes: {
@@ -73,7 +70,8 @@ export const { client, store } = createClient({
 
 // React usage
 function Tasks() {
-  const tasks = useLiveQuery(store.query.tasks).get();
+  const tasks = useLiveQuery(store.query.tasks);
+
   return (
     <ul>
       {tasks.map((t) => (
@@ -102,6 +100,5 @@ await store.mutate.tasks.insert({ id: "task_1", title: "First task" });
 await store.mutate.tasks.update("task_1", { title: "Updated title" });
 ```
 
-That’s it — the UI stays live‑synced via WebSocket, with optimistic updates and conflict resolution built in.
-
+That's it — the UI stays live-synced via WebSocket, with optimistic updates and conflict resolution built in.
 
