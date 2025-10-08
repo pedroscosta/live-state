@@ -5,12 +5,23 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { NavLink } from '../components/nav-link';
 import './global.css';
+import type { Metadata } from 'next';
 import { SidebarTrigger } from '@/components/sidebar';
 
 const jetbrainsMono = JetBrains_Mono({
 	variable: '--font-mono',
 	subsets: ['latin'],
 });
+
+export const metadata: Metadata = {
+	title: 'live-state',
+	description: 'Build ultra fast UIs without worrying about the data.',
+	openGraph: {
+		title: 'live-state',
+		description: 'Build ultra fast UIs without worrying about the data.',
+		url: 'https://live-state.vercel.app',
+	},
+};
 
 export default function Layout({ children }: { children: ReactNode }) {
 	return (
