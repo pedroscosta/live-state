@@ -1,5 +1,5 @@
 import { RootProvider } from 'fumadocs-ui/provider';
-import { Menu, RefreshCw } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { JetBrains_Mono } from 'next/font/google';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -37,7 +37,21 @@ export default function Layout({ children }: { children: ReactNode }) {
 							href="/"
 							className="flex items-center gap-2  text-lg font-medium"
 						>
-							<RefreshCw className="rotate-90" /> live-state
+							<svg
+								width="168"
+								height="170"
+								viewBox="0 0 168 170"
+								fill="none"
+								xmlns="http://www.w3.org/2000/svg"
+								className="size-6"
+							>
+								<title>Live State logo</title>
+								<path
+									d="M83.8491 0C126.389 0 161.612 31.3228 167.716 72.1631C137.865 32.9468 86.7739 34.2285 86.7739 34.2285V14.4375L30.0161 56.0967L95.7642 79.6201L91.7876 59.542C97.9292 62.5032 147.326 72.0459 166.793 102.547C158.637 140.866 124.601 169.61 83.8491 169.61C42.0131 169.61 7.25361 139.316 0.308105 99.4678C30.2879 136.887 79.7975 135.688 79.9087 135.686V155.477L136.667 113.817L70.9185 90.293L74.896 110.371C68.83 107.446 20.5573 98.101 0.615723 68.4766C8.22712 29.4529 42.5981 9.80642e-05 83.8491 0Z"
+									fill="white"
+								/>
+							</svg>
+							live-state
 						</Link>
 						<div className="ml-auto flex items-center gap-6">
 							<NavLink className="hidden sm:block" href="/docs">
