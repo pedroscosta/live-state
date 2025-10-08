@@ -36,8 +36,8 @@ import { DocsLayout } from '@/components/layout/docs';
 //               <SidebarCollapseTrigger
 //                 className={cn(
 //                   buttonVariants({
-//                     color: 'ghost',
-//                     size: 'icon-sm',
+//                     variant: 'ghost',
+//                     size: 'icon'
 //                   }),
 //                   'ms-auto mb-auto -my-1.5 text-fd-muted-foreground max-md:hidden',
 //                 )}
