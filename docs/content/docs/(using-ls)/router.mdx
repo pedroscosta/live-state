@@ -1,0 +1,114 @@
+---
+title: Router
+---
+
+The router is responsible for handling incoming requests and dispatching them to the appropriate handlers. It also enables context sharing between handlers and middlewares.
+
+## Creating a router
+
+You can create a router using the `router` function, which takes a schema and the routes definitions:
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const publicRouteFactory = routeFactory();
+
+export const router = router({
+  schema,
+  routes: {
+    groups: publicRouteFactory.collectionRoute(schema.groups),
+  },
+});
+
+export type Router = typeof router; // Export the router type to use later in the client
+```
+
+## Routes
+
+A route is created using a [route factory](#route-factory).
+A basic collection route can be created using the `collectionRoute` method:
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const publicRouteFactory = routeFactory();
+
+const groupsRoute = publicRouteFactory.collectionRoute(schema.groups);
+```
+
+By default, the route will have the following procedures:
+
+- `query`: queries the collection
+- `insert`: inserts a new record
+- `update`: updates a record
+
+These procedures are not meant to be overridden, since they handle raw data manipulation and conflict resolution. But it's possible to add custom [authorization](/docs/authorization) handlers to them and have more control over what is permitted. Or even add [custom procedures](#custom-mutations) to the route.
+
+## Custom mutations
+
+A custom mutation can be created using the `withMutations` method:
+
+```ts title="router.ts"
+const groupsRoute = publicRouteFactory
+  .collectionRoute(schema.groups)
+  .withMutations(({ mutation }) => ({
+    hello: mutation(z.string()).handler(async ({ req }) => {
+      return {
+        message: `Hello ${req.input}`,
+      };
+    }),
+  }));
+```
+
+Mutations support input validation using [Zod](https://zod.dev/). It's recommended to use it to validate the input value. It's only possible to have a single input value, so if more than one is needed, you can use an object or a tuple.
+
+The inputs is then passed to the handler, which is responsible for handling the mutation and returning the results.
+
+<Callout type="warning">
+  Mutations should have a JSON serializable return value.
+</Callout>
+
+It's also possible to perform database operations using the `db` object, available in the options of the handler.
+
+```ts title="router.ts"
+const groupsRoute = publicRouteFactory
+  .collectionRoute(schema.groups)
+  .withMutations(({ mutation }) => ({
+    customCreate: mutation(z.string()).handler(async ({ req, db }) => {
+      return db.insert(schema.groups, {
+        name: req.input,
+      });
+    }),
+  }));
+```
+
+These operations are also broadcasted to the clients, so they can update their local state in real time.
+
+## Route factory
+
+The `routeFactory` function is used to create a route factory. A route factory is then used to create routes. It allows sharing of common middleware between routes.
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const publicRouteFactory = routeFactory();
+
+const privateRouteFactory = publicRouteFactory.use(async ({ req, next }) => {
+  if (!req.context.session && !req.context.discordBotKey) {
+    throw new Error("Unauthorized");
+  }
+
+  return next(req);
+});
+
+export const router = router({
+  schema,
+  routes: {
+    users: privateRouteFactory.collectionRoute(schema.users),
+    posts: publicRouteFactory.collectionRoute(schema.posts), // This route will not be protected by the middleware
+  },
+});
+```

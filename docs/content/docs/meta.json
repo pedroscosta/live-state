@@ -4,6 +4,7 @@
     "index",
     "quick-start",
     "---Using Live State---",
-    "(using-ls)/schema"
+    "(using-ls)/schema",
+    "(using-ls)/router"
   ]
 }
