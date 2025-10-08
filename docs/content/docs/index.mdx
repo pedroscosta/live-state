@@ -2,32 +2,27 @@
 title: Introduction
 ---
 
-## What is Live State?
+Live State is a data framework that provides real-time synchronization with a strongly-typed schema, a simple server API, and a built-in client store for React. It lets you:
 
-Live State is a real‑time sync engine with a strongly‑typed schema, a simple server API, and a built‑in client store for React. It lets you:
-
-- Keep client UI in sync with the backend via WebSocket subscriptions
+- Keep client UI in sync with data changes
 - Mutate data optimistically with automatic conflict resolution
-- Define your domain using a type‑safe schema that maps to storage
-- Build routes with authorization hooks and custom mutations
+- Define your data model using a type-safe schema that maps to storage
+- Build custom server procedures with input validation and output type inference
 
-At a glance, you define a schema, mount the server adapter, and use the generated client to query and mutate data in real‑time from your app.
+In a nutshell, you define a schema, mount the server adapter, and use the generated client to query and mutate data in real-time.
 
 ## Key concepts
 
-- Schema: Declarative model of your domain (entities, fields, relations)
-- Router & Routes: Server-side request handling and authorization
-- Storage: Pluggable persistence (SQL storage included)
-- Client: Generated query/mutation API + live subscription store
-- React Utils: `SubscriptionProvider` and `useLiveQuery` for seamless UI updates
+### Schema
 
-## Why Live State?
+A schema is a declarative model of your domain (entities, fields, relations). It's the foundation of your data model.
 
-Traditional client/server data flows require a lot of glue: data fetching, cache management, websockets, optimistic updates, and conflict resolution. Live State unifies these concerns with a single developer experience and a consistent, typed protocol from server to client.
+### Client
 
-## What’s next
+Live State's client provides a type safe query/mutation API and a global state store for React. All the data you need will be available in the client store, resolving any queries in sub-milliseconds times and reacting to data changes in real-time.
 
-- Continue to Quick Start to set up a server and a React client
-- Explore the examples to see a full stack in action
+### Server
+
+Live State's server is a custom server adapter that mounts the Live State schema and provides a RPC-like API for querying and mutating data.
 
 
