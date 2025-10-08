@@ -1,8 +1,6 @@
 'use client';
 
-import { docsOptions } from '@/app/layout.config';
-import { cn } from '@/lib/utils';
-import { PageTree } from 'fumadocs-core/server';
+import type { PageTree } from 'fumadocs-core/server';
 import { RootToggle } from 'fumadocs-ui/components/layout/root-toggle';
 import { LargeSearchToggle } from 'fumadocs-ui/components/layout/search-toggle';
 import {
@@ -10,32 +8,35 @@ import {
 	Sidebar,
 	SidebarFooter,
 	SidebarHeader,
-	SidebarPageTree,
+	SidebarPageTree as SidebarPageTreeOriginal,
 	SidebarViewport,
 } from 'fumadocs-ui/components/layout/sidebar';
 import {
 	CollapsibleControl,
 	DocsLayout,
 	DocsLayoutSidebarFooter,
-	LinkItemType,
+	type LinkItemType,
 } from 'fumadocs-ui/layouts/docs';
 import {
 	getSidebarTabsFromOptions,
 	SidebarLinkItem,
-	SidebarOptions,
+	type SidebarOptions,
 } from 'fumadocs-ui/layouts/docs/shared';
 import { getLinks } from 'fumadocs-ui/layouts/shared';
-
-// import { DocsLayout } from "fumadocs-ui/layouts/notebook";
-import { useMemo, type ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
+import { docsOptions } from '@/app/layout.config';
+import { cn } from '@/lib/utils';
 
 const Separator = ({ item }: { item: PageTree.Separator }) => {
 	return <div className="my-4 text-sm text-muted-foreground">{item.name}</div>;
 };
 
+export const SidebarPageTree = () => {
+	return <SidebarPageTreeOriginal components={{ Separator }} />;
+};
+
 function DocsLayoutSidebar({
 	collapsible = true,
-	components,
 	links = [],
 	footer,
 	banner,
@@ -80,7 +81,7 @@ function DocsLayoutSidebar({
 								<SidebarLinkItem key={i} item={item} />
 							))}
 					</div>
-					<SidebarPageTree components={{ ...components, Separator }} />
+					<SidebarPageTree />
 				</SidebarViewport>
 				<SidebarFooter>{footer}</SidebarFooter>
 			</Aside>
