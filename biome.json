@@ -9,7 +9,9 @@
     "ignoreUnknown": false,
     "includes": [
       "packages/live-state/src/**/*.ts",
-      "packages/live-state/src/**/*.tsx"
+      "packages/live-state/src/**/*.tsx",
+      "docs/src/**/*.ts",
+      "docs/src/**/*.tsx"
     ]
   },
   "formatter": {

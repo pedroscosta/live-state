@@ -1,0 +1,28 @@
+---
+title: Introduction
+---
+
+Live State is a data framework that provides real-time synchronization with a strongly-typed schema, a simple server API, and a built-in client store for React. It lets you:
+
+- Keep client UI in sync with data changes
+- Mutate data optimistically with automatic conflict resolution
+- Define your data model using a type-safe schema that maps to storage
+- Build custom server procedures with input validation and output type inference
+
+In a nutshell, you define a schema, mount the server adapter, and use the generated client to query and mutate data in real-time.
+
+## Key concepts
+
+### Schema
+
+A schema is a declarative model of your domain (entities, fields, relations). It's the foundation of your data model.
+
+### Client
+
+Live State's client provides a type safe query/mutation API and a global state store for React. All the data you need will be available in the client store, resolving any queries in sub-milliseconds times and reacting to data changes in real-time.
+
+### Server
+
+Live State's server is a custom server adapter that mounts the Live State schema and provides a RPC-like API for querying and mutating data.
+
+

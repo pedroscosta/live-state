@@ -1,0 +1,104 @@
+---
+title: Quick Start
+description: Install and run a minimal Live State server and client
+---
+
+## 1. Install
+
+```npm
+npm install @live-state/sync
+```
+
+## 2. Define your schema
+
+```ts
+import { createSchema, object, id, string, number } from "@live-state/sync";
+
+const tasks = object("tasks", {
+  id: id(),
+  title: string(),
+  priority: number().default(0),
+});
+
+export const schema = createSchema({ tasks });
+```
+
+## 3. Create a server
+
+```ts
+import express from "express";
+import expressWs from "express-ws";
+import { Pool } from "pg";
+import { router, server, SQLStorage, routeFactory } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const routes = routeFactory()
+  .collectionRoute(schema.tasks);
+const appRouter = router({
+  schema,
+  routes: {
+    tasks: routes,
+  },
+});
+
+const lsServer = server({
+  router: appRouter,
+  storage: new SQLStorage(
+    new Pool({ connectionString: "postgresql://admin:admin@localhost:5442/live-state" })
+  ),
+  schema,
+});
+
+const { app } = expressWs(express());
+import { expressAdapter } from "@live-state/sync/server";
+expressAdapter(app as any, lsServer);
+
+app.listen(5001, () => console.log("api running on 5001"));
+```
+
+## 4. Create a client
+
+```ts
+import { createClient, SubscriptionProvider, useLiveQuery } from "@live-state/sync/client";
+import { schema } from "./schema";
+
+export const { client, store } = createClient({
+  url: "ws://localhost:5001/ws",
+  schema,
+  storage: false,
+});
+
+// React usage
+function Tasks() {
+  const tasks = useLiveQuery(store.query.tasks);
+
+  return (
+    <ul>
+      {tasks.map((t) => (
+        <li key={t.id}>{t.title}</li>
+      ))}
+    </ul>
+  );
+}
+
+export default function App() {
+  return (
+    <SubscriptionProvider client={client}>
+      <Tasks />
+    </SubscriptionProvider>
+  );
+}
+```
+
+## 5. Mutate data
+
+```ts
+// Insert
+await store.mutate.tasks.insert({ id: "task_1", title: "First task" });
+
+// Update
+await store.mutate.tasks.update("task_1", { title: "Updated title" });
+```
+
+That's it — the UI stays live-synced via WebSocket, with optimistic updates and conflict resolution built in.
+
