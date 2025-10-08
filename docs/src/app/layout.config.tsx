@@ -1,6 +1,6 @@
-import { source } from "@/lib/source";
-import { DocsLayoutProps } from "fumadocs-ui/layouts/docs";
-import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import { source } from '@/lib/source';
+import { DocsLayoutProps } from 'fumadocs-ui/layouts/docs';
+import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 
 /**
  * Shared layout configurations
@@ -10,14 +10,14 @@ import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
  * Docs Layout: app/docs/layout.tsx
  */
 export const baseOptions: BaseLayoutProps = {
-  nav: {
-    enabled: false,
-  },
-  links: [],
+	nav: {
+		enabled: false,
+	},
+	links: [],
 };
 
 export const docsOptions: DocsLayoutProps = {
-  ...baseOptions,
-  tree: source.pageTree,
-  themeSwitch: { enabled: false },
+	...baseOptions,
+	tree: source.pageTree,
+	themeSwitch: { enabled: false },
 };
