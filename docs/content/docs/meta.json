@@ -1,3 +1,9 @@
 {
-  "pages": ["---Getting started---", "index", "quick-start"]
+  "pages": [
+    "---Getting started---",
+    "index",
+    "quick-start",
+    "---Using Live State---",
+    "(using-ls)/schema"
+  ]
 }
