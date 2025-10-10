@@ -240,6 +240,49 @@ transaction: mutation().handler(async ({ req, db }) => {
 
 These operations are also broadcasted to the clients, so they can update their local state in real time.
 
+## Route-level middlewares
+
+Middlewares allow you to intercept and modify requests before they reach the route handlers. They're useful for authentication, logging, validation, and other cross-cutting concerns. They can be added to individual routes using the `use` method:
+
+```ts
+const authMiddleware = async ({ req, next }) => {
+  // Check authentication
+  if (!req.context.userId) {
+    throw new Error("Unauthorized");
+  }
+
+  // Modify the request context
+  req.context.isAuthenticated = true;
+
+  // Continue to the next middleware or handler
+  return next(req);
+};
+
+const groupsRoute = publicRouteFactory
+  .collectionRoute(schema.groups)
+  .use(authMiddleware);
+```
+
+### Context manipulation
+
+Middlewares can read and modify the request context:
+
+```ts
+const enrichContextMiddleware = async ({ req, next }) => {
+  // Add user information to context
+  if (req.context.userId) {
+    const user = await db.findOne(schema.users, req.context.userId);
+    req.context.user = user;
+  }
+
+  // Add request metadata
+  req.context.requestTime = Date.now();
+  req.context.requestId = generateId();
+
+  return next(req);
+};
+```
+
 ## Route factory
 
 The `routeFactory` function is used to create a route factory. A route factory is then used to create routes. It allows sharing of common middleware between routes.

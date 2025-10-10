@@ -22,6 +22,79 @@ const lsServer = server({
     })
   ),
   schema,
+  contextProvider: async ({ transport, headers, cookies, query }) => {
+    // Generate context from request data
+    const token = headers.authorization?.replace("Bearer ", "");
+    const user = token ? await validateToken(token) : null;
+
+    return {
+      userId: user?.id,
+      user,
+      transport,
+      requestId: generateId(),
+    };
+  },
+  middlewares: [
+    // Global middleware for all routes
+    async ({ req, next }) => {
+      console.log(`${req.type} ${req.resourceName}`);
+      return next(req);
+    },
+  ],
+});
+```
+
+## Context providers
+
+Context providers generate request context from incoming HTTP headers, cookies, and query parameters. This context is then available to all middlewares, authorization handlers, and custom mutations.
+
+### Basic context provider
+
+```ts
+const lsServer = server({
+  router: appRouter,
+  storage,
+  schema,
+  contextProvider: async ({ transport, headers, cookies, query }) => {
+    return {
+      transport, // "HTTP" or "WEBSOCKET"
+      userAgent: headers["user-agent"],
+      sessionId: cookies.sessionId,
+      apiKey: query.apiKey,
+    };
+  },
+});
+```
+
+## Server middlewares
+
+Server-level middlewares run before route-specific middlewares and apply to all routes.
+
+```ts
+const loggingMiddleware = async ({ req, next }) => {
+  const start = Date.now();
+  console.log(`→ ${req.type} ${req.resourceName}`, {
+    context: req.context,
+    input: req.input,
+  });
+
+  try {
+    const result = await next(req);
+    const duration = Date.now() - start;
+    console.log(`← ${req.type} ${req.resourceName} (${duration}ms)`);
+    return result;
+  } catch (error) {
+    const duration = Date.now() - start;
+    console.error(`✗ ${req.type} ${req.resourceName} (${duration}ms)`, error);
+    throw error;
+  }
+};
+
+const lsServer = server({
+  router: appRouter,
+  storage,
+  schema,
+  middlewares: [loggingMiddleware],
 });
 ```
 
