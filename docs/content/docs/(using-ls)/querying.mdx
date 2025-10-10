@@ -1,0 +1,332 @@
+---
+title: Querying
+---
+
+Live State provides a powerful, type-safe query API that works seamlessly with both static queries and real-time subscriptions. The query system is built around a builder pattern that allows you to compose complex queries with filtering, relations and sorting.
+
+## Basic querying
+
+### Static queries
+
+Use the `get()` method to fetch data once:
+
+```ts
+// Get all groups
+const groups = await store.query.groups.get();
+
+// Get a specific group by ID
+const group = await store.query.groups.one("group-id").get();
+
+// Get groups with filtering
+const activeGroups = await store.query.groups.where({ status: "active" }).get();
+```
+
+### Real-time subscriptions
+
+<Callout type="info">
+  Subscriptions are only available for the WebSocket client.
+</Callout>
+
+Use the `subscribe()` method to listen for real-time updates:
+
+```ts
+// Subscribe to all groups
+const unsubscribe = store.query.groups.subscribe((groups) => {
+  console.log("Groups updated:", groups);
+});
+
+// Subscribe to a specific group
+const unsubscribe = store.query.groups.one("group-id").subscribe((group) => {
+  console.log("Group updated:", group);
+});
+
+// Don't forget to unsubscribe when done
+unsubscribe();
+```
+
+## Query builder methods
+
+### `where()`
+
+Filter records based on field values:
+
+```ts
+// Simple equality filter
+const completedTasks = await store.query.tasks.where({ completed: true }).get();
+
+// Multiple conditions (AND logic)
+const urgentTasks = await store.query.tasks
+  .where({
+    completed: false,
+    priority: "high",
+  })
+  .get();
+
+// Chain multiple where clauses
+const filteredTasks = await store.query.tasks
+  .where({ completed: false })
+  .where({ assigneeId: "user-123" })
+  .get();
+```
+
+#### `$eq` operator
+
+The `$eq` operator is used to filter records by a specific value. It's the default operator, so you can omit it.
+
+```ts
+// Implicit $eq operator
+const completedTasks = await store.query.tasks.where({ completed: true }).get();
+
+// Explicit $eq operator
+const completedTasks = await store.query.tasks
+  .where({ completed: { $eq: true } })
+  .get();
+```
+
+#### `$in` operator
+
+The `$in` operator is used to filter records by a list of values.
+
+```ts
+const completedTasks = await store.query.tasks
+  .where({ completed: { $in: [true, false] } })
+  .get();
+```
+
+#### `$not` operator
+
+The `$not` operator is used to invert other operators.
+
+```ts
+// Inverted implicit $eq operator
+const completedTasks = await store.query.tasks
+  .where({ completed: { $not: true } })
+  .get();
+
+// Inverted $in operator
+const completedTasks = await store.query.tasks
+  .where({ completed: { $not: { $in: [true, false] } } })
+  .get();
+```
+
+#### Comparison operators
+
+Comparison operators are used to compare values:
+
+- `$gt` - greater than
+- `$gte` - greater than or equal
+- `$lt` - less than
+- `$lte` - less than or equal
+
+```ts
+const highPriorityTasks = await store.query.tasks
+  .where({ priority: { $gt: 3 } })
+  .get();
+```
+
+### `include()`
+
+Fetch related data in a single query:
+
+```ts
+// Include related cards for each group
+const groupsWithCards = await store.query.groups.include({ cards: true }).get();
+
+// Include nested relations
+const tasksWithAuthorAndComments = await store.query.tasks
+  .include({
+    author: true,
+    comments: {
+      include: {
+        author: true,
+      },
+    },
+  })
+  .get();
+```
+
+### Limiting results with `limit()`
+
+Control the number of records returned:
+
+```ts title="pagination.ts"
+// Get first 10 groups
+const recentGroups = await store.query.groups.limit(10).get();
+
+// Combine with ordering for pagination
+const latestTasks = await store.query.tasks
+  .orderBy("createdAt", "desc")
+  .limit(20)
+  .get();
+```
+
+### Sorting with `orderBy()`
+
+Sort results by one or more fields:
+
+```ts title="sorting.ts"
+// Sort by a single field
+const sortedTasks = await store.query.tasks.orderBy("createdAt", "desc").get();
+
+// Sort by multiple fields
+const prioritizedTasks = await store.query.tasks
+  .orderBy("priority", "desc")
+  .orderBy("createdAt", "asc")
+  .get();
+```
+
+### Single record queries
+
+#### `one(id)` - Get by ID
+
+Fetch a specific record by its ID:
+
+```ts title="single-record.ts"
+// Get a specific group
+const group = await store.query.groups.one("group-123").get();
+
+// With relations
+const groupWithCards = await store.query.groups
+  .one("group-123")
+  .include({ cards: true })
+  .get();
+```
+
+#### `first()` - Get first matching record
+
+Get the first record that matches the criteria:
+
+```ts title="first-record.ts"
+// Get the first group
+const firstGroup = await store.query.groups.first().get();
+
+// Get first group matching criteria
+const firstActiveGroup = await store.query.groups
+  .first({ status: "active" })
+  .get();
+
+// Combine with ordering
+const latestTask = await store.query.tasks
+  .orderBy("createdAt", "desc")
+  .first()
+  .get();
+```
+
+## React integration
+
+### `useLiveQuery` hook
+
+The `useLiveQuery` hook automatically subscribes to query results and re-renders your component when data changes:
+
+```tsx title="components/TaskList.tsx"
+import { useLiveQuery } from "@live-state/sync/client";
+import { store } from "../lib/client";
+
+export function TaskList() {
+  // Automatically subscribes and updates
+  const tasks = useLiveQuery(store.query.tasks);
+
+  return (
+    <div>
+      {Object.values(tasks ?? {}).map((task) => (
+        <div key={task.id}>{task.title}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Advanced patterns
+
+### Conditional queries
+
+Build queries dynamically based on conditions:
+
+```ts title="conditional-queries.ts"
+const buildTaskQuery = (filters: {
+  completed?: boolean;
+  assigneeId?: string;
+  priority?: string;
+}) => {
+  let query = store.query.tasks;
+
+  if (filters.completed !== undefined) {
+    query = query.where({ completed: filters.completed });
+  }
+
+  if (filters.assigneeId) {
+    query = query.where({ assigneeId: filters.assigneeId });
+  }
+
+  if (filters.priority) {
+    query = query.where({ priority: filters.priority });
+  }
+
+  return query.orderBy("createdAt", "desc");
+};
+
+// Usage
+const tasks = await buildTaskQuery({
+  completed: false,
+  assigneeId: "user-123",
+}).get();
+```
+
+### Reusable queries
+
+Reuse query patterns across your application:
+
+```ts title="query-patterns.ts"
+// Base queries
+const activeTasksQuery = store.query.tasks.where({ completed: false });
+const userTasksQuery = (userId: string) =>
+  store.query.tasks.where({ assigneeId: userId });
+
+// Composed queries
+const userActiveTasks = (userId: string) =>
+  activeTasksQuery.where({ assigneeId: userId });
+
+const recentUserTasks = (userId: string) =>
+  userTasksQuery(userId).orderBy("createdAt", "desc").limit(10);
+
+// Usage
+const tasks = await recentUserTasks("user-123").get();
+```
+
+## Performance considerations
+
+### Subscription management
+
+Always clean up subscriptions to prevent memory leaks:
+
+```ts
+// In React components, useLiveQuery handles this automatically
+const MyComponent = () => {
+  const data = useLiveQuery(store.query.tasks);
+  // Subscription is automatically cleaned up on unmount
+};
+
+// For vanilla subscriptions
+const unsubscribe = store.query.tasks.subscribe(callback);
+
+// Clean up when done
+unsubscribe();
+```
+
+### Query optimization
+
+- Use `include()` to fetch related data in a single query instead of multiple queries
+- Apply `where()` filters to reduce the amount of data transferred
+- Consider using the fetch client for one-time queries that don't need real-time updates
+
+```ts
+// ❌ Multiple queries (inefficient)
+const group = await store.query.groups.one("group-123").get();
+const cards = await store.query.cards.where({ groupId: "group-123" }).get();
+
+// ✅ Single query with relations (efficient)
+const groupWithCards = await store.query.groups
+  .one("group-123")
+  .include({ cards: true })
+  .get();
+```
