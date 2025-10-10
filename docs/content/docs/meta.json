@@ -5,6 +5,7 @@
     "quick-start",
     "---Using Live State---",
     "(using-ls)/schema",
-    "(using-ls)/router"
+    "(using-ls)/router",
+    "(using-ls)/server"
   ]
 }

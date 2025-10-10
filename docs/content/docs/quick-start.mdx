@@ -49,12 +49,13 @@ export type Router = typeof appRouter; // Export the router type to use later in
 
 ## 4. Create a server
 
-Now that we have a router and schema, we can serve it. This example will use PostgreSQL for persistence and Express for the HTTP server.
+Now that we have a router and schema, we can serve it. This example will use PostgreSQL for persistence and [Express adapter](/docs/server#express).
 
 ```ts title="server.ts"
 import express from "express";
 import expressWs from "express-ws";
 import { Pool } from "pg";
+import cors from "cors";
 import { server, SQLStorage, routeFactory } from "@live-state/sync/server";
 
 import { schema } from "./schema";
