@@ -1,0 +1,129 @@
+---
+title: Schema modeling
+---
+
+Live State's schema is a declarative model of your data (collections, fields, relations). It's used both in the server and the client to process queries and mutations.
+
+## Defining a schema
+
+You can define a schema using the `createSchema` function, which takes an object of [collections](#collections) and [relations](#relations):
+
+```ts title="schema.ts"
+import {
+  createSchema,
+  object,
+  id,
+  string,
+  reference,
+  createRelations,
+} from "@live-state/sync";
+
+const tasks = object("tasks", {
+  id: id(),
+  title: string(),
+  authorId: reference("users.id"),
+});
+
+const users = object("users", {
+  id: id(),
+  name: string(),
+});
+
+const taskRelations = createRelations(tasks, ({ one }) => ({
+  author: one(users, "authorId"),
+}));
+
+const userRelations = createRelations(users, ({ many }) => ({
+  tasks: many(tasks, "authorId"),
+}));
+
+export const schema = createSchema({
+  tasks,
+  users,
+  taskRelations,
+  userRelations,
+});
+```
+
+## Collections
+
+Collections are the main building blocks of a schema, they represent tables in the database. They are defined using the `object` function, which takes a name and the fields of the collection:
+
+```ts title="schema.ts"
+const tasks = object("tasks", {
+  id: id(),
+  title: string(),
+  completed: boolean(),
+  priority: number().default(0),
+  createdAt: date(),
+  authorId: reference("users.id"),
+});
+```
+
+The available field types are:
+
+- `id()`: a unique identifier for the collection
+- `string()`: a string field
+- `boolean()`: a boolean field
+- `number()`: a number field
+- `date()`: a datetime field
+- `reference(collectionName)`: a reference to another collection (foreign key)
+
+There are also optional modifiers available, like `default`, `nullable`, `unique`, `index`, etc, which can be combined together:
+
+```ts title="schema.ts"
+const tasks = object("tasks", {
+  id: id(),
+  title: string().default("Untitled"),
+  completed: boolean().default(false),
+  priority: number().default(0),
+  createdAt: date(),
+});
+```
+
+<Callout>
+  It's not possible **yet** to use functions or SQL expressions for default
+  values.
+  <br /> So, things like `default(() => new Date())` or `default('now()')` are
+  not supported.
+</Callout>
+
+## Relations
+
+Relations can be defined for collections using the `createRelations` function.
+
+### One-to-many
+
+One-to-many relations are defined using the `many` function, which takes the target collection and the foreign key column:
+
+```ts title="schema.ts"
+const userRelations = createRelations(users, ({ many }) => ({
+  tasks: many(tasks, "authorId"), // users → tasks (one user has many tasks)
+}));
+```
+
+#### Optional relations
+
+You can mark a one-to-many relation as optional by marking the foreign key column as nullable:
+
+```ts title="schema.ts"
+const posts = object("posts", {
+  id: id(),
+  title: string(),
+  authorId: reference("users.id").nullable(),
+});
+
+const postRelations = createRelations(posts, ({ one }) => ({
+  author: one(users, "authorId"),
+}));
+```
+
+### Many-to-one
+
+Many-to-one relations are defined using the `one` function, which takes the target collection and the foreign key column:
+
+```ts title="schema.ts"
+const taskRelations = createRelations(tasks, ({ one }) => ({
+  author: one(users, "authorId"), // tasks → users (each task has one author)
+}));
+```

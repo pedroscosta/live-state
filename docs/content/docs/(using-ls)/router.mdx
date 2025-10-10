@@ -1,0 +1,311 @@
+---
+title: Router
+---
+
+The router is responsible for handling incoming requests and dispatching them to the appropriate handlers. It also enables context sharing between handlers and middlewares.
+
+## Creating a router
+
+You can create a router using the `router` function, which takes a schema and the routes definitions:
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const publicRouteFactory = routeFactory();
+
+export const router = router({
+  schema,
+  routes: {
+    groups: publicRouteFactory.collectionRoute(schema.groups),
+  },
+});
+
+export type Router = typeof router; // Export the router type to use later in the client
+```
+
+## Routes
+
+A route is created using a [route factory](#route-factory).
+A basic collection route can be created using the `collectionRoute` method:
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const publicRouteFactory = routeFactory();
+
+const groupsRoute = publicRouteFactory.collectionRoute(schema.groups);
+```
+
+By default, the route will have the following procedures:
+
+- `query`: queries the collection
+- `insert`: inserts a new record
+- `update`: updates a record
+
+These procedures are not meant to be overridden, since they handle raw data manipulation and conflict resolution. But it's possible to add custom [authorization](/docs/authorization) handlers to them and have more control over what is permitted. Or even add [custom procedures](#custom-mutations) to the route.
+
+## Custom mutations
+
+Custom mutations allow you to implement business logic, validation, and complex operations on the server side.
+
+### Defining custom mutations
+
+Custom mutations are defined in your router using the `withMutations` method:
+
+```ts
+const groupsRoute = publicRouteFactory
+  .collectionRoute(schema.groups)
+  .withMutations(({ mutation }) => ({
+    // Simple custom mutation
+    hello: mutation(z.string()).handler(async ({ req }) => {
+      return {
+        message: `Hello ${req.input}`,
+      };
+    }),
+
+    // Mutation with database operations
+    customInsert: mutation(z.string()).handler(async ({ req, db }) => {
+      return db.insert(schema.groups, {
+        id: generateId(),
+        name: req.input,
+      });
+    }),
+
+    // Complex validation
+    createGroupWithValidation: mutation(
+      z.object({
+        name: z.string().min(3).max(50),
+        description: z.string().optional(),
+      })
+    ).handler(async ({ req, db }) => {
+      const { name, description } = req.input;
+
+      // Custom business logic
+      const existingGroup = await db.findOne(schema.groups, { name });
+      if (existingGroup) {
+        throw new Error("Group name already exists");
+      }
+
+      return db.insert(schema.groups, {
+        id: generateId(),
+        name,
+        description: description ?? "",
+      });
+    }),
+  }));
+```
+
+### Input validation
+
+Custom mutations support input validation using [Zod](https://zod.dev/):
+
+```ts
+// String validation
+hello: mutation(z.string()).handler(async ({ req }) => {
+  // req.input is guaranteed to be a string
+  return { message: `Hello ${req.input}` };
+}),
+
+// Object validation
+createUser: mutation(
+  z.object({
+    name: z.string().min(2),
+    email: z.string().email(),
+    age: z.number().min(18),
+  })
+).handler(async ({ req, db }) => {
+  const { name, email, age } = req.input;
+  // All fields are validated and type-safe
+  return db.insert(schema.users, {
+    id: generateId(),
+    name,
+    email,
+    age,
+  });
+}),
+
+// Optional input
+optionalMutation: mutation(z.string().optional()).handler(async ({ req }) => {
+  const input = req.input; // string | undefined
+  return { received: input ?? "no input" };
+}),
+
+// No input validation
+noInput: mutation().handler(async ({ req }) => {
+  // No input validation
+  return { timestamp: Date.now() };
+}),
+```
+
+### Database operations in custom mutations
+
+Custom mutations have access to the database through the `db` parameter:
+
+```ts
+// Insert operations
+customInsert: mutation(z.string()).handler(async ({ req, db }) => {
+  return db.insert(schema.groups, {
+    id: generateId(),
+    name: req.input,
+  });
+}),
+
+// Update operations
+customUpdate: mutation(
+  z.object({ id: z.string(), name: z.string() })
+).handler(async ({ req, db }) => {
+  return db.update(schema.groups, req.input.id, {
+    name: req.input.name,
+  });
+}),
+
+// Query operations
+customFind: mutation(z.string().optional()).handler(async ({ req, db }) => {
+  return db.find(schema.groups, {
+    where: req.input ? { id: req.input } : {},
+    include: { cards: true },
+  });
+}),
+
+// Complex operations
+bulkUpdate: mutation(
+  z.array(z.object({ id: z.string(), counter: z.number() }))
+).handler(async ({ req, db }) => {
+  const results = [];
+  for (const item of req.input) {
+    const result = await db.update(schema.cards, item.id, {
+      counter: item.counter,
+    });
+    results.push(result);
+  }
+  return results;
+}),
+```
+
+### Transactions
+
+Use transactions for operations that need to be atomic.
+
+They can be used in the simple form, which will be rolled back if any errors are thrown, otherwise it will be committed:
+
+```ts
+transaction: mutation().handler(async ({ req, db }) => {
+  return db.transaction(async ({ trx }) => {
+    const groupId = generateId();
+    await trx.insert(schema.groups, {
+      id: groupId,
+      name: "Transaction Group",
+    });
+
+    await trx.insert(schema.cards, {
+      id: generateId(),
+      name: "Transaction Card",
+      groupId,
+    });
+
+    return "Transaction successful";
+  });
+}),
+```
+
+Or they can also be used in the complex form, which allows you to control the commit and rollback of the transaction:
+
+```ts
+transaction: mutation().handler(async ({ req, db }) => {
+  return db.transaction(async ({ trx, commit, rollback }) => {
+    // Insert a group
+    await trx.insert(schema.groups, {
+      id: generateId(),
+      name: "Transaction Group",
+    });
+
+    // Conditional logic
+    const shouldSucceed = Math.random() > 0.5;
+
+    if (!shouldSucceed) {
+      // Rollback the transaction
+      await rollback();
+      return "Transaction rolled back";
+    }
+
+    // Commit the transaction
+    await commit();
+
+    return "Transaction successful";
+  });
+}),
+```
+
+These operations are also broadcasted to the clients, so they can update their local state in real time.
+
+## Route-level middlewares
+
+Middlewares allow you to intercept and modify requests before they reach the route handlers. They're useful for authentication, logging, validation, and other cross-cutting concerns. They can be added to individual routes using the `use` method:
+
+```ts
+const authMiddleware = async ({ req, next }) => {
+  // Check authentication
+  if (!req.context.userId) {
+    throw new Error("Unauthorized");
+  }
+
+  // Modify the request context
+  req.context.isAuthenticated = true;
+
+  // Continue to the next middleware or handler
+  return next(req);
+};
+
+const groupsRoute = publicRouteFactory
+  .collectionRoute(schema.groups)
+  .use(authMiddleware);
+```
+
+### Context manipulation
+
+Middlewares can read and modify the request context:
+
+```ts
+const enrichContextMiddleware = async ({ req, next }) => {
+  // Add user information to context
+  if (req.context.userId) {
+    const user = await db.findOne(schema.users, req.context.userId);
+    req.context.user = user;
+  }
+
+  // Add request metadata
+  req.context.requestTime = Date.now();
+  req.context.requestId = generateId();
+
+  return next(req);
+};
+```
+
+## Route factory
+
+The `routeFactory` function is used to create a route factory. A route factory is then used to create routes. It allows sharing of common middleware between routes.
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+const publicRouteFactory = routeFactory();
+
+const privateRouteFactory = publicRouteFactory.use(async ({ req, next }) => {
+  if (!req.context.session && !req.context.discordBotKey) {
+    throw new Error("Unauthorized");
+  }
+
+  return next(req);
+});
+
+export const router = router({
+  schema,
+  routes: {
+    users: privateRouteFactory.collectionRoute(schema.users),
+    posts: publicRouteFactory.collectionRoute(schema.posts), // This route will not be protected by the middleware
+  },
+});
+```

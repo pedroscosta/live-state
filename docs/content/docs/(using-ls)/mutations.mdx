@@ -1,0 +1,70 @@
+---
+title: Mutations
+---
+
+Live State provides a powerful mutation system that handles data changes with automatic real-time synchronization. The mutation API includes built-in operations for inserting and updating records, as well as support for custom mutations with validation and business logic.
+
+## Basic mutations
+
+### `insert()`
+
+Create new records in your collections:
+
+```ts
+// Insert a new group
+await store.mutate.groups.insert({
+  id: "group-123",
+  name: "My New Group",
+});
+
+// Insert a card with a relation
+await store.mutate.cards.insert({
+  id: "card-456",
+  name: "Task Card",
+  counter: 0,
+  groupId: "group-123", // Foreign key reference
+});
+```
+
+### `update()`
+
+Modify existing records by ID:
+
+```ts
+// Update a group's name
+await store.mutate.groups.update("group-123", {
+  name: "Updated Group Name",
+});
+
+// Update multiple fields
+await store.mutate.cards.update("card-456", {
+  name: "Updated Task",
+  counter: 5,
+});
+
+// Partial updates (only specified fields are changed)
+await store.mutate.cards.update("card-456", {
+  counter: 10, // Only counter is updated
+});
+```
+
+### Custom mutations
+
+Use the `store.mutate` or `client.mutate` API to call custom mutations:
+
+```ts
+await store.mutate.groups.hello("World");
+
+// Custom mutation to create a user, might contain specific business logic
+const user = await store.mutate.users.createUser({
+  name: "John Doe",
+  email: "john@example.com",
+  age: 25,
+});
+```
+
+## Optimistic updates
+
+When using the WebSocket client, mutations automatically provide optimistic updates for immediate UI feedback. The server handles conflict resolution and the client updates the local state accordingly.
+
+If a mutation is rejected by the server, even partially, the optimistic update is automatically reverted to reflect the server state.

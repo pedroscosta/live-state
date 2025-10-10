@@ -1,3 +1,14 @@
 {
-  "pages": ["---Getting started---", "index", "quick-start"]
+  "pages": [
+    "---Getting started---",
+    "index",
+    "quick-start",
+    "---Using Live State---",
+    "(using-ls)/schema",
+    "(using-ls)/router",
+    "(using-ls)/server",
+    "(using-ls)/client",
+    "(using-ls)/querying",
+    "(using-ls)/mutations"
+  ]
 }
