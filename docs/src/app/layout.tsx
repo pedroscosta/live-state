@@ -31,7 +31,12 @@ export default function Layout({ children }: { children: ReactNode }) {
 			suppressHydrationWarning
 		>
 			<body className="flex flex-col min-h-screen overflow-x-hidden w-screen [--fd-nav-height:56px] font-[250] tracking-tight">
-				<RootProvider>
+				<RootProvider
+					theme={{
+						forcedTheme: 'dark',
+						enableSystem: false,
+					}}
+				>
 					<header className="border-b h-14 w-full sticky top-0 bg-background flex items-center px-12 py-2 font-mono z-50">
 						<Link
 							href="/"
