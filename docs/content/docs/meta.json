@@ -6,6 +6,7 @@
     "---Using Live State---",
     "(using-ls)/schema",
     "(using-ls)/router",
-    "(using-ls)/server"
+    "(using-ls)/server",
+    "(using-ls)/client"
   ]
 }

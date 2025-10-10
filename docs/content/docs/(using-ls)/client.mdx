@@ -1,0 +1,91 @@
+---
+title: Client
+---
+
+live-state's client is a type-safe query/mutation API and a global state store for React. It's also responsible for connecting to the server and managing the state of the application.
+
+Even tough it's called "client", it can be used from server-side as well.
+
+## Creating a client
+
+There are two types of clients:
+
+- WebSocket (main) - supports subscriptions (live updates)
+- Fetch client - supports only static queries (no subscriptions)
+
+<Callout type="info">
+  For the rest of the documentation, we'll use the WebSocket client.
+</Callout>
+
+### WebSocket client
+
+You can create a client using the `createClient` function, which takes a URL and a schema.
+This client exposes the `client` and `store` methods.
+
+- `client` - is the WebSocket client, it can be used to control the connection to the server.
+- `store` - is the global state store, it can be used to query and mutate the data.
+
+```ts title="client.ts"
+import { createClient } from "@live-state/sync/client";
+
+const { client, store } = createClient({
+  url: "http://localhost:5001/ws",
+  schema,
+});
+```
+
+#### Client storage
+
+The client can be configured to use a storage, which will be used to store the data locally. This is useful for offline support. Beware that this is only support in browsers, since it uses IndexedDB.
+
+```ts title="client.ts"
+import { createClient } from "@live-state/sync/client";
+
+const { client, store } = createClient({
+  url: "http://localhost:5001/ws",
+  schema,
+  storage: {
+    name: "app-cache", // IndexedDB database name
+  },
+});
+```
+
+### Fetch client
+
+You can create a fetch client using the `createClient` function, which takes a URL and a schema.
+
+This client only exposes the `mutate` and `query` methods, since it's state-less. The API is the same as the WebSocket client's store.
+
+```ts title="fetch-client.ts"
+import { createClient } from "@live-state/sync/client/fetch";
+
+const { mutate, query } = createClient({
+  url: "http://localhost:5001",
+  schema,
+});
+```
+
+## Authorization credentials
+
+The client can be configured to use a credentials function, which will be used to get the credentials for the request.
+
+```ts title="client.ts"
+const { client, store } = createClient<Router>({
+  url: "http://localhost:5001/ws",
+  schema,
+  credentials: async () => ({
+    token: await authClient.oneTimeToken.generate(),
+  }),
+});
+```
+
+This option is available for both the WebSocket and Fetch clients, but there are some differences:
+
+- WebSocket client: credentials are appended to the URL as a query string and generate once for each connection.
+- Fetch client: credentials are sent in the headers and generate once for each request.
+
+<Callout type="warning">
+  It's not recommended to use usual authentication tokens for the WebSocket
+  client, since query strings are not protected way of transmitting sensitive
+  information. Use one-time tokens instead.
+</Callout>
