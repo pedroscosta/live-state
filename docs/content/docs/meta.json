@@ -8,6 +8,7 @@
     "(using-ls)/router",
     "(using-ls)/server",
     "(using-ls)/client",
-    "(using-ls)/querying"
+    "(using-ls)/querying",
+    "(using-ls)/mutations"
   ]
 }

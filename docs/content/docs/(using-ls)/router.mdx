@@ -48,40 +48,194 @@ These procedures are not meant to be overridden, since they handle raw data mani
 
 ## Custom mutations
 
-A custom mutation can be created using the `withMutations` method:
+Custom mutations allow you to implement business logic, validation, and complex operations on the server side.
 
-```ts title="router.ts"
+### Defining custom mutations
+
+Custom mutations are defined in your router using the `withMutations` method:
+
+```ts
 const groupsRoute = publicRouteFactory
   .collectionRoute(schema.groups)
   .withMutations(({ mutation }) => ({
+    // Simple custom mutation
     hello: mutation(z.string()).handler(async ({ req }) => {
       return {
         message: `Hello ${req.input}`,
       };
     }),
-  }));
-```
 
-Mutations support input validation using [Zod](https://zod.dev/). It's recommended to use it to validate the input value. It's only possible to have a single input value, so if more than one is needed, you can use an object or a tuple.
-
-The inputs is then passed to the handler, which is responsible for handling the mutation and returning the results.
-
-<Callout type="warning">
-  Mutations should have a JSON serializable return value.
-</Callout>
-
-It's also possible to perform database operations using the `db` object, available in the options of the handler.
-
-```ts title="router.ts"
-const groupsRoute = publicRouteFactory
-  .collectionRoute(schema.groups)
-  .withMutations(({ mutation }) => ({
-    customCreate: mutation(z.string()).handler(async ({ req, db }) => {
+    // Mutation with database operations
+    customInsert: mutation(z.string()).handler(async ({ req, db }) => {
       return db.insert(schema.groups, {
+        id: generateId(),
         name: req.input,
       });
     }),
+
+    // Complex validation
+    createGroupWithValidation: mutation(
+      z.object({
+        name: z.string().min(3).max(50),
+        description: z.string().optional(),
+      })
+    ).handler(async ({ req, db }) => {
+      const { name, description } = req.input;
+
+      // Custom business logic
+      const existingGroup = await db.findOne(schema.groups, { name });
+      if (existingGroup) {
+        throw new Error("Group name already exists");
+      }
+
+      return db.insert(schema.groups, {
+        id: generateId(),
+        name,
+        description: description ?? "",
+      });
+    }),
   }));
+```
+
+### Input validation
+
+Custom mutations support input validation using [Zod](https://zod.dev/):
+
+```ts
+// String validation
+hello: mutation(z.string()).handler(async ({ req }) => {
+  // req.input is guaranteed to be a string
+  return { message: `Hello ${req.input}` };
+}),
+
+// Object validation
+createUser: mutation(
+  z.object({
+    name: z.string().min(2),
+    email: z.string().email(),
+    age: z.number().min(18),
+  })
+).handler(async ({ req, db }) => {
+  const { name, email, age } = req.input;
+  // All fields are validated and type-safe
+  return db.insert(schema.users, {
+    id: generateId(),
+    name,
+    email,
+    age,
+  });
+}),
+
+// Optional input
+optionalMutation: mutation(z.string().optional()).handler(async ({ req }) => {
+  const input = req.input; // string | undefined
+  return { received: input ?? "no input" };
+}),
+
+// No input validation
+noInput: mutation().handler(async ({ req }) => {
+  // No input validation
+  return { timestamp: Date.now() };
+}),
+```
+
+### Database operations in custom mutations
+
+Custom mutations have access to the database through the `db` parameter:
+
+```ts
+// Insert operations
+customInsert: mutation(z.string()).handler(async ({ req, db }) => {
+  return db.insert(schema.groups, {
+    id: generateId(),
+    name: req.input,
+  });
+}),
+
+// Update operations
+customUpdate: mutation(
+  z.object({ id: z.string(), name: z.string() })
+).handler(async ({ req, db }) => {
+  return db.update(schema.groups, req.input.id, {
+    name: req.input.name,
+  });
+}),
+
+// Query operations
+customFind: mutation(z.string().optional()).handler(async ({ req, db }) => {
+  return db.find(schema.groups, {
+    where: req.input ? { id: req.input } : {},
+    include: { cards: true },
+  });
+}),
+
+// Complex operations
+bulkUpdate: mutation(
+  z.array(z.object({ id: z.string(), counter: z.number() }))
+).handler(async ({ req, db }) => {
+  const results = [];
+  for (const item of req.input) {
+    const result = await db.update(schema.cards, item.id, {
+      counter: item.counter,
+    });
+    results.push(result);
+  }
+  return results;
+}),
+```
+
+### Transactions
+
+Use transactions for operations that need to be atomic.
+
+They can be used in the simple form, which will be rolled back if any errors are thrown, otherwise it will be committed:
+
+```ts
+transaction: mutation().handler(async ({ req, db }) => {
+  return db.transaction(async ({ trx }) => {
+    const groupId = generateId();
+    await trx.insert(schema.groups, {
+      id: groupId,
+      name: "Transaction Group",
+    });
+
+    await trx.insert(schema.cards, {
+      id: generateId(),
+      name: "Transaction Card",
+      groupId,
+    });
+
+    return "Transaction successful";
+  });
+}),
+```
+
+Or they can also be used in the complex form, which allows you to control the commit and rollback of the transaction:
+
+```ts
+transaction: mutation().handler(async ({ req, db }) => {
+  return db.transaction(async ({ trx, commit, rollback }) => {
+    // Insert a group
+    await trx.insert(schema.groups, {
+      id: generateId(),
+      name: "Transaction Group",
+    });
+
+    // Conditional logic
+    const shouldSucceed = Math.random() > 0.5;
+
+    if (!shouldSucceed) {
+      // Rollback the transaction
+      await rollback();
+      return "Transaction rolled back";
+    }
+
+    // Commit the transaction
+    await commit();
+
+    return "Transaction successful";
+  });
+}),
 ```
 
 These operations are also broadcasted to the clients, so they can update their local state in real time.
