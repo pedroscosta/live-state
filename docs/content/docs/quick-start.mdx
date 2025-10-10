@@ -5,13 +5,19 @@ description: Install and run a minimal Live State server and client
 
 ## 1. Install
 
+live-state is composed of a single package: `@live-state/sync`, but it's fully modular and tree-shakable, so you can keep only what you need.
+
+Start off by installing the package:
+
 ```npm
 npm install @live-state/sync
 ```
 
 ## 2. Define your schema
 
-```ts
+Let's start by defining the schema. This is a declarative model of the data you want to store. This example will have a single collection: `tasks`.
+
+```ts title="schema.ts"
 import { createSchema, object, id, string, number } from "@live-state/sync";
 
 const tasks = object("tasks", {
@@ -23,82 +29,112 @@ const tasks = object("tasks", {
 export const schema = createSchema({ tasks });
 ```
 
-## 3. Create a server
+## 3. Create a router
 
-```ts
+Now let's create a router. This will be a simple router, serving only a collection route for the `tasks` collection.
+
+```ts title="router.ts"
+import { routeFactory, router } from "@live-state/sync/server";
+import { schema } from "./schema";
+
+export const appRouter = router({
+  schema,
+  routes: {
+    tasks: routeFactory().collectionRoute(schema.tasks),
+  },
+});
+
+export type Router = typeof appRouter; // Export the router type to use later in the client
+```
+
+## 4. Create a server
+
+Now that we have a router and schema, we can serve it. This example will use PostgreSQL for persistence and Express for the HTTP server.
+
+```ts title="server.ts"
 import express from "express";
 import expressWs from "express-ws";
 import { Pool } from "pg";
-import { router, server, SQLStorage, routeFactory } from "@live-state/sync/server";
-import { schema } from "./schema";
+import { server, SQLStorage, routeFactory } from "@live-state/sync/server";
 
-const routes = routeFactory()
-  .collectionRoute(schema.tasks);
-const appRouter = router({
-  schema,
-  routes: {
-    tasks: routes,
-  },
-});
+import { schema } from "./schema";
+import { appRouter } from "./router";
 
 const lsServer = server({
   router: appRouter,
   storage: new SQLStorage(
-    new Pool({ connectionString: "postgresql://admin:admin@localhost:5442/live-state" })
+    new Pool({
+      connectionString: "postgresql://admin:admin@localhost:5442/live-state",
+    })
   ),
   schema,
 });
 
 const { app } = expressWs(express());
-import { expressAdapter } from "@live-state/sync/server";
-expressAdapter(app as any, lsServer);
+
+app
+  .use(express.urlencoded({ extended: true }))
+  .use(express.json())
+  .use(cors());
+
+expressAdapter(app, lsServer);
 
 app.listen(5001, () => console.log("api running on 5001"));
 ```
 
 ## 4. Create a client
 
-```ts
-import { createClient, SubscriptionProvider, useLiveQuery } from "@live-state/sync/client";
+Last thing we need to do is create a client. For this example, we'll use the WebSocket client.
+
+```ts twoslash title="client.ts"
+// @filename: schema.ts
+import { createSchema, object, id, string, number } from "@live-state/sync";
+
+const tasks = object("tasks", {
+  id: id(),
+  title: string(),
+  priority: number().default(0),
+});
+
+export const schema = createSchema({ tasks });
+// @filename: router.ts
+import { routeFactory, router } from "@live-state/sync/server";
 import { schema } from "./schema";
 
-export const { client, store } = createClient({
+export const appRouter = router({
+  schema,
+  routes: {
+    tasks: routeFactory().collectionRoute(schema.tasks),
+  },
+});
+
+export type Router = typeof appRouter;
+// @filename: client.ts
+// ---cut---
+import {
+  createClient,
+  SubscriptionProvider,
+  useLiveQuery,
+} from "@live-state/sync/client";
+import { schema } from "./schema";
+import type { Router } from "./router"; // Import only the router type, otherwise you will get build errors
+
+export const { client, store } = createClient<Router>({
   url: "ws://localhost:5001/ws",
   schema,
   storage: false,
 });
 
-// React usage
-function Tasks() {
-  const tasks = useLiveQuery(store.query.tasks);
+store.mutate.tasks.insert({
+  //               ^^^^^^
+  id: "task_1",
+  title: "First task",
+});
 
-  return (
-    <ul>
-      {tasks.map((t) => (
-        <li key={t.id}>{t.title}</li>
-      ))}
-    </ul>
-  );
-}
-
-export default function App() {
-  return (
-    <SubscriptionProvider client={client}>
-      <Tasks />
-    </SubscriptionProvider>
-  );
-}
+const tasks = store.query.tasks.get();
+//     ^?
 ```
 
-## 5. Mutate data
+---
 
-```ts
-// Insert
-await store.mutate.tasks.insert({ id: "task_1", title: "First task" });
-
-// Update
-await store.mutate.tasks.update("task_1", { title: "Updated title" });
-```
-
-That's it — the UI stays live-synced via WebSocket, with optimistic updates and conflict resolution built in.
-
+That's it, now you can build UI and it will stay live-synced via WebSocket, with optimistic updates and conflict resolution built in. And as you can see, completely type-safe.

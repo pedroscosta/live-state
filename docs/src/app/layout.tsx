@@ -30,7 +30,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 			className={`${jetbrainsMono.variable} ${jetbrainsMono.className}`}
 			suppressHydrationWarning
 		>
-			<body className="flex flex-col min-h-screen overflow-x-hidden w-screen [--fd-nav-height:56px]">
+			<body className="flex flex-col min-h-screen overflow-x-hidden w-screen [--fd-nav-height:56px] font-[250] tracking-tight">
 				<RootProvider>
 					<header className="border-b h-14 w-full sticky top-0 bg-background flex items-center px-12 py-2 font-mono z-50">
 						<Link

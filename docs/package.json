@@ -18,6 +18,7 @@
     "clsx": "^2.1.1",
     "fumadocs-core": "15.8.4",
     "fumadocs-mdx": "12.0.3",
+    "fumadocs-twoslash": "^3.1.8",
     "fumadocs-ui": "15.8.4",
     "lucide-react": "^0.485.0",
     "motion": "^12.9.2",
@@ -25,7 +26,9 @@
     "next-themes": "^0.4.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "tailwind-merge": "^3.0.2"
+    "tailwind-merge": "^3.0.2",
+    "twoslash": "^0.3.4",
+    "@live-state/sync": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.4",
