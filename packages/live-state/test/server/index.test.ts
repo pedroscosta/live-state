@@ -27,12 +27,8 @@ describe("Server", () => {
     mockRouter = {
       routes: {
         users: {
-          handleQuery: vi
-            .fn()
-            .mockResolvedValue({ data: {}, acceptedValues: null }),
-          handleMutation: vi
-            .fn()
-            .mockResolvedValue({ data: {}, acceptedValues: null }),
+          handleQuery: vi.fn().mockResolvedValue({ data: {} }),
+          handleMutation: vi.fn().mockResolvedValue({ data: {} }),
         },
       },
     } as unknown as AnyRouter;
@@ -197,7 +193,7 @@ describe("Server", () => {
       req: mockRequest,
       db: mockStorage,
     });
-    expect(result).toEqual({ data: {}, acceptedValues: null });
+    expect(result).toEqual({ data: {} });
   });
 
   test("should throw error for invalid resource", async () => {

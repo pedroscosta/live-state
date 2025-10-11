@@ -45,7 +45,7 @@ export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
 
 export type Middleware<T = any> = (opts: {
   req: BaseRequest;
-  next: NextFunction<T, MutationRequest>;
+  next: NextFunction<T>;
 }) => ReturnType<NextFunction<T>>;
 
 export class Server<TRouter extends AnyRouter> {
@@ -137,16 +137,17 @@ export class Server<TRouter extends AnyRouter> {
       opts.req.resourceId
     ) {
       const mutationResult = result as MutationResult<any>;
+      const acceptedValues = mutationResult.acceptedValues ?? {};
       const req = opts.req as MutationRequest;
 
-      if (Object.keys(result.acceptedValues).length) {
+      if (Object.keys(acceptedValues).length) {
         // TODO refactor this to be called by the storage instead of the server
         this.mutationSubscriptions.forEach((handler) => {
           handler({
             id: opts.req.context.messageId,
             type: "MUTATE",
             resource: req.resource,
-            payload: result.acceptedValues ?? {},
+            payload: acceptedValues,
             resourceId: req.resourceId!,
             procedure: req.procedure as "INSERT" | "UPDATE",
           });
