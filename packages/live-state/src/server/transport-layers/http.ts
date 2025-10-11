@@ -42,7 +42,7 @@ export const httpTransportLayer = (
           transport: "HTTP",
           headers: baseRequestData.headers,
           cookies: baseRequestData.cookies,
-          query: rawParsedQs,
+          queryParams: rawParsedQs,
         })) ?? {};
 
       if (request.method === "GET") {
@@ -65,11 +65,11 @@ export const httpTransportLayer = (
           req: {
             ...baseRequestData,
             type: "QUERY",
-            resourceName: resource,
+            resource: resource,
             context: initialContext,
             where: parsedQs.where,
             include: parsedQs.include,
-            query: rawParsedQs as Record<string, any>,
+            queryParams: rawParsedQs as Record<string, any>,
           },
         });
 
@@ -129,7 +129,7 @@ export const httpTransportLayer = (
             req: {
               ...baseRequestData,
               type: "MUTATE",
-              resourceName: resource,
+              resource: resource,
               input: body.payload,
               context: initialContext,
               resourceId: (body as DefaultMutation).resourceId,
@@ -137,7 +137,7 @@ export const httpTransportLayer = (
                 procedure === "insert" || procedure === "update"
                   ? procedure.toUpperCase()
                   : procedure,
-              query: {},
+              queryParams: {},
             },
           });
 

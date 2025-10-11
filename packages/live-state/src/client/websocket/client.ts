@@ -303,7 +303,7 @@ export const createClient = <TRouter extends AnyRouter>(
         {} as Record<
           keyof TRouter["routes"],
           QueryBuilder<
-            TRouter["routes"][keyof TRouter["routes"]]["_resourceSchema"]
+            TRouter["routes"][keyof TRouter["routes"]]["resourceSchema"]
           >
         >
       ),

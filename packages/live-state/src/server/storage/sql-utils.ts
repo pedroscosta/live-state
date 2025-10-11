@@ -10,13 +10,13 @@ import type {
 
 function innerApplyWhere<T extends LiveObjectAny>(
   schema: Schema<any>,
-  resourceName: string,
+  resource: string,
   eb: ExpressionBuilder<any, any>,
   where: WhereClause<T>
 ): Expression<any> {
   if (!schema) throw new Error("Schema not initialized");
 
-  const resourceSchema = schema[resourceName];
+  const resourceSchema = schema[resource];
 
   if (!resourceSchema) throw new Error("Resource not found");
 
@@ -26,66 +26,60 @@ function innerApplyWhere<T extends LiveObjectAny>(
   return (isOr ? eb.or : eb.and)(
     isOr
       ? where.$or.map((w: WhereClause<T>) =>
-          innerApplyWhere(schema, resourceName, eb, w)
+          innerApplyWhere(schema, resource, eb, w)
         )
       : isExplicitAnd
         ? where.$and.map((w: WhereClause<T>) =>
-            innerApplyWhere(schema, resourceName, eb, w)
+            innerApplyWhere(schema, resource, eb, w)
           )
         : Object.entries(where)
             .map(([key, val]) => {
               if (resourceSchema.fields[key]) {
                 if (val?.$eq !== undefined) {
                   return eb(
-                    `${resourceName}.${key}`,
+                    `${resource}.${key}`,
                     val.$eq === null ? "is" : "=",
                     val.$eq
                   );
                 } else if (val?.$in !== undefined) {
-                  return eb(`${resourceName}.${key}`, "in", val.$in);
+                  return eb(`${resource}.${key}`, "in", val.$in);
                 } else if (val?.$not !== undefined) {
                   if (val?.$not?.$in !== undefined) {
-                    return eb(`${resourceName}.${key}`, "not in", val.$not.$in);
+                    return eb(`${resource}.${key}`, "not in", val.$not.$in);
                   } else if (val?.$not?.$eq !== undefined) {
                     return eb(
-                      `${resourceName}.${key}`,
+                      `${resource}.${key}`,
                       val.$not.$eq === null ? "is not" : "!=",
                       val.$not.$eq
                     );
                   } else {
                     return eb(
-                      `${resourceName}.${key}`,
+                      `${resource}.${key}`,
                       val.$not === null ? "is not" : "!=",
                       val.$not
                     );
                   }
                 } else if (val?.$gt !== undefined) {
-                  return eb(`${resourceName}.${key}`, ">", val.$gt);
+                  return eb(`${resource}.${key}`, ">", val.$gt);
                 } else if (val?.$gte !== undefined) {
-                  return eb(`${resourceName}.${key}`, ">=", val.$gte);
+                  return eb(`${resource}.${key}`, ">=", val.$gte);
                 } else if (val?.$lt !== undefined) {
-                  return eb(`${resourceName}.${key}`, "<", val.$lt);
+                  return eb(`${resource}.${key}`, "<", val.$lt);
                 } else if (val?.$lte !== undefined) {
-                  return eb(`${resourceName}.${key}`, "<=", val.$lte);
+                  return eb(`${resource}.${key}`, "<=", val.$lte);
                 } else {
                   // Fallback to simple field equality
                   return eb(
-                    `${resourceName}.${key}`,
+                    `${resource}.${key}`,
                     val === null ? "is" : "=",
                     val
                   );
                 }
               } else if (resourceSchema.relations[key]) {
                 const relation = resourceSchema.relations[key];
-                const otherResourceName = relation.entity.name;
+                const otherresource = relation.entity.name;
 
-                const otherColumnName =
-                  relation.type === "one" ? "id" : relation.foreignColumn;
-
-                const selfColumn =
-                  relation.type === "one" ? relation.relationalColumn : "id";
-
-                return innerApplyWhere(schema, otherResourceName, eb, val);
+                return innerApplyWhere(schema, otherresource, eb, val);
               }
               return null;
             })
@@ -95,11 +89,11 @@ function innerApplyWhere<T extends LiveObjectAny>(
 
 function applyJoins<T extends LiveObjectAny>(
   schema: Schema<any>,
-  resourceName: string,
+  resource: string,
   query: SelectQueryBuilder<any, any, any>,
   where?: WhereClause<T>
 ) {
-  const resourceSchema = schema[resourceName];
+  const resourceSchema = schema[resource];
 
   if (!resourceSchema) throw new Error("Resource not found");
 
@@ -109,7 +103,7 @@ function applyJoins<T extends LiveObjectAny>(
     if (!resourceSchema.relations[key]) continue;
 
     const relation = resourceSchema.relations[key];
-    const otherResourceName = relation.entity.name;
+    const otherresource = relation.entity.name;
 
     const otherColumnName =
       relation.type === "one" ? "id" : relation.foreignColumn;
@@ -118,9 +112,9 @@ function applyJoins<T extends LiveObjectAny>(
       relation.type === "one" ? relation.relationalColumn : "id";
 
     query = query.leftJoin(
-      otherResourceName,
-      `${otherResourceName}.${otherColumnName}`,
-      `${resourceName}.${selfColumn}`
+      otherresource,
+      `${otherresource}.${otherColumnName}`,
+      `${resource}.${selfColumn}`
     );
   }
 
@@ -129,20 +123,20 @@ function applyJoins<T extends LiveObjectAny>(
 
 export function applyWhere<T extends LiveObjectAny>(
   schema: Schema<any>,
-  resourceName: string,
+  resource: string,
   query: SelectQueryBuilder<any, any, any>,
   where?: WhereClause<T>
 ) {
   if (!where || Object.keys(where).length === 0) return query;
 
-  query = applyJoins(schema, resourceName, query, where);
+  query = applyJoins(schema, resource, query, where);
 
-  return query.where((eb) => innerApplyWhere(schema, resourceName, eb, where));
+  return query.where((eb) => innerApplyWhere(schema, resource, eb, where));
 }
 
 export function applyInclude<T extends LiveObjectAny>(
   schema: Schema<any>,
-  resourceName: string,
+  resource: string,
   query: SelectQueryBuilder<any, any, any>,
   include?: IncludeClause<T>
 ) {
@@ -150,16 +144,16 @@ export function applyInclude<T extends LiveObjectAny>(
 
   if (!schema) throw new Error("Schema not initialized");
 
-  const resourceSchema = schema[resourceName];
+  const resourceSchema = schema[resource];
 
-  if (!resourceSchema) throw new Error(`Resource not found: ${resourceName}`);
+  if (!resourceSchema) throw new Error(`Resource not found: ${resource}`);
 
   for (const key of Object.keys(include)) {
     if (!resourceSchema.relations[key])
-      throw new Error(`Relation ${key} not found in resource ${resourceName}`);
+      throw new Error(`Relation ${key} not found in resource ${resource}`);
 
     const relation = resourceSchema.relations[key];
-    const otherResourceName = relation.entity.name as string;
+    const otherresource = relation.entity.name as string;
 
     const otherColumnName =
       relation.type === "one" ? "id" : relation.foreignColumn;
@@ -173,22 +167,22 @@ export function applyInclude<T extends LiveObjectAny>(
       (
         aggFunc(
           eb
-            .selectFrom(otherResourceName)
-            .selectAll(otherResourceName)
+            .selectFrom(otherresource)
+            .selectAll(otherresource)
             .whereRef(
-              `${otherResourceName}.${otherColumnName}`,
+              `${otherresource}.${otherColumnName}`,
               "=",
-              `${resourceName}.${selfColumn}`
+              `${resource}.${selfColumn}`
             )
             .select((eb: any) =>
               jsonObjectFrom(
                 eb
-                  .selectFrom(`${otherResourceName}_meta`)
-                  .selectAll(`${otherResourceName}_meta`)
+                  .selectFrom(`${otherresource}_meta`)
+                  .selectAll(`${otherresource}_meta`)
                   .whereRef(
-                    `${otherResourceName}_meta.id`,
+                    `${otherresource}_meta.id`,
                     "=",
-                    `${otherResourceName}.id`
+                    `${otherresource}.id`
                   )
               ).as("_meta")
             )
@@ -197,7 +191,7 @@ export function applyInclude<T extends LiveObjectAny>(
     );
 
     // TODO support deep include
-    // query = this.applyInclude(otherResourceName, query, val);
+    // query = this.applyInclude(otherresource, query, val);
   }
 
   return query;

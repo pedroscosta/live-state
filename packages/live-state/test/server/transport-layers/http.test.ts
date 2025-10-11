@@ -66,7 +66,7 @@ describe("httpTransportLayer", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "QUERY",
-        resourceName: "users",
+        resource: "users",
         context: { userId: "user123" },
         headers: expect.objectContaining({
           "content-type": "application/json",
@@ -89,8 +89,8 @@ describe("httpTransportLayer", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "QUERY",
-        resourceName: "users",
-        query: expect.objectContaining({
+        resource: "users",
+        queryParams: expect.objectContaining({
           limit: 10,
           where: { name: "John" },
           include: {},
@@ -157,7 +157,7 @@ describe("httpTransportLayer", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
-        resourceName: "users",
+        resource: "users",
         input: {
           name: {
             value: "John Updated",
@@ -195,7 +195,7 @@ describe("httpTransportLayer", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
-        resourceName: "users",
+        resource: "users",
         input: { action: "approve" },
         procedure: "approve",
       }),
@@ -396,7 +396,7 @@ describe("httpTransportLayer", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
-        resourceName: "users",
+        resource: "users",
         procedure: "special-action",
       }),
     });

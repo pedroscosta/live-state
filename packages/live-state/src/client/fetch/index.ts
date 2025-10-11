@@ -46,7 +46,7 @@ export const createClient = <TRouter extends AnyRouter>(
         }
       );
 
-      if (!res || typeof res !== 'object') {
+      if (!res || typeof res !== "object") {
         return [];
       }
       return Object.entries(res).map(([key, value]) => ({
@@ -72,7 +72,7 @@ export const createClient = <TRouter extends AnyRouter>(
       {} as Record<
         keyof TRouter["routes"],
         QueryBuilder<
-          TRouter["routes"][keyof TRouter["routes"]]["_resourceSchema"],
+          TRouter["routes"][keyof TRouter["routes"]]["resourceSchema"],
           {},
           false,
           true

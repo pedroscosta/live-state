@@ -73,14 +73,6 @@ describe("Route", () => {
     vi.clearAllMocks();
   });
 
-  test("should create route instance", () => {
-    const route = new Route("users");
-
-    expect(route.resourceName).toBe("users");
-    expect(route.middlewares).toBeInstanceOf(Set);
-    expect(route.customMutations).toEqual({});
-  });
-
   test("should create route with custom mutations", () => {
     const customMutations = {
       customAction: {
@@ -89,13 +81,13 @@ describe("Route", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
 
     expect(route.customMutations).toEqual(customMutations);
   });
 
   test("should add middlewares", () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const middleware1 = vi.fn();
     const middleware2 = vi.fn();
 
@@ -107,10 +99,10 @@ describe("Route", () => {
   });
 
   test("should handle QUERY request", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -138,10 +130,10 @@ describe("Route", () => {
   });
 
   test("should handle QUERY request with where and include", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       where: { name: "John" },
       include: { posts: true },
       headers: {},
@@ -164,10 +156,10 @@ describe("Route", () => {
   });
 
   test("should handle MUTATE request (set)", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -203,10 +195,10 @@ describe("Route", () => {
   });
 
   test("should throw error when MUTATE request missing payload", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       procedure: "INSERT",
       headers: {},
@@ -225,10 +217,10 @@ describe("Route", () => {
   });
 
   test("should throw error when MUTATE request missing resourceId", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       input: { name: "John" },
       procedure: "INSERT",
       headers: {},
@@ -247,10 +239,10 @@ describe("Route", () => {
   });
 
   test("should throw error when mutation is rejected", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       headers: {},
@@ -280,10 +272,10 @@ describe("Route", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       procedure: "customAction",
       input: { data: "test" },
       headers: {},
@@ -303,7 +295,6 @@ describe("Route", () => {
         input: { data: "test" },
       }),
       db: mockStorage,
-      schema: mockSchema,
     });
     expect(result).toEqual({ success: true });
   });
@@ -317,10 +308,10 @@ describe("Route", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       procedure: "customAction",
       input: { data: 123 }, // Invalid input
       headers: {},
@@ -339,10 +330,10 @@ describe("Route", () => {
   });
 
   test("should throw error for invalid request type", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest = {
       type: "INVALID",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -359,7 +350,7 @@ describe("Route", () => {
   });
 
   test("should execute middlewares in correct order", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const executionOrder: string[] = [];
 
     const middleware1 = vi.fn(({ next, req }) => {
@@ -380,7 +371,7 @@ describe("Route", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -402,7 +393,7 @@ describe("Route", () => {
   });
 
   test("should create route with mutations using withMutations", () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
 
     const newRoute = route.withMutations(({ mutation }) => ({
       customAction: mutation(z.object({ data: z.string() })).handler(
@@ -411,7 +402,7 @@ describe("Route", () => {
     }));
 
     expect(newRoute).toBeInstanceOf(Route);
-    expect(newRoute.resourceName).toBe("users");
+    expect(newRoute.resourceSchema).toBe(mockResource);
     expect(newRoute.customMutations.customAction).toBeDefined();
     expect(newRoute.customMutations.customAction.inputValidator).toBeDefined();
     expect(newRoute.customMutations.customAction.handler).toBeDefined();
@@ -432,7 +423,7 @@ describe("RouteFactory", () => {
     const route = factory.collectionRoute(mockShape);
 
     expect(route).toBeInstanceOf(Route);
-    expect(route.resourceName).toBe("users");
+    expect(route.resourceSchema).toBe(mockShape);
   });
 
   test("should add middlewares to factory", () => {
@@ -474,7 +465,7 @@ describe("RouteFactory", () => {
     const route = factory.collectionRoute(mockShape, mockAuth);
 
     expect(route).toBeInstanceOf(Route);
-    expect(route.resourceName).toBe("users");
+    expect(route.resourceSchema).toBe(mockShape);
     expect(route.authorization).toBe(mockAuth);
   });
 });
@@ -515,11 +506,11 @@ describe("Route Authorization", () => {
 
   test("should apply authorization to QUERY requests", async () => {
     const authHandler = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -542,11 +533,11 @@ describe("Route Authorization", () => {
 
   test("should merge authorization with existing where clause", async () => {
     const authHandler = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       where: { active: true },
       headers: {},
       cookies: {},
@@ -568,11 +559,11 @@ describe("Route Authorization", () => {
   });
 
   test("should handle QUERY without authorization", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       where: { active: true },
       headers: {},
       cookies: {},
@@ -595,11 +586,11 @@ describe("Route Authorization", () => {
 
   test("should handle QUERY authorization with boolean false", async () => {
     const authHandler = vi.fn().mockReturnValue(false);
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -619,11 +610,11 @@ describe("Route Authorization", () => {
 
   test("should handle QUERY authorization with boolean true", async () => {
     const authHandler = vi.fn().mockReturnValue(true);
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       where: { active: true },
       headers: {},
       cookies: {},
@@ -647,11 +638,11 @@ describe("Route Authorization", () => {
 
   test("should handle QUERY authorization with where clause only", async () => {
     const authHandler = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -676,11 +667,11 @@ describe("Route Authorization", () => {
     const authHandler = vi.fn().mockReturnValue({
       $and: [{ userId: "123" }, { role: "admin" }],
     });
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       where: { active: true },
       headers: {},
       cookies: {},
@@ -749,13 +740,13 @@ describe("Route UPDATE Authorization", () => {
 
   test("should pass pre-mutation authorization for UPDATE operations", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -803,13 +794,13 @@ describe("Route UPDATE Authorization", () => {
 
   test("should fail pre-mutation authorization for UPDATE operations", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -849,13 +840,13 @@ describe("Route UPDATE Authorization", () => {
 
   test("should pass post-mutation authorization for UPDATE operations", async () => {
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -892,13 +883,13 @@ describe("Route UPDATE Authorization", () => {
 
   test("should fail post-mutation authorization for UPDATE operations", async () => {
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -934,7 +925,7 @@ describe("Route UPDATE Authorization", () => {
   test("should work with both pre and post mutation authorization", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: {
         preMutation: preMutationAuth,
         postMutation: postMutationAuth,
@@ -943,7 +934,7 @@ describe("Route UPDATE Authorization", () => {
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -996,7 +987,7 @@ describe("Route UPDATE Authorization", () => {
   test("should fail when pre-mutation passes but post-mutation fails", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: {
         preMutation: preMutationAuth,
         postMutation: postMutationAuth,
@@ -1005,7 +996,7 @@ describe("Route UPDATE Authorization", () => {
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -1054,11 +1045,11 @@ describe("Route UPDATE Authorization", () => {
   });
 
   test("should handle UPDATE operations without authorization", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -1092,13 +1083,13 @@ describe("Route UPDATE Authorization", () => {
     const preMutationAuth = vi.fn().mockReturnValue({
       $and: [{ userId: "123" }, { role: "admin" }],
     });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -1196,13 +1187,13 @@ describe("Route INSERT Authorization", () => {
 
   test("should pass INSERT authorization", async () => {
     const insertAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       insert: insertAuth,
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1247,13 +1238,13 @@ describe("Route INSERT Authorization", () => {
 
   test("should fail INSERT authorization", async () => {
     const insertAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       insert: insertAuth,
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1296,13 +1287,13 @@ describe("Route INSERT Authorization", () => {
 
   test("should handle INSERT authorization with boolean false", async () => {
     const insertAuth = vi.fn().mockReturnValue(false);
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       insert: insertAuth,
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1342,13 +1333,13 @@ describe("Route INSERT Authorization", () => {
 
   test("should handle INSERT authorization with boolean true", async () => {
     const insertAuth = vi.fn().mockReturnValue(true);
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       insert: insertAuth,
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1389,11 +1380,11 @@ describe("Route INSERT Authorization", () => {
   });
 
   test("should handle INSERT without authorization", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1458,10 +1449,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
   });
 
   test("should throw error when INSERT on existing resource", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1484,10 +1475,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
   });
 
   test("should throw error when UPDATE on non-existing resource", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -1509,10 +1500,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
   });
 
   test("should handle successful INSERT", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -1546,10 +1537,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
   });
 
   test("should handle successful UPDATE", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -1620,10 +1611,10 @@ describe("Route Error Handling", () => {
   });
 
   test("should throw error when MUTATE request missing procedure", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       headers: {},
@@ -1642,10 +1633,10 @@ describe("Route Error Handling", () => {
   });
 
   test("should throw error for unknown procedure", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UNKNOWN_PROCEDURE",
@@ -1665,7 +1656,7 @@ describe("Route Error Handling", () => {
   });
 
   test("should handle middleware errors", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const errorMiddleware = vi.fn(() => {
       throw new Error("Middleware error");
     });
@@ -1674,7 +1665,7 @@ describe("Route Error Handling", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -1691,7 +1682,7 @@ describe("Route Error Handling", () => {
   });
 
   test("should handle async middleware", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
     const executionOrder: string[] = [];
 
     const asyncMiddleware = vi.fn(async ({ next, req }) => {
@@ -1706,7 +1697,7 @@ describe("Route Error Handling", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -1727,7 +1718,7 @@ describe("Route Error Handling", () => {
   });
 
   test("should handle middleware that modifies request", async () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
 
     const modifyingMiddleware = vi.fn(({ next, req }) => {
       const modifiedReq = {
@@ -1741,7 +1732,7 @@ describe("Route Error Handling", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -1802,10 +1793,10 @@ describe("Route Custom Mutations Advanced", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       procedure: "noInputAction",
       headers: {},
       cookies: {},
@@ -1824,7 +1815,6 @@ describe("Route Custom Mutations Advanced", () => {
         input: undefined,
       }),
       db: mockStorage,
-      schema: mockSchema,
     });
     expect(result).toEqual({ success: true });
   });
@@ -1838,10 +1828,10 @@ describe("Route Custom Mutations Advanced", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       procedure: "errorAction",
       input: {},
       headers: {},
@@ -1872,7 +1862,7 @@ describe("Route Custom Mutations Advanced", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
     const validInput = {
       name: "John Doe",
       email: "john@example.com",
@@ -1880,7 +1870,7 @@ describe("Route Custom Mutations Advanced", () => {
     };
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       procedure: "complexAction",
       input: validInput,
       headers: {},
@@ -1900,7 +1890,6 @@ describe("Route Custom Mutations Advanced", () => {
         input: validInput,
       }),
       db: mockStorage,
-      schema: mockSchema,
     });
     expect(result).toEqual({ result: "processed" });
   });
@@ -1918,7 +1907,7 @@ describe("Route Custom Mutations Advanced", () => {
       },
     };
 
-    const route = new Route("users", customMutations);
+    const route = new Route(mockResource, customMutations);
     const invalidInput = {
       name: "Jo", // Too short
       email: "invalid-email", // Invalid email
@@ -1926,7 +1915,7 @@ describe("Route Custom Mutations Advanced", () => {
     };
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       procedure: "complexAction",
       input: invalidInput,
       headers: {},
@@ -1947,7 +1936,7 @@ describe("Route Custom Mutations Advanced", () => {
   });
 
   test("should handle withMutations with multiple mutations", () => {
-    const route = new Route("users");
+    const route = new Route(mockResource);
 
     const newRoute = route.withMutations(({ mutation }) => ({
       action1: mutation(z.object({ data: z.string() })).handler(async () => ({
@@ -2004,11 +1993,11 @@ describe("Route Authorization Error Handling", () => {
     const authHandler = vi.fn().mockImplementation(() => {
       throw new Error("Authorization error");
     });
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -2030,13 +2019,13 @@ describe("Route Authorization Error Handling", () => {
     const insertAuth = vi.fn().mockImplementation(() => {
       throw new Error("Insert authorization error");
     });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       insert: insertAuth,
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -2076,13 +2065,13 @@ describe("Route Authorization Error Handling", () => {
     const preMutationAuth = vi.fn().mockImplementation(() => {
       throw new Error("Pre-mutation authorization error");
     });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -2121,13 +2110,13 @@ describe("Route Authorization Error Handling", () => {
     const postMutationAuth = vi.fn().mockImplementation(() => {
       throw new Error("Post-mutation authorization error");
     });
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -2207,7 +2196,7 @@ describe("Route Complex Authorization Scenarios", () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
 
-    const route = new Route("users", undefined, {
+    const route = new Route(mockResource, undefined, {
       read: readAuth,
       insert: insertAuth,
       update: {
@@ -2219,7 +2208,7 @@ describe("Route Complex Authorization Scenarios", () => {
     // Test read authorization
     const readRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -2237,7 +2226,7 @@ describe("Route Complex Authorization Scenarios", () => {
     // Test insert authorization
     const insertRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "INSERT",
@@ -2273,7 +2262,7 @@ describe("Route Complex Authorization Scenarios", () => {
     // Test update authorization
     const updateRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       input: { name: "John" },
       procedure: "UPDATE",
@@ -2322,11 +2311,11 @@ describe("Route Complex Authorization Scenarios", () => {
         { department: "engineering" },
       ],
     });
-    const route = new Route("users", undefined, { read: authHandler });
+    const route = new Route(mockResource, undefined, { read: authHandler });
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       where: { active: true },
       headers: {},
       cookies: {},

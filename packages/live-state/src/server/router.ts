@@ -4,7 +4,6 @@
 import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
-
 import {
   type InferLiveObjectWithRelationalIds,
   inferValue,
@@ -16,7 +15,15 @@ import {
   type WhereClause,
 } from "../schema";
 import { applyWhere, type Simplify } from "../utils";
-import type { Middleware, NextFunction, ParsedRequest, Storage } from ".";
+import type {
+  BaseRequest,
+  Middleware,
+  MutationRequest,
+  NextFunction,
+  QueryRequest,
+  Request,
+  Storage,
+} from ".";
 
 export type RouteRecord = Record<string, AnyRoute>;
 
@@ -51,47 +58,38 @@ export type MutationResult<TShape extends LiveObjectAny> = {
   acceptedValues: Record<string, any> | null;
 };
 
-export type RequestHandler<
-  TInput,
-  TResult,
-  TSchema extends Schema<any> = Schema<any>,
-> = (opts: {
-  req: ParsedRequest<TInput>;
-  db: Storage;
-  schema: TSchema;
-}) => Promise<TResult>;
-
 export type Mutation<
   TInputValidator extends z3.ZodTypeAny | z4.$ZodType, // TODO use StandardSchema instead
-  THandler extends RequestHandler<z.infer<TInputValidator>, any, any>,
+  TOutput,
 > = {
   inputValidator: TInputValidator;
-  handler: THandler;
+  handler: (opts: {
+    req: MutationRequest<z.infer<TInputValidator>>;
+    db: Storage;
+  }) => TOutput;
 };
 
 const mutationCreator = <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
   validator?: TInputValidator
 ) => {
   return {
-    handler: <
-      THandler extends RequestHandler<z.infer<TInputValidator>, any, any>,
-    >(
+    handler: <THandler extends Mutation<TInputValidator, any>["handler"]>(
       handler: THandler
     ) =>
       ({
         inputValidator: validator ?? z.undefined(),
         handler,
-      }) as Mutation<TInputValidator, THandler>,
+      }) as Mutation<TInputValidator, ReturnType<THandler>>,
   };
 };
 
 export type ReadAuthorizationHandler<TShape extends LiveObjectAny> = (opts: {
-  ctx: ParsedRequest["context"];
+  ctx: BaseRequest["context"];
 }) => WhereClause<TShape> | boolean;
 
 export type MutationAuthorizationHandler<TShape extends LiveObjectAny> =
   (opts: {
-    ctx: ParsedRequest["context"];
+    ctx: BaseRequest["context"];
     value: Simplify<InferLiveObjectWithRelationalIds<TShape>>;
   }) => WhereClause<TShape> | boolean;
 
@@ -107,40 +105,35 @@ export type Authorization<TShape extends LiveObjectAny> = {
 export class Route<
   TResourceSchema extends LiveObjectAny,
   TMiddleware extends Middleware<any>,
-  TCustomMutations extends Record<
-    string,
-    Mutation<any, RequestHandler<any, any>>
-  >,
+  TCustomMutations extends Record<string, Mutation<any, any>>,
 > {
-  readonly _resourceSchema!: TResourceSchema;
-  readonly resourceName: TResourceSchema["name"];
+  readonly resourceSchema: TResourceSchema;
   readonly middlewares: Set<TMiddleware>;
   readonly customMutations: TCustomMutations;
   readonly authorization?: Authorization<TResourceSchema>;
 
   public constructor(
-    resourceName: TResourceSchema["name"],
+    resourceSchema: TResourceSchema,
     customMutations?: TCustomMutations,
     authorization?: Authorization<TResourceSchema>
   ) {
-    this.resourceName = resourceName;
+    this.resourceSchema = resourceSchema;
     this.middlewares = new Set();
     this.customMutations = customMutations ?? ({} as TCustomMutations);
     this.authorization = authorization;
   }
 
   public async handleRequest(opts: {
-    req: ParsedRequest;
+    req: Request;
     db: Storage;
     schema: Schema<any>;
   }): Promise<any> {
-    const next = (req: ParsedRequest) =>
+    const next = (req: Request) =>
       (() => {
         if (req.type === "QUERY") {
           return this.handleFind({
-            req: req as ParsedRequest<never>,
+            req: req as QueryRequest,
             db: opts.db,
-            schema: opts.schema,
           });
         } else if (req.type === "MUTATE") {
           if (!req.procedure)
@@ -155,11 +148,10 @@ export class Route<
             return customProcedure.handler({
               req,
               db: opts.db,
-              schema: opts.schema,
             });
           } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
             return this.handleSet({
-              req: req as ParsedRequest<
+              req: req as MutationRequest<
                 LiveObjectMutationInput<TResourceSchema>
               >,
               db: opts.db,
@@ -187,46 +179,50 @@ export class Route<
     return this;
   }
 
-  public withMutations<
-    T extends Record<string, Mutation<any, RequestHandler<any, any>>>,
-  >(mutationFactory: (opts: { mutation: typeof mutationCreator }) => T) {
+  public withMutations<T extends Record<string, Mutation<any, any>>>(
+    mutationFactory: (opts: { mutation: typeof mutationCreator }) => T
+  ) {
     return new Route<TResourceSchema, TMiddleware, T>(
-      this.resourceName,
+      this.resourceSchema,
       mutationFactory({ mutation: mutationCreator })
     );
   }
 
-  private handleFind: RequestHandler<never, QueryResult<TResourceSchema>> =
-    async ({ req, db }) => {
-      const authorizationClause = this.authorization?.read?.({
-        ctx: req.context,
-      });
+  private handleFind = async ({
+    req,
+    db,
+  }: {
+    req: QueryRequest;
+    db: Storage;
+  }) => {
+    const authorizationClause = this.authorization?.read?.({
+      ctx: req.context,
+    });
 
-      if (typeof authorizationClause === "boolean" && !authorizationClause) {
-        throw new Error("Not authorized");
-      }
+    if (typeof authorizationClause === "boolean" && !authorizationClause) {
+      throw new Error("Not authorized");
+    }
 
-      return {
-        data: await db.rawFind<TResourceSchema>(
-          req.resourceName,
-          req.where && authorizationClause && authorizationClause !== true
-            ? { $and: [req.where, authorizationClause] }
-            : authorizationClause && authorizationClause !== true
-              ? authorizationClause
-              : req.where,
-          req.include
-        ),
-        acceptedValues: null,
-      };
+    return {
+      data: await db.rawFind<TResourceSchema>(
+        req.resource,
+        req.where && authorizationClause && authorizationClause !== true
+          ? { $and: [req.where, authorizationClause] }
+          : authorizationClause && authorizationClause !== true
+            ? authorizationClause
+            : req.where,
+        req.include
+      ),
+      acceptedValues: null,
     };
+  };
 
   private handleSet = async ({
     req,
     db,
-    schema,
     operation,
   }: {
-    req: ParsedRequest<LiveObjectMutationInput<TResourceSchema>>;
+    req: MutationRequest;
     db: Storage;
     schema: Schema<any>;
     operation: "INSERT" | "UPDATE";
@@ -235,7 +231,7 @@ export class Route<
     if (!req.resourceId) throw new Error("ResourceId is required");
 
     const target = await db.rawFindById<TResourceSchema>(
-      req.resourceName,
+      req.resource,
       req.resourceId
     );
 
@@ -246,9 +242,7 @@ export class Route<
     }
 
     return db.transaction(async ({ trx }) => {
-      const [newRecord, acceptedValues] = schema[
-        this.resourceName
-      ].mergeMutation(
+      const [newRecord, acceptedValues] = this.resourceSchema.mergeMutation(
         "set",
         req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
         target
@@ -260,7 +254,7 @@ export class Route<
 
       if (operation === "INSERT") {
         const result = await trx.rawInsert<TResourceSchema>(
-          req.resourceName,
+          req.resource,
           req.resourceId!,
           newRecord
         );
@@ -320,7 +314,7 @@ export class Route<
       }
 
       const result = await trx.rawUpdate<TResourceSchema>(
-        req.resourceName,
+        req.resource,
         req.resourceId!,
         newRecord
       );
@@ -368,7 +362,7 @@ export class RouteFactory {
     authorization?: Authorization<T>
   ) {
     return new Route<T, Middleware<any>, Record<string, never>>(
-      shape.name,
+      shape,
       undefined,
       authorization
     ).use(...this.middlewares);

@@ -163,7 +163,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -189,7 +189,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "nonexistent",
+      resource: "nonexistent",
       headers: {},
       cookies: {},
       query: {},
@@ -227,7 +227,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -265,7 +265,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       procedure: "INSERT",
       context: { messageId: "msg123" },
@@ -306,7 +306,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -336,7 +336,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       context: { messageId: "msg123" },
       headers: {},
@@ -367,7 +367,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "MUTATE",
-      resourceName: "users",
+      resource: "users",
       resourceId: "user1",
       context: { messageId: "msg123" },
       headers: {},
@@ -395,7 +395,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},
@@ -429,7 +429,7 @@ describe("Server", () => {
 
     const mockRequest: ParsedRequest = {
       type: "QUERY",
-      resourceName: "users",
+      resource: "users",
       headers: {},
       cookies: {},
       query: {},

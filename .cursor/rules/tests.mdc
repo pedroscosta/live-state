@@ -1,0 +1,7 @@
+---
+globs: packages/live-state/test/**/*
+alwaysApply: false
+---
+
+- Use other tests as a guidance on how the code should behave
+- Use pnpm to run the test

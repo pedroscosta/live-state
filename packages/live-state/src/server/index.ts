@@ -1,4 +1,9 @@
-import type { DefaultMutation } from "../core/schemas/core-protocol";
+/** biome-ignore-all lint/suspicious/noExplicitAny: any's are actually used correctly */
+import type {
+  DefaultMutation,
+  RawQueryRequest,
+} from "../core/schemas/core-protocol";
+import type { Awaitable } from "../core/utils";
 import type { Schema } from "../schema";
 import type { AnyRouter } from "./router";
 import type { Storage } from "./storage";
@@ -7,34 +12,39 @@ export * from "./adapters/express";
 export * from "./router";
 export * from "./storage";
 
-export type ParsedRequest<TInput = any> = {
+export interface BaseRequest {
   headers: Record<string, string>;
   cookies: Record<string, string>;
-  query: Record<string, string>;
-  resourceName: string;
-  procedure?: string;
+  queryParams: Record<string, string>;
   context: Record<string, any>;
-  where?: Record<string, any>;
-  include?: Record<string, any>;
-  type: "QUERY" | "MUTATE";
+}
+
+export interface QueryRequest extends BaseRequest, RawQueryRequest {
+  type: "QUERY";
+}
+
+export interface MutationRequest<TInput = any> extends BaseRequest {
+  type: "MUTATE";
+  input: TInput;
+  resource: string;
   resourceId?: string;
-  input?: TInput;
-};
+  procedure: string;
+}
+
+export type Request = QueryRequest | MutationRequest;
 
 export type ContextProvider = (
-  req: Pick<ParsedRequest, "headers" | "cookies" | "query"> & {
+  req: Omit<BaseRequest, "context"> & {
     transport: "HTTP" | "WEBSOCKET";
   }
 ) => Record<string, any>;
 
-export type RequestType = ParsedRequest["type"];
-
 export type MutationHandler = (mutation: DefaultMutation) => void;
 
-export type NextFunction<T> = (req: ParsedRequest) => Promise<T> | T;
+export type NextFunction<T> = (req: Request) => Awaitable<T>;
 
 export type Middleware<T = any> = (opts: {
-  req: ParsedRequest;
+  req: BaseRequest;
   next: NextFunction<T>;
 }) => ReturnType<NextFunction<T>>;
 
@@ -84,8 +94,8 @@ export class Server<TRouter extends AnyRouter> {
     };
   }
 
-  public async handleRequest(opts: { req: ParsedRequest }) {
-    if (!this.router.routes[opts.req.resourceName]) {
+  public async handleRequest(opts: { req: Request }) {
+    if (!this.router.routes[opts.req.resource]) {
       throw new Error("Invalid resource");
     }
 
@@ -94,7 +104,7 @@ export class Server<TRouter extends AnyRouter> {
         return (req) => middleware({ req, next });
       },
       (async (req) =>
-        this.router.routes[opts.req.resourceName]!.handleRequest({
+        this.router.routes[opts.req.resource].handleRequest({
           req,
           db: this.storage,
           schema: this.schema,
@@ -106,17 +116,19 @@ export class Server<TRouter extends AnyRouter> {
       opts.req.type === "MUTATE" &&
       result.acceptedValues &&
       Object.keys(result.acceptedValues).length > 0 &&
-      (opts.req.procedure === "INSERT" || opts.req.procedure === "UPDATE")
+      (opts.req.procedure === "INSERT" || opts.req.procedure === "UPDATE") &&
+      opts.req.resourceId
     ) {
+      const req = opts.req as MutationRequest;
       // TODO refactor this to be called by the storage instead of the server
       this.mutationSubscriptions.forEach((handler) => {
         handler({
           id: opts.req.context.messageId,
           type: "MUTATE",
-          resource: opts.req.resourceName,
+          resource: req.resource,
           payload: result.acceptedValues ?? {},
-          resourceId: opts.req.resourceId!,
-          procedure: opts.req.procedure as "INSERT" | "UPDATE",
+          resourceId: req.resourceId!,
+          procedure: req.procedure as "INSERT" | "UPDATE",
         });
       });
     }

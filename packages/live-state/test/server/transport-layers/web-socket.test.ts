@@ -131,7 +131,7 @@ describe("webSocketAdapter", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "QUERY",
-        resourceName: "users",
+        resource: "users",
         context: { userId: "user123" },
         headers: expect.objectContaining({
           cookie: "sessionId=abc123",
@@ -177,12 +177,12 @@ describe("webSocketAdapter", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledTimes(2);
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
-        resourceName: "users",
+        resource: "users",
       }),
     });
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
-        resourceName: "posts",
+        resource: "posts",
       }),
     });
   });
@@ -218,7 +218,7 @@ describe("webSocketAdapter", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
-        resourceName: "users",
+        resource: "users",
         input: {
           name: {
             value: "John Updated",
@@ -261,7 +261,7 @@ describe("webSocketAdapter", () => {
     expect(mockServer.handleRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
-        resourceName: "users",
+        resource: "users",
         procedure: "approve",
         input: { status: "approved" },
       }),
