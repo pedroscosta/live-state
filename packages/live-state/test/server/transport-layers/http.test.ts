@@ -33,8 +33,12 @@ describe("httpTransportLayer", () => {
   beforeEach(() => {
     mockServer = {
       contextProvider: vi.fn().mockResolvedValue({ userId: "user123" }),
-      handleRequest: vi.fn().mockResolvedValue({
+      handleQuery: vi.fn().mockResolvedValue({
         data: { user1: { name: "John" } },
+      }),
+      handleMutation: vi.fn().mockResolvedValue({
+        data: { name: "John Updated" },
+        acceptedValues: { name: "John Updated" },
       }),
     } as unknown as Server<AnyRouter>;
 
@@ -63,7 +67,7 @@ describe("httpTransportLayer", () => {
 
     expect(response.status).toBe(200);
     expect(responseData).toEqual({ user1: { name: "John" } });
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "QUERY",
         resource: "users",
@@ -86,7 +90,7 @@ describe("httpTransportLayer", () => {
 
     await httpHandler(request);
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "QUERY",
         resource: "users",
@@ -140,7 +144,7 @@ describe("httpTransportLayer", () => {
       body: JSON.stringify(requestBody),
     });
 
-    (mockServer.handleRequest as Mock).mockResolvedValue({
+    (mockServer.handleMutation as Mock).mockResolvedValue({
       data: { name: "John Updated" },
       acceptedValues: { name: "John Updated" },
     });
@@ -154,7 +158,7 @@ describe("httpTransportLayer", () => {
       acceptedValues: { name: "John Updated" },
     });
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
         resource: "users",
@@ -183,7 +187,7 @@ describe("httpTransportLayer", () => {
       body: JSON.stringify(requestBody),
     });
 
-    (mockServer.handleRequest as Mock).mockResolvedValue({
+    (mockServer.handleMutation as Mock).mockResolvedValue({
       success: true,
     });
 
@@ -192,7 +196,7 @@ describe("httpTransportLayer", () => {
 
     expect(response.status).toBe(200);
     expect(responseData).toEqual({ success: true });
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
         resource: "users",
@@ -232,7 +236,7 @@ describe("httpTransportLayer", () => {
       method: "GET",
     });
 
-    (mockServer.handleRequest as Mock).mockResolvedValue(null);
+    (mockServer.handleQuery as Mock).mockResolvedValue(null);
 
     const response = await httpHandler(request);
     const responseData = await response.json();
@@ -249,7 +253,7 @@ describe("httpTransportLayer", () => {
       method: "GET",
     });
 
-    (mockServer.handleRequest as Mock).mockResolvedValue({ data: null });
+    (mockServer.handleQuery as Mock).mockResolvedValue({ data: null });
 
     const response = await httpHandler(request);
     const responseData = await response.json();
@@ -304,7 +308,7 @@ describe("httpTransportLayer", () => {
 
     await httpHandler(request);
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: {},
       }),
@@ -318,7 +322,7 @@ describe("httpTransportLayer", () => {
 
     await httpHandler(request);
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         cookies: {},
       }),
@@ -345,7 +349,7 @@ describe("httpTransportLayer", () => {
       method: "GET",
     });
 
-    (mockServer.handleRequest as Mock).mockRejectedValue(
+    (mockServer.handleQuery as Mock).mockRejectedValue(
       new Error("Unexpected error")
     );
 
@@ -374,7 +378,7 @@ describe("httpTransportLayer", () => {
 
     await httpHandler(request);
 
-    const call = (mockServer.handleRequest as Mock).mock.calls[0][0];
+    const call = (mockServer.handleQuery as Mock).mock.calls[0][0];
 
     expect(call.req.headers).toEqual({
       "content-type": "application/json",
@@ -393,7 +397,7 @@ describe("httpTransportLayer", () => {
 
     await httpHandler(request);
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
         resource: "users",

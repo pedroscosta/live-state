@@ -123,56 +123,6 @@ export class Route<
     this.authorization = authorization;
   }
 
-  /** @internal */
-  public async handleRequest(opts: {
-    req: Request;
-    db: Storage;
-    schema: Schema<any>;
-  }): Promise<any> {
-    const next = (req: Request) =>
-      (() => {
-        if (req.type === "QUERY") {
-          return this.handleFind({
-            req: req as QueryRequest,
-            db: opts.db,
-          });
-        } else if (req.type === "MUTATE") {
-          if (!req.procedure)
-            throw new Error("Procedure is required for mutations");
-          const customProcedure = this.customMutations[req.procedure];
-
-          if (customProcedure) {
-            const validInput = customProcedure.inputValidator.parse(req.input);
-
-            req.input = validInput;
-
-            return customProcedure.handler({
-              req,
-              db: opts.db,
-            });
-          } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
-            return this.handleSet({
-              req: req as MutationRequest<
-                LiveObjectMutationInput<TResourceSchema>
-              >,
-              db: opts.db,
-              schema: opts.schema,
-              operation: req.procedure,
-            });
-          }
-        }
-
-        throw new Error("Invalid request");
-      })();
-
-    return await Array.from(this.middlewares.values()).reduceRight(
-      (next, middleware) => {
-        return (req) => middleware({ req, next });
-      },
-      (async (req) => next(req)) as NextFunction<any>
-    )(opts.req);
-  }
-
   public use(...middlewares: TMiddleware[]) {
     for (const middleware of middlewares) {
       this.middlewares.add(middleware);
@@ -189,33 +139,69 @@ export class Route<
     );
   }
 
-  private handleFind = async ({
+  /** @internal */
+  public handleQuery = async ({
     req,
     db,
   }: {
     req: QueryRequest;
     db: Storage;
-  }) => {
-    const authorizationClause = this.authorization?.read?.({
-      ctx: req.context,
-    });
+  }): Promise<QueryResult<TResourceSchema>> => {
+    return await this.wrapInMiddlewares(async (req: QueryRequest) => {
+      const authorizationClause = this.authorization?.read?.({
+        ctx: req.context,
+      });
 
-    if (typeof authorizationClause === "boolean" && !authorizationClause) {
-      throw new Error("Not authorized");
-    }
+      if (typeof authorizationClause === "boolean" && !authorizationClause) {
+        throw new Error("Not authorized");
+      }
 
-    return {
-      data: await db.rawFind<TResourceSchema>(
-        req.resource,
-        req.where && authorizationClause && authorizationClause !== true
-          ? { $and: [req.where, authorizationClause] }
-          : authorizationClause && authorizationClause !== true
-            ? authorizationClause
-            : req.where,
-        req.include
-      ),
-      acceptedValues: null,
-    };
+      return {
+        data: await db.rawFind<TResourceSchema>(
+          req.resource,
+          req.where && authorizationClause && authorizationClause !== true
+            ? { $and: [req.where, authorizationClause] }
+            : authorizationClause && authorizationClause !== true
+              ? authorizationClause
+              : req.where,
+          req.include
+        ),
+      };
+    })(req);
+  };
+
+  /** @internal */
+  public handleMutation = async ({
+    req,
+    db,
+  }: {
+    req: MutationRequest;
+    db: Storage;
+  }): Promise<any> => {
+    return await this.wrapInMiddlewares(async (req: MutationRequest) => {
+      if (!req.procedure)
+        throw new Error("Procedure is required for mutations");
+      const customProcedure = this.customMutations[req.procedure];
+
+      if (customProcedure) {
+        const validInput = customProcedure.inputValidator.parse(req.input);
+
+        req.input = validInput;
+
+        return customProcedure.handler({
+          req,
+          db,
+        });
+      } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
+        return this.handleSet({
+          req: req as MutationRequest<LiveObjectMutationInput<TResourceSchema>>,
+          db,
+          operation: req.procedure,
+        });
+      } else {
+        throw new Error(`Unknown procedure: ${req.procedure}`);
+      }
+    })(req);
   };
 
   private handleSet = async ({
@@ -225,7 +211,6 @@ export class Route<
   }: {
     req: MutationRequest;
     db: Storage;
-    schema: Schema<any>;
     operation: "INSERT" | "UPDATE";
   }): Promise<MutationResult<TResourceSchema>> => {
     if (!req.input) throw new Error("Payload is required");
@@ -349,6 +334,20 @@ export class Route<
       };
     });
   };
+
+  private wrapInMiddlewares<T extends Request>(
+    next: NextFunction<any, T>
+  ): NextFunction<any, T> {
+    return (req: T) => {
+      return Array.from(this.middlewares.values()).reduceRight(
+        (next, middleware) => {
+          return (req) =>
+            middleware({ req, next: next as NextFunction<any, any> });
+        },
+        next
+      )(req);
+    };
+  }
 }
 
 export class RouteFactory {

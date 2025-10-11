@@ -61,7 +61,7 @@ export const httpTransportLayer = (
           );
         }
 
-        const result = await server.handleRequest({
+        const result = await server.handleQuery({
           req: {
             ...baseRequestData,
             type: "QUERY",
@@ -125,7 +125,7 @@ export const httpTransportLayer = (
             body = data;
           }
 
-          const result = await server.handleRequest({
+          const result = await server.handleMutation({
             req: {
               ...baseRequestData,
               type: "MUTATE",

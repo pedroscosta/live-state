@@ -93,7 +93,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
         } else if (parsedMessage.type === "QUERY") {
           const { resource } = parsedMessage;
 
-          const result = await server.handleRequest({
+          const result = await server.handleQuery({
             req: {
               ...requestContext,
               type: "QUERY",
@@ -126,7 +126,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           const { resource } = parsedMessage;
           console.log("Received mutation from client:", parsedMessage);
           try {
-            const result = await server.handleRequest({
+            const result = await server.handleMutation({
               req: {
                 ...requestContext,
                 type: "MUTATE",

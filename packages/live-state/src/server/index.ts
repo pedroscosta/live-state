@@ -5,7 +5,7 @@ import type {
 } from "../core/schemas/core-protocol";
 import type { Awaitable } from "../core/utils";
 import type { Schema } from "../schema";
-import type { AnyRouter } from "./router";
+import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 
 export * from "./adapters/express";
@@ -41,11 +41,11 @@ export type ContextProvider = (
 
 export type MutationHandler = (mutation: DefaultMutation) => void;
 
-export type NextFunction<T> = (req: Request) => Awaitable<T>;
+export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
 
 export type Middleware<T = any> = (opts: {
   req: BaseRequest;
-  next: NextFunction<T>;
+  next: NextFunction<T, MutationRequest>;
 }) => ReturnType<NextFunction<T>>;
 
 export class Server<TRouter extends AnyRouter> {
@@ -94,43 +94,64 @@ export class Server<TRouter extends AnyRouter> {
     };
   }
 
-  public async handleRequest(opts: { req: Request }) {
-    if (!this.router.routes[opts.req.resource]) {
-      throw new Error("Invalid resource");
-    }
+  public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
+    return this.wrapInMiddlewares(async (req: QueryRequest) => {
+      const route = this.router.routes[req.resource] as
+        | Route<any, any, any>
+        | undefined;
 
-    const result = await Array.from(this.middlewares.values()).reduceRight(
-      (next, middleware) => {
-        return (req) => middleware({ req, next });
-      },
-      (async (req) =>
-        this.router.routes[opts.req.resource].handleRequest({
+      if (!route) {
+        throw new Error("Invalid resource");
+      }
+
+      return route.handleQuery({
+        req,
+        db: this.storage,
+      });
+    })(opts.req);
+  }
+
+  public async handleMutation(opts: { req: MutationRequest }): Promise<any> {
+    const result = await this.wrapInMiddlewares(
+      async (req: MutationRequest) => {
+        const route = this.router.routes[req.resource] as
+          | Route<any, any, any>
+          | undefined;
+
+        if (!route) {
+          throw new Error("Invalid resource");
+        }
+
+        return route.handleMutation({
           req,
           db: this.storage,
-          schema: this.schema,
-        })) as NextFunction<any>
+        });
+      }
     )(opts.req);
 
     if (
       result &&
       opts.req.type === "MUTATE" &&
       result.acceptedValues &&
-      Object.keys(result.acceptedValues).length > 0 &&
       (opts.req.procedure === "INSERT" || opts.req.procedure === "UPDATE") &&
       opts.req.resourceId
     ) {
+      const mutationResult = result as MutationResult<any>;
       const req = opts.req as MutationRequest;
-      // TODO refactor this to be called by the storage instead of the server
-      this.mutationSubscriptions.forEach((handler) => {
-        handler({
-          id: opts.req.context.messageId,
-          type: "MUTATE",
-          resource: req.resource,
-          payload: result.acceptedValues ?? {},
-          resourceId: req.resourceId!,
-          procedure: req.procedure as "INSERT" | "UPDATE",
+
+      if (Object.keys(result.acceptedValues).length) {
+        // TODO refactor this to be called by the storage instead of the server
+        this.mutationSubscriptions.forEach((handler) => {
+          handler({
+            id: opts.req.context.messageId,
+            type: "MUTATE",
+            resource: req.resource,
+            payload: result.acceptedValues ?? {},
+            resourceId: req.resourceId!,
+            procedure: req.procedure as "INSERT" | "UPDATE",
+          });
         });
-      });
+      }
     }
 
     return result;
@@ -144,6 +165,20 @@ export class Server<TRouter extends AnyRouter> {
   public context(contextProvider: ContextProvider) {
     this.contextProvider = contextProvider;
     return this;
+  }
+
+  private wrapInMiddlewares<T extends Request>(
+    next: NextFunction<any, T>
+  ): NextFunction<any, T> {
+    return (req: T) => {
+      return Array.from(this.middlewares.values()).reduceRight(
+        (next, middleware) => {
+          return (req) =>
+            middleware({ req, next: next as NextFunction<any, any> });
+        },
+        next
+      )(req);
+    };
   }
 }
 
