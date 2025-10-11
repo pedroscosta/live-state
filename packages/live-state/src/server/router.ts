@@ -123,6 +123,7 @@ export class Route<
     this.authorization = authorization;
   }
 
+  /** @internal */
   public async handleRequest(opts: {
     req: Request;
     db: Storage;
