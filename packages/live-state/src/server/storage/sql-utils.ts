@@ -80,13 +80,27 @@ function innerApplyWhere<T extends LiveObjectAny>(
                 const otherResource = relation.entity.name;
 
                 if (relation.type === "many") {
+                  const parentColumn =
+                    "relationalColumn" in relation
+                      ? relation.relationalColumn
+                      : "id";
+
                   return eb.exists(
                     applyWhere(
                       schema,
                       otherResource,
-                      // @ts-expect-error
-                      eb.selectFrom(otherResource).select("id"),
-                      val
+                      eb
+                        .selectFrom(otherResource)
+                        // @ts-expect-error
+                        .select("id"),
+                      {
+                        $and: [
+                          val,
+                          {
+                            [`${otherResource}.${relation.foreignColumn}`]: `${resource}.${parentColumn}`,
+                          },
+                        ],
+                      }
                     )
                   );
                 }
