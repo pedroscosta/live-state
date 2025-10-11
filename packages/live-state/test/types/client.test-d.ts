@@ -13,6 +13,7 @@ import { createClient } from "../../src/client";
 import { createClient as createFetchClient } from "../../src/client/fetch";
 import { router as createRouter, routeFactory } from "../../src/server/router";
 import { describe, expectTypeOf, test } from "vitest";
+import { z } from "zod";
 
 /*
  * Basic schema and routes
@@ -1227,5 +1228,489 @@ describe("edge cases fetch client", () => {
       lastLogin?: Date;
       deletedAt?: Date | null;
     }>();
+  });
+});
+
+/*
+ * Custom mutations type tests
+ */
+
+const customMutationUser = object("customMutationUsers", {
+  id: id(),
+  name: string(),
+  email: string(),
+  age: number(),
+});
+
+const customMutationPost = object("customMutationPosts", {
+  id: id(),
+  title: string(),
+  content: string(),
+  authorId: reference("customMutationUsers.id"),
+});
+
+const customMutationSchema = createSchema({
+  customMutationUser,
+  customMutationPost,
+});
+
+const customMutationRouter = createRouter({
+  schema: customMutationSchema,
+  routes: {
+    customMutationUsers: publicRoute
+      .collectionRoute(customMutationSchema.customMutationUsers)
+      .withMutations(({ mutation }) => ({
+        // Simple string input mutation
+        hello: mutation(z.string()).handler(async ({ req }) => {
+          return {
+            message: `Hello ${req.input}`,
+          };
+        }),
+
+        // Object input mutation
+        createUser: mutation(
+          z.object({
+            name: z.string().min(2),
+            email: z.string().email(),
+            age: z.number().min(18),
+          })
+        ).handler(async ({ req }) => {
+          return {
+            id: "user-123",
+            name: req.input.name,
+            email: req.input.email,
+            age: req.input.age,
+          };
+        }),
+
+        // Optional input mutation
+        optionalGreeting: mutation(z.string().optional()).handler(
+          async ({ req }) => {
+            return {
+              message: req.input ? `Hello ${req.input}` : "Hello World",
+            };
+          }
+        ),
+
+        // No input mutation
+        getStats: mutation().handler(async () => {
+          return {
+            totalUsers: 100,
+            activeUsers: 50,
+          };
+        }),
+
+        // Complex object with nested validation
+        updateProfile: mutation(
+          z.object({
+            name: z.string().optional(),
+            email: z.string().email().optional(),
+            preferences: z
+              .object({
+                theme: z.enum(["light", "dark"]),
+                notifications: z.boolean(),
+              })
+              .optional(),
+          })
+        ).handler(async ({ req }) => {
+          return {
+            success: true,
+            updatedFields: Object.keys(req.input),
+          };
+        }),
+
+        // Array input mutation
+        bulkCreate: mutation(
+          z.array(
+            z.object({
+              name: z.string(),
+              email: z.string().email(),
+            })
+          )
+        ).handler(async ({ req }) => {
+          return {
+            created: req.input.length,
+            ids: req.input.map((_, index) => `user-${index}`),
+          };
+        }),
+
+        // Union type input
+        processData: mutation(
+          z.union([
+            z.object({ type: z.literal("text"), content: z.string() }),
+            z.object({ type: z.literal("number"), value: z.number() }),
+          ])
+        ).handler(async ({ req }) => {
+          return {
+            processed: true,
+            type: req.input.type,
+          };
+        }),
+      })),
+
+    customMutationPosts: publicRoute
+      .collectionRoute(customMutationSchema.customMutationPosts)
+      .withMutations(({ mutation }) => ({
+        // Mutation that returns a different type
+        publishPost: mutation(z.string()).handler(async ({ req }) => {
+          return {
+            published: true,
+            postId: req.input,
+            publishedAt: new Date(),
+          };
+        }),
+
+        // Mutation with complex return type
+        getPostAnalytics: mutation(z.string()).handler(async ({ req }) => {
+          return {
+            postId: req.input,
+            views: 1000,
+            likes: 50,
+            comments: 25,
+            analytics: {
+              dailyViews: [10, 15, 20, 25, 30],
+              topKeywords: ["react", "typescript", "web"],
+            },
+          };
+        }),
+      })),
+  },
+});
+
+const {
+  store: { query: customMutationQuery, mutate: customMutationMutate },
+} = createClient<typeof customMutationRouter>({
+  url: "ws://localhost:5001/ws",
+  schema: customMutationSchema,
+  storage: false,
+});
+
+describe("custom mutations websocket client", () => {
+  test("should infer simple string input mutation types", () => {
+    const helloMutation = customMutationMutate.customMutationUsers.hello;
+
+    expectTypeOf(helloMutation).parameter(0).toEqualTypeOf<string>();
+
+    expectTypeOf(helloMutation).returns.toEqualTypeOf<
+      Promise<{
+        message: string;
+      }>
+    >();
+  });
+
+  test("should infer object input mutation types", () => {
+    const createUserMutation =
+      customMutationMutate.customMutationUsers.createUser;
+
+    expectTypeOf(createUserMutation).parameter(0).toEqualTypeOf<{
+      name: string;
+      email: string;
+      age: number;
+    }>();
+
+    expectTypeOf(createUserMutation).returns.toEqualTypeOf<
+      Promise<{
+        id: string;
+        name: string;
+        email: string;
+        age: number;
+      }>
+    >();
+  });
+
+  test("should infer optional input mutation types", () => {
+    const optionalGreetingMutation =
+      customMutationMutate.customMutationUsers.optionalGreeting;
+
+    expectTypeOf(optionalGreetingMutation)
+      .parameter(0)
+      .toEqualTypeOf<string | undefined>();
+
+    expectTypeOf(optionalGreetingMutation).returns.toEqualTypeOf<
+      Promise<{
+        message: string;
+      }>
+    >();
+  });
+
+  test("should infer no input mutation types", () => {
+    const getStatsMutation = customMutationMutate.customMutationUsers.getStats;
+
+    // For mutations with no input, the parameter should be optional or undefined
+    expectTypeOf(getStatsMutation).parameter(0).toEqualTypeOf<unknown>();
+
+    expectTypeOf(getStatsMutation).returns.toEqualTypeOf<
+      Promise<{
+        totalUsers: number;
+        activeUsers: number;
+      }>
+    >();
+  });
+
+  test("should infer complex object input mutation types", () => {
+    const updateProfileMutation =
+      customMutationMutate.customMutationUsers.updateProfile;
+
+    expectTypeOf(updateProfileMutation).parameter(0).toEqualTypeOf<{
+      name?: string | undefined;
+      email?: string | undefined;
+      preferences?:
+        | {
+            theme: "light" | "dark";
+            notifications: boolean;
+          }
+        | undefined;
+    }>();
+
+    expectTypeOf(updateProfileMutation).returns.toEqualTypeOf<
+      Promise<{
+        success: boolean;
+        updatedFields: string[];
+      }>
+    >();
+  });
+
+  test("should infer array input mutation types", () => {
+    const bulkCreateMutation =
+      customMutationMutate.customMutationUsers.bulkCreate;
+
+    expectTypeOf(bulkCreateMutation).parameter(0).toEqualTypeOf<
+      {
+        name: string;
+        email: string;
+      }[]
+    >();
+
+    expectTypeOf(bulkCreateMutation).returns.toEqualTypeOf<
+      Promise<{
+        created: number;
+        ids: string[];
+      }>
+    >();
+  });
+
+  test("should infer union type input mutation types", () => {
+    const processDataMutation =
+      customMutationMutate.customMutationUsers.processData;
+
+    expectTypeOf(processDataMutation)
+      .parameter(0)
+      .toEqualTypeOf<
+        { type: "text"; content: string } | { type: "number"; value: number }
+      >();
+
+    expectTypeOf(processDataMutation).returns.toEqualTypeOf<
+      Promise<{
+        processed: boolean;
+        type: "text" | "number";
+      }>
+    >();
+  });
+
+  test("should infer mutation types with different return types", () => {
+    const publishPostMutation =
+      customMutationMutate.customMutationPosts.publishPost;
+
+    expectTypeOf(publishPostMutation).parameter(0).toEqualTypeOf<string>();
+
+    expectTypeOf(publishPostMutation).returns.toEqualTypeOf<
+      Promise<{
+        published: boolean;
+        postId: string;
+        publishedAt: Date;
+      }>
+    >();
+  });
+
+  test("should infer mutation types with complex return types", () => {
+    const getPostAnalyticsMutation =
+      customMutationMutate.customMutationPosts.getPostAnalytics;
+
+    expectTypeOf(getPostAnalyticsMutation).parameter(0).toEqualTypeOf<string>();
+
+    expectTypeOf(getPostAnalyticsMutation).returns.toEqualTypeOf<
+      Promise<{
+        postId: string;
+        views: number;
+        likes: number;
+        comments: number;
+        analytics: {
+          dailyViews: number[];
+          topKeywords: string[];
+        };
+      }>
+    >();
+  });
+});
+
+/*
+ * Custom mutations fetch client type tests
+ */
+
+const customMutationFetchClient = createFetchClient<
+  typeof customMutationRouter
+>({
+  url: "http://localhost:3000",
+  schema: customMutationSchema,
+  credentials: async () => ({}),
+});
+
+describe("custom mutations fetch client", () => {
+  test("should infer simple string input mutation types with Promise", () => {
+    const helloMutation =
+      customMutationFetchClient.mutate.customMutationUsers.hello;
+
+    expectTypeOf(helloMutation).parameter(0).toEqualTypeOf<string>();
+
+    expectTypeOf(helloMutation).returns.toEqualTypeOf<
+      Promise<{
+        message: string;
+      }>
+    >();
+  });
+
+  test("should infer object input mutation types with Promise", () => {
+    const createUserMutation =
+      customMutationFetchClient.mutate.customMutationUsers.createUser;
+
+    expectTypeOf(createUserMutation).parameter(0).toEqualTypeOf<{
+      name: string;
+      email: string;
+      age: number;
+    }>();
+
+    expectTypeOf(createUserMutation).returns.toEqualTypeOf<
+      Promise<{
+        id: string;
+        name: string;
+        email: string;
+        age: number;
+      }>
+    >();
+  });
+
+  test("should infer optional input mutation types with Promise", () => {
+    const optionalGreetingMutation =
+      customMutationFetchClient.mutate.customMutationUsers.optionalGreeting;
+
+    expectTypeOf(optionalGreetingMutation)
+      .parameter(0)
+      .toEqualTypeOf<string | undefined>();
+
+    expectTypeOf(optionalGreetingMutation).returns.toEqualTypeOf<
+      Promise<{
+        message: string;
+      }>
+    >();
+  });
+
+  test("should infer no input mutation types with Promise", () => {
+    const getStatsMutation =
+      customMutationFetchClient.mutate.customMutationUsers.getStats;
+
+    // For mutations with no input, the parameter should be optional or undefined
+    expectTypeOf(getStatsMutation).parameter(0).toEqualTypeOf<unknown>();
+
+    expectTypeOf(getStatsMutation).returns.toEqualTypeOf<
+      Promise<{
+        totalUsers: number;
+        activeUsers: number;
+      }>
+    >();
+  });
+
+  test("should infer complex object input mutation types with Promise", () => {
+    const updateProfileMutation =
+      customMutationFetchClient.mutate.customMutationUsers.updateProfile;
+
+    expectTypeOf(updateProfileMutation).parameter(0).toEqualTypeOf<{
+      name?: string | undefined;
+      email?: string | undefined;
+      preferences?:
+        | {
+            theme: "light" | "dark";
+            notifications: boolean;
+          }
+        | undefined;
+    }>();
+
+    expectTypeOf(updateProfileMutation).returns.toEqualTypeOf<
+      Promise<{
+        success: boolean;
+        updatedFields: string[];
+      }>
+    >();
+  });
+
+  test("should infer array input mutation types with Promise", () => {
+    const bulkCreateMutation =
+      customMutationFetchClient.mutate.customMutationUsers.bulkCreate;
+
+    expectTypeOf(bulkCreateMutation).parameter(0).toEqualTypeOf<
+      {
+        name: string;
+        email: string;
+      }[]
+    >();
+
+    expectTypeOf(bulkCreateMutation).returns.toEqualTypeOf<
+      Promise<{
+        created: number;
+        ids: string[];
+      }>
+    >();
+  });
+
+  test("should infer union type input mutation types with Promise", () => {
+    const processDataMutation =
+      customMutationFetchClient.mutate.customMutationUsers.processData;
+
+    expectTypeOf(processDataMutation)
+      .parameter(0)
+      .toEqualTypeOf<
+        { type: "text"; content: string } | { type: "number"; value: number }
+      >();
+
+    expectTypeOf(processDataMutation).returns.toEqualTypeOf<
+      Promise<{
+        processed: boolean;
+        type: "text" | "number";
+      }>
+    >();
+  });
+
+  test("should infer mutation types with different return types and Promise", () => {
+    const publishPostMutation =
+      customMutationFetchClient.mutate.customMutationPosts.publishPost;
+
+    expectTypeOf(publishPostMutation).parameter(0).toEqualTypeOf<string>();
+
+    expectTypeOf(publishPostMutation).returns.toEqualTypeOf<
+      Promise<{
+        published: boolean;
+        postId: string;
+        publishedAt: Date;
+      }>
+    >();
+  });
+
+  test("should infer mutation types with complex return types and Promise", () => {
+    const getPostAnalyticsMutation =
+      customMutationFetchClient.mutate.customMutationPosts.getPostAnalytics;
+
+    expectTypeOf(getPostAnalyticsMutation).parameter(0).toEqualTypeOf<string>();
+
+    expectTypeOf(getPostAnalyticsMutation).returns.toEqualTypeOf<
+      Promise<{
+        postId: string;
+        views: number;
+        likes: number;
+        comments: number;
+        analytics: {
+          dailyViews: number[];
+          topKeywords: string[];
+        };
+      }>
+    >();
   });
 });

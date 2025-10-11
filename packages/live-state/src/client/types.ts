@@ -11,7 +11,7 @@ export type Client<
 > = {
   query: {
     [K in keyof TRouter["routes"]]: QueryBuilder<
-      TRouter["routes"][K]["_resourceSchema"],
+      TRouter["routes"][K]["resourceSchema"],
       {},
       false,
       TShouldAwait
@@ -20,11 +20,11 @@ export type Client<
   mutate: {
     [K in keyof TRouter["routes"]]: {
       insert: (
-        input: Simplify<InferInsert<TRouter["routes"][K]["_resourceSchema"]>>
+        input: Simplify<InferInsert<TRouter["routes"][K]["resourceSchema"]>>
       ) => ConditionalPromise<void, TShouldAwait>;
       update: (
         id: string,
-        value: Simplify<InferUpdate<TRouter["routes"][K]["_resourceSchema"]>>
+        value: Simplify<InferUpdate<TRouter["routes"][K]["resourceSchema"]>>
       ) => ConditionalPromise<void, TShouldAwait>;
     } & {
       [K2 in keyof TRouter["routes"][K]["customMutations"]]: (

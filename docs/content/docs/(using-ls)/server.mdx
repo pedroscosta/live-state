@@ -37,7 +37,7 @@ const lsServer = server({
   middlewares: [
     // Global middleware for all routes
     async ({ req, next }) => {
-      console.log(`${req.type} ${req.resourceName}`);
+      console.log(`${req.type} ${req.resource}`);
       return next(req);
     },
   ],
@@ -73,7 +73,7 @@ Server-level middlewares run before route-specific middlewares and apply to all 
 ```ts
 const loggingMiddleware = async ({ req, next }) => {
   const start = Date.now();
-  console.log(`→ ${req.type} ${req.resourceName}`, {
+  console.log(`→ ${req.type} ${req.resource}`, {
     context: req.context,
     input: req.input,
   });
@@ -81,11 +81,11 @@ const loggingMiddleware = async ({ req, next }) => {
   try {
     const result = await next(req);
     const duration = Date.now() - start;
-    console.log(`← ${req.type} ${req.resourceName} (${duration}ms)`);
+    console.log(`← ${req.type} ${req.resource} (${duration}ms)`);
     return result;
   } catch (error) {
     const duration = Date.now() - start;
-    console.error(`✗ ${req.type} ${req.resourceName} (${duration}ms)`, error);
+    console.error(`✗ ${req.type} ${req.resource} (${duration}ms)`, error);
     throw error;
   }
 };

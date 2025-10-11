@@ -68,7 +68,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
       transport: "WEBSOCKET",
       headers: requestContext.headers,
       cookies: requestContext.cookies,
-      query: parsedQs,
+      queryParams: parsedQs,
     });
 
     connections[clientId] = ws;
@@ -97,9 +97,9 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             req: {
               ...requestContext,
               type: "QUERY",
-              resourceName: resource,
+              resource: resource,
               context: (await initialContext) ?? {},
-              query: parsedQs,
+              queryParams: parsedQs,
             },
           });
 
@@ -130,7 +130,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               req: {
                 ...requestContext,
                 type: "MUTATE",
-                resourceName: resource,
+                resource: resource,
                 input: parsedMessage.payload,
                 context: {
                   messageId: parsedMessage.id,
@@ -138,7 +138,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 },
                 resourceId: (parsedMessage as DefaultMutation).resourceId,
                 procedure: (parsedMessage as GenericMutation).procedure,
-                query: parsedQs,
+                queryParams: parsedQs,
               },
             });
 
