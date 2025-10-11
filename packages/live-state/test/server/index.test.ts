@@ -190,7 +190,18 @@ describe("Server", () => {
     const result = await serverInstance.handleQuery({ req: mockRequest });
 
     expect(mockRouter.routes.users.handleQuery).toHaveBeenCalledWith({
-      req: mockRequest,
+      req: expect.objectContaining({
+        type: "QUERY",
+        resource: "users",
+        headers: {},
+        cookies: {},
+        queryParams: {},
+        context: {},
+        collectionName: "users",
+        included: [],
+        stepId: "query",
+        where: undefined,
+      }),
       db: mockStorage,
     });
     expect(result).toEqual({ data: {} });
@@ -404,7 +415,7 @@ describe("Server", () => {
   test("should handle middleware that modifies request", async () => {
     const modifyingMiddleware: Middleware = ({ next, req }) => {
       req.context.modified = true;
-      return next(req);
+      return next(req as any);
     };
 
     const serverInstance = Server.create({
@@ -427,7 +438,13 @@ describe("Server", () => {
 
     expect(mockRouter.routes.users.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
+        type: "QUERY",
+        resource: "users",
         context: { modified: true },
+        collectionName: "users",
+        included: [],
+        stepId: "query",
+        where: undefined,
       }),
       db: mockStorage,
     });
@@ -437,7 +454,7 @@ describe("Server", () => {
     const asyncMiddleware: Middleware = async ({ next, req }) => {
       await new Promise((resolve) => setTimeout(resolve, 1));
       req.context.async = true;
-      return next(req);
+      return next(req as any);
     };
 
     const serverInstance = Server.create({
@@ -460,7 +477,13 @@ describe("Server", () => {
 
     expect(mockRouter.routes.users.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
+        type: "QUERY",
+        resource: "users",
         context: { async: true },
+        collectionName: "users",
+        included: [],
+        stepId: "query",
+        where: undefined,
       }),
       db: mockStorage,
     });

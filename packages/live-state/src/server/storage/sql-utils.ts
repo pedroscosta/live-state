@@ -118,6 +118,18 @@ function applyJoins<T extends LiveObjectAny>(
 
   if (!where) return query;
 
+  if (where.$and) {
+    for (const w of where.$and as WhereClause<T>[]) {
+      query = applyJoins(schema, resource, query, w);
+    }
+    return query;
+  } else if (where.$or) {
+    for (const w of where.$or as WhereClause<T>[]) {
+      query = applyJoins(schema, resource, query, w);
+    }
+    return query;
+  }
+
   for (const [key, value] of Object.entries(where)) {
     if (!resourceSchema.relations[key]) continue;
 
@@ -151,6 +163,8 @@ export function applyWhere<T extends LiveObjectAny>(
   where?: WhereClause<T>
 ) {
   if (!where || Object.keys(where).length === 0) return query;
+
+  console.log("where", JSON.stringify(where, null, 2));
 
   query = applyJoins(schema, resource, query, where);
 

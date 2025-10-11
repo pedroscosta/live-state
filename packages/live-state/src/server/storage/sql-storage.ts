@@ -224,6 +224,7 @@ export class SQLStorage extends Storage {
       );
 
     query = applyWhere(this.schema, resourceName, query, where);
+    console.log("query", query.compile());
 
     query = applyInclude(this.schema, resourceName, query, include);
 
@@ -231,8 +232,8 @@ export class SQLStorage extends Storage {
 
     const rawValues: Record<string, Record<string, any>> = Object.fromEntries(
       rawResult.map((v) => {
-        const { id, ...rest } = v;
-        return [id, rest];
+        const { id } = v;
+        return [id, v];
       })
     );
 
