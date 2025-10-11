@@ -8,7 +8,13 @@ import {
   vi,
 } from "vitest";
 import { Schema } from "../../src/schema";
-import { Middleware, ParsedRequest, Server, server } from "../../src/server";
+import {
+  Middleware,
+  QueryRequest,
+  MutationRequest,
+  Server,
+  server,
+} from "../../src/server";
 import { AnyRouter } from "../../src/server/router";
 import { Storage } from "../../src/server/storage";
 
@@ -21,9 +27,8 @@ describe("Server", () => {
     mockRouter = {
       routes: {
         users: {
-          handleRequest: vi
-            .fn()
-            .mockResolvedValue({ data: {}, acceptedValues: null }),
+          handleQuery: vi.fn().mockResolvedValue({ data: {} }),
+          handleMutation: vi.fn().mockResolvedValue({ data: {} }),
         },
       },
     } as unknown as AnyRouter;
@@ -33,8 +38,20 @@ describe("Server", () => {
     } as unknown as Storage;
 
     mockSchema = {
-      users: { name: "users" },
-    } as Schema<any>;
+      users: {
+        name: "users",
+        fields: {},
+        relations: {},
+        encodeMutation: vi.fn(),
+        mergeMutation: vi.fn(),
+        decode: vi.fn(),
+        encode: vi.fn(),
+        validate: vi.fn(),
+        infer: vi.fn(),
+        materialize: vi.fn(),
+        inferValue: vi.fn(),
+      },
+    } as unknown as Schema<any>;
   });
 
   afterEach(() => {
@@ -154,30 +171,29 @@ describe("Server", () => {
     );
   });
 
-  test("should handle request successfully", async () => {
+  test("should handle query request successfully", async () => {
     const serverInstance = Server.create({
       router: mockRouter,
       storage: mockStorage,
       schema: mockSchema,
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: QueryRequest = {
       type: "QUERY",
       resource: "users",
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
       context: {},
     };
 
-    const result = await serverInstance.handleRequest({ req: mockRequest });
+    const result = await serverInstance.handleQuery({ req: mockRequest });
 
-    expect(mockRouter.routes.users.handleRequest).toHaveBeenCalledWith({
+    expect(mockRouter.routes.users.handleQuery).toHaveBeenCalledWith({
       req: mockRequest,
       db: mockStorage,
-      schema: mockSchema,
     });
-    expect(result).toEqual({ data: {}, acceptedValues: null });
+    expect(result).toEqual({ data: {} });
   });
 
   test("should throw error for invalid resource", async () => {
@@ -187,17 +203,17 @@ describe("Server", () => {
       schema: mockSchema,
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: QueryRequest = {
       type: "QUERY",
       resource: "nonexistent",
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
       context: {},
     };
 
     await expect(
-      serverInstance.handleRequest({ req: mockRequest })
+      serverInstance.handleQuery({ req: mockRequest })
     ).rejects.toThrow("Invalid resource");
   });
 
@@ -225,16 +241,16 @@ describe("Server", () => {
       middlewares: [middleware1, middleware2],
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: QueryRequest = {
       type: "QUERY",
       resource: "users",
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
       context: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleQuery({ req: mockRequest });
 
     expect(executionOrder).toEqual([
       "server-middleware1-before",
@@ -258,23 +274,24 @@ describe("Server", () => {
     serverInstance.subscribeToMutations(handler2);
 
     // Mock route to return mutation result with acceptedValues
-    (mockRouter.routes.users.handleRequest as Mock).mockResolvedValue({
+    (mockRouter.routes.users.handleMutation as Mock).mockResolvedValue({
       data: {},
       acceptedValues: { name: "John" },
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: MutationRequest = {
       type: "MUTATE",
       resource: "users",
       resourceId: "user1",
       procedure: "INSERT",
+      input: { name: "John" },
       context: { messageId: "msg123" },
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleMutation({ req: mockRequest });
 
     expect(handler1).toHaveBeenCalledWith({
       id: "msg123",
@@ -304,16 +321,16 @@ describe("Server", () => {
     const handler = vi.fn();
     serverInstance.subscribeToMutations(handler);
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: QueryRequest = {
       type: "QUERY",
       resource: "users",
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
       context: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleQuery({ req: mockRequest });
 
     expect(handler).not.toHaveBeenCalled();
   });
@@ -329,22 +346,24 @@ describe("Server", () => {
     serverInstance.subscribeToMutations(handler);
 
     // Mock route to return mutation result without acceptedValues
-    (mockRouter.routes.users.handleRequest as Mock).mockResolvedValue({
+    (mockRouter.routes.users.handleMutation as Mock).mockResolvedValue({
       data: {},
       acceptedValues: null,
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: MutationRequest = {
       type: "MUTATE",
       resource: "users",
       resourceId: "user1",
+      procedure: "INSERT",
+      input: { name: "John" },
       context: { messageId: "msg123" },
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleMutation({ req: mockRequest });
 
     expect(handler).not.toHaveBeenCalled();
   });
@@ -360,22 +379,24 @@ describe("Server", () => {
     serverInstance.subscribeToMutations(handler);
 
     // Mock route to return mutation result with empty acceptedValues
-    (mockRouter.routes.users.handleRequest as Mock).mockResolvedValue({
+    (mockRouter.routes.users.handleMutation as Mock).mockResolvedValue({
       data: {},
       acceptedValues: {},
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: MutationRequest = {
       type: "MUTATE",
       resource: "users",
       resourceId: "user1",
+      procedure: "INSERT",
+      input: { name: "John" },
       context: { messageId: "msg123" },
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleMutation({ req: mockRequest });
 
     expect(handler).not.toHaveBeenCalled();
   });
@@ -393,23 +414,22 @@ describe("Server", () => {
       middlewares: [modifyingMiddleware],
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: QueryRequest = {
       type: "QUERY",
       resource: "users",
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
       context: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleQuery({ req: mockRequest });
 
-    expect(mockRouter.routes.users.handleRequest).toHaveBeenCalledWith({
+    expect(mockRouter.routes.users.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: { modified: true },
       }),
       db: mockStorage,
-      schema: mockSchema,
     });
   });
 
@@ -427,23 +447,22 @@ describe("Server", () => {
       middlewares: [asyncMiddleware],
     });
 
-    const mockRequest: ParsedRequest = {
+    const mockRequest: QueryRequest = {
       type: "QUERY",
       resource: "users",
       headers: {},
       cookies: {},
-      query: {},
+      queryParams: {},
       context: {},
     };
 
-    await serverInstance.handleRequest({ req: mockRequest });
+    await serverInstance.handleQuery({ req: mockRequest });
 
-    expect(mockRouter.routes.users.handleRequest).toHaveBeenCalledWith({
+    expect(mockRouter.routes.users.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: { async: true },
       }),
       db: mockStorage,
-      schema: mockSchema,
     });
   });
 });

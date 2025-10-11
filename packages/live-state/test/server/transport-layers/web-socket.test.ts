@@ -43,8 +43,12 @@ describe("webSocketAdapter", () => {
         return vi.fn(); // unsubscribe function
       }),
       contextProvider: vi.fn().mockReturnValue({ userId: "user123" }),
-      handleRequest: vi.fn().mockResolvedValue({
+      handleQuery: vi.fn().mockResolvedValue({
         data: { user1: { value: { name: "John" } } },
+      }),
+      handleMutation: vi.fn().mockResolvedValue({
+        data: { name: "John Updated" },
+        acceptedValues: { name: "John Updated" },
       }),
       schema: {
         users: { name: "users" },
@@ -128,7 +132,7 @@ describe("webSocketAdapter", () => {
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "QUERY",
         resource: "users",
@@ -174,13 +178,13 @@ describe("webSocketAdapter", () => {
     await messageHandler(Buffer.from(JSON.stringify(queryMessage2)));
 
     // Should query all resources in schema
-    expect(mockServer.handleRequest).toHaveBeenCalledTimes(2);
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledTimes(2);
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         resource: "users",
       }),
     });
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         resource: "posts",
       }),
@@ -208,14 +212,14 @@ describe("webSocketAdapter", () => {
       procedure: "INSERT",
     };
 
-    (mockServer.handleRequest as Mock).mockResolvedValue({
+    (mockServer.handleMutation as Mock).mockResolvedValue({
       data: { name: "John Updated" },
       acceptedValues: { name: "John Updated" },
     });
 
     await messageHandler(Buffer.from(JSON.stringify(mutateMessage)));
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
         resource: "users",
@@ -252,13 +256,13 @@ describe("webSocketAdapter", () => {
       id: "msg-1",
     };
 
-    (mockServer.handleRequest as Mock).mockResolvedValue({
+    (mockServer.handleMutation as Mock).mockResolvedValue({
       success: true,
     });
 
     await messageHandler(Buffer.from(JSON.stringify(mutateMessage)));
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
       req: expect.objectContaining({
         type: "MUTATE",
         resource: "users",
@@ -297,7 +301,7 @@ describe("webSocketAdapter", () => {
       procedure: "INSERT",
     };
 
-    (mockServer.handleRequest as Mock).mockRejectedValue(
+    (mockServer.handleMutation as Mock).mockRejectedValue(
       new Error("Validation failed")
     );
 
@@ -433,7 +437,7 @@ describe("webSocketAdapter", () => {
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: { userId: "async-user" },
       }),
@@ -457,7 +461,7 @@ describe("webSocketAdapter", () => {
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
-    expect(mockServer.handleRequest).toHaveBeenCalledWith({
+    expect(mockServer.handleQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: {},
       }),
@@ -507,7 +511,7 @@ describe("webSocketAdapter", () => {
       id: "msg-1",
     };
 
-    (mockServer.handleRequest as Mock).mockResolvedValue(null);
+    (mockServer.handleQuery as Mock).mockResolvedValue(null);
 
     await expect(
       messageHandler(Buffer.from(JSON.stringify(queryMessage)))
