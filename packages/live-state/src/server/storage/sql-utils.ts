@@ -77,9 +77,21 @@ function innerApplyWhere<T extends LiveObjectAny>(
                 }
               } else if (resourceSchema.relations[key]) {
                 const relation = resourceSchema.relations[key];
-                const otherresource = relation.entity.name;
+                const otherResource = relation.entity.name;
 
-                return innerApplyWhere(schema, otherresource, eb, val);
+                if (relation.type === "many") {
+                  return eb.exists(
+                    applyWhere(
+                      schema,
+                      otherResource,
+                      // @ts-expect-error
+                      eb.selectFrom(otherResource).select("id"),
+                      val
+                    )
+                  );
+                }
+
+                return innerApplyWhere(schema, otherResource, eb, val);
               }
               return null;
             })
@@ -99,7 +111,7 @@ function applyJoins<T extends LiveObjectAny>(
 
   if (!where) return query;
 
-  for (const key of Object.keys(where)) {
+  for (const [key, value] of Object.entries(where)) {
     if (!resourceSchema.relations[key]) continue;
 
     const relation = resourceSchema.relations[key];
@@ -116,6 +128,10 @@ function applyJoins<T extends LiveObjectAny>(
       `${otherresource}.${otherColumnName}`,
       `${resource}.${selfColumn}`
     );
+
+    if (value instanceof Object && !Array.isArray(value) && value !== null) {
+      query = applyJoins(schema, otherresource, query, value);
+    }
   }
 
   return query;
