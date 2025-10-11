@@ -15,6 +15,11 @@ const lsServer = server({
     })
   ),
   schema,
+  contextProvider: async ({ headers }) => {
+    return {
+      user: headers["user"],
+    };
+  },
 });
 
 export const createServer = (): ReturnType<typeof expressWs>["app"] => {

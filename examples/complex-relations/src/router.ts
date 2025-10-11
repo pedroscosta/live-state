@@ -9,10 +9,18 @@ import { generateId } from "../../../packages/live-state/src/core/utils";
 
 const publicRoute = routeFactory();
 
+const protectedRoute = routeFactory().use(async ({ req, next }) => {
+  if (!req.context.user) {
+    throw new Error("Unauthorized");
+  }
+
+  return next(req as any);
+});
+
 export const appRouter = router({
   schema,
   routes: {
-    users: publicRoute
+    users: protectedRoute
       .collectionRoute(schema.users)
       .withMutations(({ mutation }) => ({
         setup: mutation().handler(async ({ req, db }) => {
@@ -48,9 +56,17 @@ export const appRouter = router({
           };
         }),
       })),
-    organizations: publicRoute.collectionRoute(schema.organizations),
-    userOrganizations: publicRoute.collectionRoute(schema.userOrganizations),
-    posts: publicRoute.collectionRoute(schema.posts),
+    organizations: protectedRoute.collectionRoute(schema.organizations),
+    userOrganizations: protectedRoute.collectionRoute(schema.userOrganizations),
+    posts: protectedRoute.collectionRoute(schema.posts, {
+      read: ({ ctx }) => ({
+        organization: {
+          userOrganizations: {
+            userId: ctx.user,
+          },
+        },
+      }),
+    }),
   },
 });
 
