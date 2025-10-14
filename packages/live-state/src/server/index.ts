@@ -4,7 +4,7 @@ import type {
   RawQueryRequest,
 } from "../core/schemas/core-protocol";
 import type { Awaitable } from "../core/utils";
-import type { Schema } from "../schema";
+import type { Schema, WhereClause } from "../schema";
 import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 
@@ -96,18 +96,130 @@ export class Server<TRouter extends AnyRouter> {
 
   public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
-      const route = this.router.routes[req.resource] as
-        | Route<any, any, any>
-        | undefined;
+      const queryPlan = getQuerySteps(req, this.schema, {
+        stepId: "query",
+        collectionName: req.resource,
+        included: Object.keys(req.include ?? {}),
+      });
+      const sharedContext = {
+        headers: req.headers,
+        cookies: req.cookies,
+        queryParams: req.queryParams,
+        context: req.context,
+      };
 
-      if (!route) {
-        throw new Error("Invalid resource");
+      const stepResults: Record<string, QueryStepResult[]> = {};
+
+      for (let i = 0; i < queryPlan.length; i++) {
+        const step = queryPlan[i];
+        const route = this.router.routes[step.resource] as
+          | Route<any, any, any>
+          | undefined;
+
+        if (!route) {
+          throw new Error("Invalid resource");
+        }
+
+        const wheres =
+          step.getWhere && step.referenceGetter
+            ? step.referenceGetter(stepResults).map(step.getWhere)
+            : [undefined];
+
+        const prevStepKeys = stepResults[step.prevStepId ?? ""]?.flatMap(
+          (result) => Object.keys(result?.result?.data ?? {})
+        );
+
+        const stepSettledResults = await Promise.allSettled(
+          wheres.map(async (where, i) => {
+            const ref = prevStepKeys?.[i];
+
+            const result = await route.handleQuery({
+              req: {
+                type: "QUERY",
+                ...step,
+                ...sharedContext,
+                where:
+                  where && step.where
+                    ? { $and: [step.where, where] }
+                    : (where ?? step.where),
+              },
+              db: this.storage,
+            });
+
+            return {
+              reference: ref,
+              result,
+            };
+          })
+        );
+
+        const results = stepSettledResults.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : []
+        );
+
+        stepResults[step.stepId] = results;
       }
 
-      return route.handleQuery({
-        req,
-        db: this.storage,
-      });
+      const flattenedResults = Object.fromEntries(
+        Object.entries(stepResults).flatMap(([stepPath, results], i) =>
+          results.flatMap((result) =>
+            Object.entries(result.result.data).map(([id, data]) => [
+              id,
+              {
+                data,
+                references: result.reference,
+                path: stepPath.split(".").slice(-1)[0],
+                isMany: queryPlan[i].isMany,
+                collectionName: queryPlan[i].collectionName,
+                included: queryPlan[i].included,
+              },
+            ])
+          )
+        )
+      );
+
+      const results = Object.keys(flattenedResults).reduceRight(
+        (acc, id) => {
+          const result = flattenedResults[id];
+          const path = result.path;
+
+          if (path === "query") {
+            acc.data[id] = result.data;
+          }
+
+          if (result.included.length) {
+            for (const included of result.included) {
+              result.data.value[included] ??=
+                this.schema[result.collectionName]?.relations[included]
+                  ?.type === "many"
+                  ? { value: [] }
+                  : { value: null };
+            }
+          }
+
+          if (result.references) {
+            const parentResult = flattenedResults[result.references];
+
+            if (!parentResult) return acc;
+
+            if (result.isMany) {
+              parentResult.data.value[path] ??= {
+                value: [],
+              };
+              parentResult.data.value[path].value.push(result.data);
+            } else {
+              parentResult.data.value[path] = result.data;
+            }
+          }
+
+          return acc;
+        },
+        {
+          data: {},
+        } as QueryResult<any>
+      );
+
+      return results;
     })(opts.req);
   }
 
@@ -139,8 +251,9 @@ export class Server<TRouter extends AnyRouter> {
       const mutationResult = result as MutationResult<any>;
       const acceptedValues = mutationResult.acceptedValues ?? {};
       const req = opts.req as MutationRequest;
+      const resourceId = req.resourceId;
 
-      if (Object.keys(acceptedValues).length) {
+      if (Object.keys(acceptedValues).length && resourceId) {
         // TODO refactor this to be called by the storage instead of the server
         this.mutationSubscriptions.forEach((handler) => {
           handler({
@@ -148,7 +261,7 @@ export class Server<TRouter extends AnyRouter> {
             type: "MUTATE",
             resource: req.resource,
             payload: acceptedValues,
-            resourceId: req.resourceId!,
+            resourceId,
             procedure: req.procedure as "INSERT" | "UPDATE",
           });
         });
@@ -171,16 +284,92 @@ export class Server<TRouter extends AnyRouter> {
   private wrapInMiddlewares<T extends Request>(
     next: NextFunction<any, T>
   ): NextFunction<any, T> {
-    return (req: T) => {
-      return Array.from(this.middlewares.values()).reduceRight(
-        (next, middleware) => {
-          return (req) =>
-            middleware({ req, next: next as NextFunction<any, any> });
-        },
+    return (req: T) =>
+      Array.from(this.middlewares.values()).reduceRight(
+        (next, middleware) => (req) =>
+          middleware({ req, next: next as NextFunction<any, any> }),
         next
       )(req);
-    };
   }
 }
 
 export const server = Server.create;
+
+interface QueryStep extends Omit<RawQueryRequest, "include"> {
+  stepId: string;
+  prevStepId?: string;
+  getWhere?: (id: string) => WhereClause<any>;
+  referenceGetter?: (
+    prevResults: Record<string, QueryStepResult[]>
+  ) => string[];
+  isMany?: boolean;
+  collectionName: string;
+  included: string[];
+}
+
+interface QueryStepResult {
+  reference?: string;
+  result: QueryResult<any>;
+}
+
+function getQuerySteps(
+  req: QueryRequest,
+  schema: Schema<any>,
+  opts: Omit<QueryStep, keyof Omit<RawQueryRequest, "include">>
+) {
+  const { include, ...rest } = req;
+  const { stepId } = opts;
+
+  const queryPlan: QueryStep[] = [{ ...rest, ...opts }];
+
+  if (
+    include &&
+    typeof include === "object" &&
+    Object.keys(include).length > 0
+  ) {
+    const resourceSchema = schema[rest.resource];
+
+    if (!resourceSchema) throw new Error(`Resource ${rest.resource} not found`);
+
+    queryPlan.push(
+      ...Object.entries(include).flatMap(([relationName, include]) => {
+        const relation = resourceSchema.relations[relationName];
+
+        if (!relation)
+          throw new Error(
+            `Relation ${relationName} not found for resource ${rest.resource}`
+          );
+
+        const otherResourceName = relation.entity.name;
+
+        return getQuerySteps(
+          { ...rest, resource: otherResourceName, include },
+          schema,
+          {
+            getWhere:
+              relation.type === "one"
+                ? (id) => ({ id })
+                : (id) => ({ [relation.foreignColumn]: id }),
+            referenceGetter: (prevResults) =>
+              prevResults[stepId].flatMap((result) =>
+                result.result.data
+                  ? relation.type === "one"
+                    ? Object.values(result.result.data).map(
+                        (v) => v.value?.[relation.relationalColumn]?.value
+                      )
+                    : Object.keys(result.result.data)
+                  : []
+              ),
+            stepId: `${stepId}.${relationName}`,
+            prevStepId: stepId,
+            isMany: relation.type === "many",
+            collectionName: otherResourceName,
+            included: typeof include === "object" ? Object.keys(include) : [],
+          }
+        );
+      })
+    );
+  }
+
+  return queryPlan;
+}

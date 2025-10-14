@@ -118,7 +118,7 @@ export class SQLStorage extends Storage {
               .on(resourceName)
               .column(columnName)
               .execute()
-              .catch((e) => {});
+              .catch(() => {});
           }
         } else if (tableColumn.dataType !== storageFieldType.type) {
           console.error(
@@ -231,8 +231,8 @@ export class SQLStorage extends Storage {
 
     const rawValues: Record<string, Record<string, any>> = Object.fromEntries(
       rawResult.map((v) => {
-        const { id, ...rest } = v;
-        return [id, rest];
+        const { id } = v;
+        return [id, v];
       })
     );
 
