@@ -118,7 +118,7 @@ export class SQLStorage extends Storage {
               .on(resourceName)
               .column(columnName)
               .execute()
-              .catch((e) => {});
+              .catch(() => {});
           }
         } else if (tableColumn.dataType !== storageFieldType.type) {
           console.error(
@@ -224,7 +224,6 @@ export class SQLStorage extends Storage {
       );
 
     query = applyWhere(this.schema, resourceName, query, where);
-    console.log("query", query.compile());
 
     query = applyInclude(this.schema, resourceName, query, include);
 

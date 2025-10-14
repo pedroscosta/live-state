@@ -164,8 +164,6 @@ export function applyWhere<T extends LiveObjectAny>(
 ) {
   if (!where || Object.keys(where).length === 0) return query;
 
-  console.log("where", JSON.stringify(where, null, 2));
-
   query = applyJoins(schema, resource, query, where);
 
   return query.where((eb) => innerApplyWhere(schema, resource, eb, where));

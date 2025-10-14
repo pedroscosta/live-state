@@ -4,7 +4,7 @@ import type {
   RawQueryRequest,
 } from "../core/schemas/core-protocol";
 import type { Awaitable } from "../core/utils";
-import { inferValue, type Schema, type WhereClause } from "../schema";
+import type { Schema, WhereClause } from "../schema";
 import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 
@@ -96,7 +96,6 @@ export class Server<TRouter extends AnyRouter> {
 
   public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
-      console.log("req", req.include);
       const queryPlan = getQuerySteps(req, this.schema, {
         stepId: "query",
         collectionName: req.resource,
@@ -109,14 +108,10 @@ export class Server<TRouter extends AnyRouter> {
         context: req.context,
       };
 
-      console.log("queryPlan", queryPlan);
-
       const stepResults: Record<string, QueryStepResult[]> = {};
 
       for (let i = 0; i < queryPlan.length; i++) {
         const step = queryPlan[i];
-        console.log("step index", step.stepId);
-        console.log("resource", queryPlan[i].resource);
         const route = this.router.routes[step.resource] as
           | Route<any, any, any>
           | undefined;
@@ -134,13 +129,9 @@ export class Server<TRouter extends AnyRouter> {
           (result) => Object.keys(result?.result?.data ?? {})
         );
 
-        console.log("wheres", wheres);
-
         const stepSettledResults = await Promise.allSettled(
           wheres.map(async (where, i) => {
             const ref = prevStepKeys?.[i];
-
-            console.log("ref", ref);
 
             const result = await route.handleQuery({
               req: {
@@ -155,22 +146,11 @@ export class Server<TRouter extends AnyRouter> {
               db: this.storage,
             });
 
-            console.log(
-              "result for step",
-              step.stepId,
-              JSON.stringify(result, null, 2)
-            );
-
             return {
               reference: ref,
               result,
             };
           })
-        );
-
-        console.log(
-          "stepSettledResults",
-          JSON.stringify(stepSettledResults, null, 2)
         );
 
         const results = stepSettledResults.flatMap((result) =>
@@ -179,8 +159,6 @@ export class Server<TRouter extends AnyRouter> {
 
         stepResults[step.stepId] = results;
       }
-
-      console.log("result", JSON.stringify(stepResults, null, 2));
 
       const flattenedResults = Object.fromEntries(
         Object.entries(stepResults).flatMap(([stepPath, results], i) =>
@@ -200,16 +178,10 @@ export class Server<TRouter extends AnyRouter> {
         )
       );
 
-      console.log(
-        "flattenedResults",
-        JSON.stringify(flattenedResults, null, 2)
-      );
-
       const results = Object.keys(flattenedResults).reduceRight(
         (acc, id) => {
           const result = flattenedResults[id];
           const path = result.path;
-          console.log("path", path);
 
           if (path === "query") {
             acc.data[id] = result.data;
@@ -226,8 +198,6 @@ export class Server<TRouter extends AnyRouter> {
           }
 
           if (result.references) {
-            console.log("result.references", result.references);
-
             if (result.isMany) {
               flattenedResults[result.references].data.value[path] ??= {
                 value: [],
@@ -241,21 +211,11 @@ export class Server<TRouter extends AnyRouter> {
             }
           }
 
-          console.log("acc", JSON.stringify(acc, null, 2));
-
           return acc;
         },
         {
           data: {},
         } as QueryResult<any>
-      );
-
-      console.log(
-        "infered result",
-        Object.entries(results.data).map(([key, value]) => ({
-          ...inferValue(value as any),
-          id: key,
-        }))
       );
 
       return results;
@@ -290,8 +250,9 @@ export class Server<TRouter extends AnyRouter> {
       const mutationResult = result as MutationResult<any>;
       const acceptedValues = mutationResult.acceptedValues ?? {};
       const req = opts.req as MutationRequest;
+      const resourceId = req.resourceId;
 
-      if (Object.keys(acceptedValues).length) {
+      if (Object.keys(acceptedValues).length && resourceId) {
         // TODO refactor this to be called by the storage instead of the server
         this.mutationSubscriptions.forEach((handler) => {
           handler({
@@ -299,7 +260,7 @@ export class Server<TRouter extends AnyRouter> {
             type: "MUTATE",
             resource: req.resource,
             payload: acceptedValues,
-            resourceId: req.resourceId!,
+            resourceId,
             procedure: req.procedure as "INSERT" | "UPDATE",
           });
         });
@@ -322,15 +283,12 @@ export class Server<TRouter extends AnyRouter> {
   private wrapInMiddlewares<T extends Request>(
     next: NextFunction<any, T>
   ): NextFunction<any, T> {
-    return (req: T) => {
-      return Array.from(this.middlewares.values()).reduceRight(
-        (next, middleware) => {
-          return (req) =>
-            middleware({ req, next: next as NextFunction<any, any> });
-        },
+    return (req: T) =>
+      Array.from(this.middlewares.values()).reduceRight(
+        (next, middleware) => (req) =>
+          middleware({ req, next: next as NextFunction<any, any> }),
         next
       )(req);
-    };
   }
 }
 
@@ -361,8 +319,6 @@ function getQuerySteps(
   const { include, ...rest } = req;
   const { stepId } = opts;
 
-  console.log("include", include);
-
   const queryPlan: QueryStep[] = [{ ...rest, ...opts }];
 
   if (
@@ -385,14 +341,10 @@ function getQuerySteps(
 
         const otherResourceName = relation.entity.name;
 
-        console.log("relation.foreignColumn", relation.foreignColumn);
-        console.log("relation.relationalColumn", relation.relationalColumn);
-
         return getQuerySteps(
           { ...rest, resource: otherResourceName, include },
           schema,
           {
-            // TODO handle type === "many"
             getWhere:
               relation.type === "one"
                 ? (id) => ({ id })
