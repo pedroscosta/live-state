@@ -198,16 +198,17 @@ export class Server<TRouter extends AnyRouter> {
           }
 
           if (result.references) {
+            const parentResult = flattenedResults[result.references];
+
+            if (!parentResult) return acc;
+
             if (result.isMany) {
-              flattenedResults[result.references].data.value[path] ??= {
+              parentResult.data.value[path] ??= {
                 value: [],
               };
-              flattenedResults[result.references].data.value[path].value.push(
-                result.data
-              );
+              parentResult.data.value[path].value.push(result.data);
             } else {
-              flattenedResults[result.references].data.value[path] =
-                result.data;
+              parentResult.data.value[path] = result.data;
             }
           }
 
