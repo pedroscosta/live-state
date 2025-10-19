@@ -676,6 +676,9 @@ describe("SQLStorage", () => {
     expect(result).toEqual({
       user1: {
         value: {
+          id: {
+            value: "user1",
+          },
           name: {
             value: "John",
             _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
@@ -684,6 +687,9 @@ describe("SQLStorage", () => {
       },
       user2: {
         value: {
+          id: {
+            value: "user2",
+          },
           name: {
             value: "Jane",
             _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
@@ -758,7 +764,7 @@ describe("SQLStorage", () => {
     const result = await storage.find(mockResource);
 
     expect(result).toEqual({
-      user1: { name: "John" },
+      user1: { id: "user1", name: "John" },
     });
   });
 
@@ -1115,6 +1121,9 @@ describe("SQLStorage", () => {
     expect(result).toEqual({
       user1: {
         value: {
+          id: {
+            value: "user1",
+          },
           name: {
             value: "John",
             _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
@@ -1171,6 +1180,9 @@ describe("SQLStorage", () => {
     expect(result).toEqual({
       user1: {
         value: {
+          id: {
+            value: "user1",
+          },
           name: {
             value: "John",
             _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
@@ -1331,7 +1343,7 @@ describe("SQLStorage", () => {
     });
 
     expect(result).toEqual({
-      user1: { name: "John" },
+      user1: { id: "user1", name: "John" },
     });
   });
 
