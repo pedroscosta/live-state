@@ -102,7 +102,7 @@ export class Batcher {
     if (uniqueWheres.length > 0) {
       const uniqueValues = uniqueWheres
         .map((uw) => uw[uniqueColumnName])
-        .filter((id): id is string => id !== undefined);
+        .filter((v) => v !== undefined && v !== null);
 
       if (uniqueValues.length > 0) {
         where = mergeWhereClauses(commonWhere, {
