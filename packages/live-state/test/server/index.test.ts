@@ -17,6 +17,7 @@ import {
 } from "../../src/server";
 import { AnyRouter } from "../../src/server/router";
 import { Storage } from "../../src/server/storage";
+import { Batcher } from "../../src/server/storage/batcher";
 
 describe("Server", () => {
   let mockRouter: AnyRouter;
@@ -202,7 +203,7 @@ describe("Server", () => {
         stepId: "query",
         where: undefined,
       }),
-      db: mockStorage,
+      batcher: expect.any(Batcher),
     });
     expect(result).toEqual({ data: {} });
   });
@@ -446,7 +447,7 @@ describe("Server", () => {
         stepId: "query",
         where: undefined,
       }),
-      db: mockStorage,
+      batcher: expect.any(Batcher),
     });
   });
 
@@ -485,7 +486,7 @@ describe("Server", () => {
         stepId: "query",
         where: undefined,
       }),
-      db: mockStorage,
+      batcher: expect.any(Batcher),
     });
   });
 });
