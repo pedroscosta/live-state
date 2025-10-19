@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
+import { mergeWhereClauses } from "../core/utils";
 import {
   type InferLiveObjectWithRelationalIds,
   inferValue,
@@ -24,6 +25,7 @@ import type {
   Request,
   Storage,
 } from ".";
+import type { Batcher } from "./storage/batcher";
 
 export type RouteRecord = Record<string, AnyRoute>;
 
@@ -142,10 +144,10 @@ export class Route<
   /** @internal */
   public handleQuery = async ({
     req,
-    db,
+    batcher,
   }: {
     req: QueryRequest;
-    db: Storage;
+    batcher: Batcher;
   }): Promise<QueryResult<TResourceSchema>> => {
     return await this.wrapInMiddlewares(async (req: QueryRequest) => {
       const authorizationClause = this.authorization?.read?.({
@@ -157,13 +159,15 @@ export class Route<
       }
 
       return {
-        data: await db.rawFind<TResourceSchema>(
+        data: await batcher.rawFind<TResourceSchema>(
           req.resource,
-          req.where && authorizationClause && authorizationClause !== true
-            ? { $and: [req.where, authorizationClause] }
-            : authorizationClause && authorizationClause !== true
+          mergeWhereClauses(
+            req.where,
+            typeof authorizationClause === "object"
               ? authorizationClause
-              : req.where,
+              : undefined
+          ),
+          req.relationalWhere,
           req.include
         ),
       };

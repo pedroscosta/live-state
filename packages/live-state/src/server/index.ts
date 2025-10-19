@@ -7,6 +7,7 @@ import type { Awaitable } from "../core/utils";
 import type { Schema, WhereClause } from "../schema";
 import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
+import { Batcher } from "./storage/batcher";
 
 export * from "./adapters/express";
 export * from "./router";
@@ -21,6 +22,8 @@ export interface BaseRequest {
 
 export interface QueryRequest extends BaseRequest, RawQueryRequest {
   type: "QUERY";
+  /** @internal */
+  relationalWhere?: WhereClause<any>;
 }
 
 export interface MutationRequest<TInput = any> extends BaseRequest {
@@ -95,6 +98,8 @@ export class Server<TRouter extends AnyRouter> {
   }
 
   public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
+    const batcher = new Batcher(this.storage);
+
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
       const queryPlan = getQuerySteps(req, this.schema, {
         stepId: "query",
@@ -138,12 +143,10 @@ export class Server<TRouter extends AnyRouter> {
                 type: "QUERY",
                 ...step,
                 ...sharedContext,
-                where:
-                  where && step.where
-                    ? { $and: [step.where, where] }
-                    : (where ?? step.where),
+                where: step.where,
+                relationalWhere: where,
               },
-              db: this.storage,
+              batcher,
             });
 
             return {
