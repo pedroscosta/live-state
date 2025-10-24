@@ -5,7 +5,7 @@ export const querySchema = z.object({
   where: z.record(z.string(), z.any()).optional(),
   include: z.record(z.string(), z.any()).optional(),
   lastSyncedAt: z.string().optional(),
-  limit: z.number().optional(),
+  limit: z.coerce.number().optional(),
   sort: z
     .array(z.object({ key: z.string(), direction: z.enum(["asc", "desc"]) }))
     .optional(),

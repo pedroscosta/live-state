@@ -670,7 +670,7 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue(mockRawResult);
 
-    const result = await storage.rawFind("users");
+    const result = await storage.rawFind({ resource: "users" });
 
     expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
     expect(result).toEqual({
@@ -720,7 +720,7 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue([]);
 
-    const result = await storage.rawFind("users");
+    const result = await storage.rawFind({ resource: "users" });
 
     expect(result).toEqual({});
   });
@@ -1115,7 +1115,10 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue(mockRawResult);
 
-    const result = await storage.rawFind("users", { name: "John" });
+    const result = await storage.rawFind({
+      resource: "users",
+      where: { name: "John" },
+    });
 
     expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
     expect(result).toEqual({
@@ -1174,7 +1177,10 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue(mockRawResult);
 
-    const result = await storage.rawFind("users", undefined, { posts: true });
+    const result = await storage.rawFind({
+      resource: "users",
+      include: { posts: true },
+    });
 
     expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
     expect(result).toEqual({

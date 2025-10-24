@@ -5,10 +5,12 @@ import type { LiveObjectAny, MaterializedLiveType } from "../../schema";
 import type { Storage } from "./interface";
 
 interface BatchedRawFindRequest<T extends LiveObjectAny> {
-  resourceName: string;
+  resource: string;
   commonWhere?: Record<string, any>;
   uniqueWhere?: Record<string, any>;
   include?: Record<string, any>;
+  limit?: number;
+  sort?: { key: string; direction: "asc" | "desc" }[];
   resolve: (value: Record<string, MaterializedLiveType<T>>) => void;
   reject: (reason?: any) => void;
 }
@@ -24,19 +26,24 @@ export class Batcher {
     this.storage = storage;
   }
 
-  async rawFind<T extends LiveObjectAny>(
-    resourceName: string,
-    commonWhere?: Record<string, any>,
-    uniqueWhere?: Record<string, any>,
-    include?: Record<string, any>
-  ): Promise<Record<string, MaterializedLiveType<T>>> {
+  async rawFind<T extends LiveObjectAny>({
+    resource,
+    commonWhere,
+    ...rest
+  }: {
+    resource: string;
+    commonWhere?: Record<string, any>;
+    uniqueWhere?: Record<string, any>;
+    include?: Record<string, any>;
+    limit?: number;
+    sort?: { key: string; direction: "asc" | "desc" }[];
+  }): Promise<Record<string, MaterializedLiveType<T>>> {
     return new Promise((resolve, reject) => {
-      const batchKey = this.getBatchKey(resourceName, commonWhere);
+      const batchKey = this.getBatchKey(resource, commonWhere);
       const request: BatchedRawFindRequest<T> = {
-        resourceName,
+        resource,
         commonWhere,
-        uniqueWhere,
-        include,
+        ...rest,
         resolve,
         reject,
       };
@@ -59,10 +66,10 @@ export class Batcher {
   }
 
   private getBatchKey(
-    resourceName: string,
+    resource: string,
     commonWhere?: Record<string, any>
   ): BatchKey {
-    return `${resourceName}:${JSON.stringify(commonWhere ?? {})}`;
+    return `${resource}:${JSON.stringify(commonWhere ?? {})}`;
   }
 
   private async processBatch(): Promise<void> {
@@ -88,7 +95,16 @@ export class Batcher {
     if (requests.length === 0) return;
 
     const firstRequest = requests[0];
-    const { resourceName, commonWhere, include } = firstRequest;
+    const { resource, commonWhere, include } = firstRequest;
+
+    // Only use limit/sort if there's exactly one request
+    const singleClauses =
+      requests.length === 1
+        ? {
+            limit: firstRequest.limit,
+            sort: firstRequest.sort,
+          }
+        : undefined;
 
     const uniqueWheres = requests
       .map((req) => req.uniqueWhere)
@@ -111,7 +127,12 @@ export class Batcher {
       }
     }
 
-    const result = await this.storage.rawFind<T>(resourceName, where, include);
+    const result = await this.storage.rawFind<T>({
+      resource,
+      where,
+      include,
+      ...(singleClauses ?? {}),
+    });
 
     // Group results by unique ID for each request
     for (const request of requests) {

@@ -119,7 +119,12 @@ describe("Route", () => {
       batcher,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith("users", {}, undefined);
+    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: "users",
+        where: {},
+      })
+    );
     expect(result).toEqual({
       data: mockData,
     });
@@ -145,9 +150,11 @@ describe("Route", () => {
     });
 
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      { name: "John" },
-      { posts: true }
+      expect.objectContaining({
+        resource: "users",
+        where: { name: "John" },
+        include: { posts: true },
+      })
     );
   });
 
@@ -512,9 +519,10 @@ describe("Route Authorization", () => {
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      { userId: "123" },
-      undefined
+      expect.objectContaining({
+        resource: "users",
+        where: { userId: "123" },
+      })
     );
   });
 
@@ -539,9 +547,10 @@ describe("Route Authorization", () => {
     });
 
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      { $and: [{ active: true }, { userId: "123" }] },
-      undefined
+      expect.objectContaining({
+        resource: "users",
+        where: { $and: [{ active: true }, { userId: "123" }] },
+      })
     );
   });
 
@@ -565,9 +574,10 @@ describe("Route Authorization", () => {
     });
 
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      { active: true },
-      undefined
+      expect.objectContaining({
+        resource: "users",
+        where: { active: true },
+      })
     );
   });
 
@@ -617,9 +627,10 @@ describe("Route Authorization", () => {
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      { active: true },
-      undefined
+      expect.objectContaining({
+        resource: "users",
+        where: { active: true },
+      })
     );
   });
 
@@ -644,9 +655,10 @@ describe("Route Authorization", () => {
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      { userId: "123" },
-      undefined
+      expect.objectContaining({
+        resource: "users",
+        where: { userId: "123" },
+      })
     );
   });
 
@@ -679,14 +691,15 @@ describe("Route Authorization", () => {
       },
     });
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      {
-        $and: [
-          { active: true },
-          { $and: [{ userId: "123" }, { role: "admin" }] },
-        ],
-      },
-      undefined
+      expect.objectContaining({
+        resource: "users",
+        where: {
+          $and: [
+            { active: true },
+            { $and: [{ userId: "123" }, { role: "admin" }] },
+          ],
+        },
+      })
     );
   });
 });
@@ -2303,9 +2316,9 @@ describe("Route Complex Authorization Scenarios", () => {
         permissions: ["read", "write"],
       },
     });
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      {
+    expect(mockStorage.rawFind).toHaveBeenCalledWith({
+      resource: "users",
+      where: {
         $and: [
           { active: true },
           {
@@ -2317,7 +2330,9 @@ describe("Route Complex Authorization Scenarios", () => {
           },
         ],
       },
-      undefined
-    );
+      include: undefined,
+      limit: undefined,
+      sort: undefined,
+    });
   });
 });
