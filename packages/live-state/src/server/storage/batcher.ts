@@ -39,7 +39,7 @@ export class Batcher {
     sort?: { key: string; direction: "asc" | "desc" }[];
   }): Promise<Record<string, MaterializedLiveType<T>>> {
     return new Promise((resolve, reject) => {
-      const batchKey = this.getBatchKey(resource, commonWhere);
+      const batchKey = this.getBatchKey({ resource, commonWhere, ...rest });
       const request: BatchedRawFindRequest<T> = {
         resource,
         commonWhere,
@@ -66,10 +66,13 @@ export class Batcher {
   }
 
   private getBatchKey(
-    resource: string,
-    commonWhere?: Record<string, any>
+    query: Omit<
+      BatchedRawFindRequest<any>,
+      "resolve" | "reject" | "uniqueWhere"
+    >
   ): BatchKey {
-    return `${resource}:${JSON.stringify(commonWhere ?? {})}`;
+    const { resource, commonWhere, ...rest } = query;
+    return `${resource}:${JSON.stringify(commonWhere ?? {})}:${JSON.stringify(rest ?? {})}`;
   }
 
   private async processBatch(): Promise<void> {
