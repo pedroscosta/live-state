@@ -459,7 +459,9 @@ export type WhereClause<T extends LiveObjectAny> =
                   $in?: InferLiveType<T["fields"][K]>[];
                   $eq?: InferLiveType<T["fields"][K]>;
                 };
-          } & (InferLiveType<T["fields"][K]> extends number
+          } & (Exclude<InferLiveType<T["fields"][K]>, null | undefined> extends
+            | number
+            | Date
             ? {
                 $gt?: InferLiveType<T["fields"][K]>;
                 $gte?: InferLiveType<T["fields"][K]>;
