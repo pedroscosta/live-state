@@ -100,16 +100,10 @@ export class Batcher {
     if (requests.length === 0) return;
 
     const firstRequest = requests[0];
-    const { resource, commonWhere, include } = firstRequest;
+    const { resource, commonWhere, include, sort } = firstRequest;
 
-    // Only use limit/sort if there's exactly one request
-    const singleClauses =
-      requests.length === 1
-        ? {
-            limit: firstRequest.limit,
-            sort: firstRequest.sort,
-          }
-        : undefined;
+    // Only use limit if there's exactly one request, since we can't reliably limit multiple requests at once
+    const firstLimit = requests.length === 1 ? firstRequest.limit : undefined;
 
     const uniqueWheres = requests
       .map((req) => req.uniqueWhere)
@@ -136,7 +130,8 @@ export class Batcher {
       resource,
       where,
       include,
-      ...(singleClauses ?? {}),
+      sort,
+      limit: firstLimit,
     });
 
     // Group results by unique ID for each request
