@@ -29,6 +29,7 @@ export class Batcher {
   async rawFind<T extends LiveObjectAny>({
     resource,
     commonWhere,
+    uniqueWhere,
     ...rest
   }: {
     resource: string;
@@ -43,6 +44,7 @@ export class Batcher {
       const request: BatchedRawFindRequest<T> = {
         resource,
         commonWhere,
+        uniqueWhere,
         ...rest,
         resolve,
         reject,
