@@ -7,6 +7,7 @@ import {
   type Selectable,
 } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
+import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import {
   type IncludeClause,
   type InferLiveObject,
@@ -205,11 +206,17 @@ export class SQLStorage extends Storage {
 
   /** @internal */
   public async rawFind<T extends LiveObjectAny>(
-    resourceName: string,
-    where?: WhereClause<T>,
-    include?: IncludeClause<T>
+    queryRequest: RawQueryRequest
   ): Promise<Record<string, MaterializedLiveType<T>>> {
     if (!this.schema) throw new Error("Schema not initialized");
+
+    const {
+      resource: resourceName,
+      where,
+      include,
+      limit,
+      sort,
+    } = queryRequest;
 
     let query = this.db
       .selectFrom(resourceName)
@@ -226,6 +233,16 @@ export class SQLStorage extends Storage {
     query = applyWhere(this.schema, resourceName, query, where);
 
     query = applyInclude(this.schema, resourceName, query, include);
+
+    if (limit !== undefined) {
+      query = query.limit(limit);
+    }
+
+    if (sort !== undefined) {
+      sort.forEach((s) => {
+        query = query.orderBy(s.key, s.direction);
+      });
+    }
 
     const rawResult = await query.execute();
 
@@ -249,18 +266,23 @@ export class SQLStorage extends Storage {
     return value;
   }
 
+  // TODO use query builder
   public async find<T extends LiveObjectAny>(
     resource: T,
     options?: {
       where?: WhereClause<T>;
       include?: IncludeClause<T>;
+      limit?: number;
+      sort?: { key: string; direction: "asc" | "desc" }[];
     }
   ): Promise<Record<string, InferLiveObject<T>>> {
-    const rawResult = await this.rawFind(
-      resource.name,
-      options?.where,
-      options?.include
-    );
+    const rawResult = await this.rawFind({
+      resource: resource.name,
+      where: options?.where,
+      include: options?.include,
+      limit: options?.limit,
+      sort: options?.sort,
+    });
 
     return Object.fromEntries(
       Object.entries(rawResult).map(([id, value]) => {

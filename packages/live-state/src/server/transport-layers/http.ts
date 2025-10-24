@@ -64,11 +64,10 @@ export const httpTransportLayer = (
         const result = await server.handleQuery({
           req: {
             ...baseRequestData,
+            ...parsedQs,
             type: "QUERY",
             resource: resource,
             context: initialContext,
-            where: parsedQs.where,
-            include: parsedQs.include,
             queryParams: rawParsedQs as Record<string, any>,
           },
         });

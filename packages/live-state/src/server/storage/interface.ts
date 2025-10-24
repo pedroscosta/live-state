@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
 
+import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import {
   type IncludeClause,
   type InferInsert,
@@ -34,9 +35,7 @@ export abstract class Storage {
 
   /** @internal */
   public abstract rawFind<T extends LiveObjectAny>(
-    resourceName: string,
-    where?: Record<string, any>,
-    include?: Record<string, any>
+    query: RawQueryRequest
   ): Promise<Record<string, MaterializedLiveType<T>>>;
 
   public abstract find<T extends LiveObjectAny>(

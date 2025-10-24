@@ -159,17 +159,19 @@ export class Route<
       }
 
       return {
-        data: await batcher.rawFind<TResourceSchema>(
-          req.resource,
-          mergeWhereClauses(
+        data: await batcher.rawFind<TResourceSchema>({
+          resource: req.resource,
+          commonWhere: mergeWhereClauses(
             req.where,
             typeof authorizationClause === "object"
               ? authorizationClause
               : undefined
           ),
-          req.relationalWhere,
-          req.include
-        ),
+          uniqueWhere: req.relationalWhere,
+          include: req.include,
+          limit: req.limit,
+          sort: req.sort,
+        }),
       };
     })(req);
   };
