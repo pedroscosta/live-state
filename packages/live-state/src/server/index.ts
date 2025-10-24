@@ -136,7 +136,7 @@ export class Server<TRouter extends AnyRouter> {
 
         const stepSettledResults = await Promise.allSettled(
           wheres.map(async (where, i) => {
-            const ref = prevStepKeys?.[i];
+            const includedBy = prevStepKeys?.[i];
 
             const result = await route.handleQuery({
               req: {
@@ -150,9 +150,9 @@ export class Server<TRouter extends AnyRouter> {
             });
 
             return {
-              reference: ref,
+              includedBy,
               result,
-            };
+            } satisfies QueryStepResult;
           })
         );
 
@@ -167,10 +167,10 @@ export class Server<TRouter extends AnyRouter> {
         Object.entries(stepResults).flatMap(([stepPath, results], i) =>
           results.flatMap((result) =>
             Object.entries(result.result.data).map(([id, data]) => [
-              id,
+              `${stepPath}.${id}`,
               {
                 data,
-                references: result.reference,
+                includedBy: `${stepPath.split(".").slice(0, -1).join(".")}.${result.includedBy}`,
                 path: stepPath.split(".").slice(-1)[0],
                 isMany: queryPlan[i].isMany,
                 collectionName: queryPlan[i].collectionName,
@@ -200,8 +200,8 @@ export class Server<TRouter extends AnyRouter> {
             }
           }
 
-          if (result.references) {
-            const parentResult = flattenedResults[result.references];
+          if (result.includedBy) {
+            const parentResult = flattenedResults[result.includedBy];
 
             if (!parentResult) return acc;
 
@@ -311,7 +311,7 @@ interface QueryStep extends Omit<RawQueryRequest, "include"> {
 }
 
 interface QueryStepResult {
-  reference?: string;
+  includedBy?: string;
   result: QueryResult<any>;
 }
 
