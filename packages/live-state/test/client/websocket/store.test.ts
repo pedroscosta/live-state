@@ -1301,6 +1301,179 @@ describe("OptimisticStore", () => {
     });
   });
 
+  describe("Deep Include Functionality", () => {
+    beforeEach(() => {
+      // Create a more complex schema for testing deep includes
+      const user = object("users", {
+        id: id(),
+        name: string(),
+        age: number(),
+      });
+
+      const post = object("posts", {
+        id: id(),
+        title: string(),
+        userId: string(),
+      });
+
+      const comment = object("comments", {
+        id: id(),
+        content: string(),
+        postId: string(),
+        userId: string(),
+      });
+
+      const userRelations = createRelations(user, ({ many }) => ({
+        posts: many(post, "userId"),
+      }));
+
+      const postRelations = createRelations(post, ({ one, many }) => ({
+        author: one(user, "userId"),
+        comments: many(comment, "postId"),
+      }));
+
+      const commentRelations = createRelations(comment, ({ one }) => ({
+        post: one(post, "postId"),
+        author: one(user, "userId"),
+      }));
+
+      mockSchema = {
+        users: user.setRelations(userRelations.relations),
+        posts: post.setRelations(postRelations.relations),
+        comments: comment.setRelations(commentRelations.relations),
+      };
+
+      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    });
+
+    test("should handle deep nested includes in materializeOneWithInclude", () => {
+      // Mock the object graph to return a user node
+      const mockUserNode = {
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map([["posts", new Set(["post1"])]]),
+      };
+
+      const mockPostNode = {
+        type: "posts",
+        references: new Map([["author", "user1"]]),
+        referencedBy: new Map([["comments", new Set(["comment1"])]]),
+      };
+
+      const mockCommentNode = {
+        type: "comments",
+        references: new Map([
+          ["post", "post1"],
+          ["author", "user1"],
+        ]),
+        referencedBy: new Map(),
+      };
+
+      mockObjectGraph.getNode
+        .mockReturnValueOnce(mockUserNode)
+        .mockReturnValueOnce(mockPostNode)
+        .mockReturnValueOnce(mockCommentNode);
+
+      // Mock the raw object pool
+      store["optimisticRawObjPool"] = {
+        users: {
+          user1: {
+            value: {
+              id: { value: "user1" },
+              name: { value: "John" },
+              age: { value: 30 },
+            },
+          },
+        },
+        posts: {
+          post1: {
+            value: {
+              id: { value: "post1" },
+              title: { value: "Test Post" },
+              userId: { value: "user1" },
+            },
+          },
+        },
+        comments: {
+          comment1: {
+            value: {
+              id: { value: "comment1" },
+              content: { value: "Great post!" },
+              postId: { value: "post1" },
+              userId: { value: "user1" },
+            },
+          },
+        },
+      };
+
+      // Test deep include: user -> posts -> comments
+      const deepInclude = {
+        posts: {
+          comments: true,
+        },
+      };
+
+      const result = store["materializeOneWithInclude"]("user1", deepInclude);
+
+      expect(result).toBeDefined();
+      expect(result?.value).toHaveProperty("posts");
+      expect(result?.value.posts).toHaveProperty("value");
+      expect(Array.isArray(result?.value.posts.value)).toBe(true);
+
+      // Check that the first post has comments included
+      const firstPost = result?.value.posts.value[0];
+      expect(firstPost).toBeDefined();
+      expect(firstPost?.value).toHaveProperty("comments");
+      expect(firstPost?.value.comments).toHaveProperty("value");
+      expect(Array.isArray(firstPost?.value.comments.value)).toBe(true);
+
+      // Check that the comment has the expected content
+      const firstComment = firstPost?.value.comments.value[0];
+      expect(firstComment?.value.content.value).toBe("Great post!");
+    });
+
+    test("should handle mixed boolean and object includes", () => {
+      const mockUserNode = {
+        type: "users",
+        references: new Map([["posts", "post1"]]),
+        referencedBy: new Map(),
+      };
+
+      mockObjectGraph.getNode.mockReturnValue(mockUserNode);
+
+      store["optimisticRawObjPool"] = {
+        users: {
+          user1: {
+            value: {
+              id: { value: "user1" },
+              name: { value: "John" },
+              age: { value: 30 },
+            },
+          },
+        },
+        posts: {
+          post1: {
+            value: {
+              id: { value: "post1" },
+              title: { value: "Test Post" },
+              userId: { value: "user1" },
+            },
+          },
+        },
+      };
+
+      // Test mixed include: posts as boolean, but with nested structure
+      const mixedInclude = {
+        posts: true, // This should work as a simple boolean include
+      };
+
+      const result = store["materializeOneWithInclude"]("user1", mixedInclude);
+
+      expect(result).toBeDefined();
+      expect(result?.value).toHaveProperty("posts");
+    });
+  });
+
   describe("Error Handling", () => {
     test("should handle storage initialization gracefully", () => {
       // Test that the store can be created even if storage fails

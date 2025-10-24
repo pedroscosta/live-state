@@ -128,16 +128,12 @@ export class OptimisticStore {
 
     const entry = this.collectionSubscriptions.get(key);
 
-    const schema = this.schema[query.resource];
-
     if (!entry) {
       this.collectionSubscriptions.set(key, {
         callbacks: new Set(),
         query,
         flatInclude: query.include
-          ? Object.keys(query.include).map(
-              (k) => schema.relations[k].entity.name
-            )
+          ? this.flattenIncludes(query.include, query.resource)
           : undefined,
       });
     }
@@ -380,19 +376,24 @@ export class OptimisticStore {
 
     if (!obj) return;
 
-    const [referencesToInclude, referencedByToInclude] = Object.keys(
+    const [referencesToInclude, referencedByToInclude] = Object.entries(
       include
     ).reduce(
-      (acc, k) => {
+      (acc, [k, includeValue]) => {
         const rel = this.schema[resourceType].relations[k];
+        if (!rel) return acc;
+
         if (rel.type === "one") {
-          acc[0].push([k, rel.entity.name]);
+          acc[0].push([k, rel.entity.name, includeValue ?? true]);
         } else if (rel.type === "many") {
-          acc[1].push([k, rel.entity.name]);
+          acc[1].push([k, rel.entity.name, includeValue ?? true]);
         }
         return acc;
       },
-      [[], []] as [string[][], string[][]]
+      [[], []] as [
+        Array<[string, string, boolean | IncludeClause<any>]>,
+        Array<[string, string, boolean | IncludeClause<any>]>,
+      ]
     );
 
     return {
@@ -400,14 +401,19 @@ export class OptimisticStore {
         ...obj.value,
         // one relations
         ...Object.fromEntries(
-          referencesToInclude.map(([k, refName]) => [
+          referencesToInclude.map(([k, refName, nestedInclude]) => [
             k,
-            this.materializeOneWithInclude(node.references.get(refName)),
+            this.materializeOneWithInclude(
+              node.references.get(refName),
+              typeof nestedInclude === "object" && nestedInclude !== null
+                ? (nestedInclude as IncludeClause<LiveObjectAny>)
+                : {}
+            ),
           ])
         ),
         // many relations
         ...Object.fromEntries(
-          referencedByToInclude.map(([k, refName]) => {
+          referencedByToInclude.map(([k, refName, nestedInclude]) => {
             const referencedBy = node.referencedBy.get(refName);
             const isMany = referencedBy instanceof Set;
 
@@ -416,10 +422,21 @@ export class OptimisticStore {
               isMany
                 ? {
                     value: Array.from(referencedBy.values()).map((v) =>
-                      this.materializeOneWithInclude(v)
+                      this.materializeOneWithInclude(
+                        v,
+                        typeof nestedInclude === "object" &&
+                          nestedInclude !== null
+                          ? (nestedInclude as IncludeClause<LiveObjectAny>)
+                          : {}
+                      )
                     ),
                   }
-                : this.materializeOneWithInclude(referencedBy),
+                : this.materializeOneWithInclude(
+                    referencedBy,
+                    typeof nestedInclude === "object" && nestedInclude !== null
+                      ? (nestedInclude as IncludeClause<LiveObjectAny>)
+                      : {}
+                  ),
             ];
           })
         ),
@@ -447,5 +464,29 @@ export class OptimisticStore {
         });
       }
     });
+  }
+
+  private flattenIncludes(
+    include: IncludeClause<LiveObjectAny>,
+    resourceType: string
+  ): string[] {
+    const result: string[] = [];
+
+    Object.entries(include).forEach(([key, value]) => {
+      const relation = this.schema[resourceType]?.relations[key];
+      if (!relation) return;
+
+      const targetEntityName = relation.entity.name;
+      result.push(targetEntityName);
+
+      if (typeof value === "object" && value !== null) {
+        this.flattenIncludes(
+          value as IncludeClause<LiveObjectAny>,
+          targetEntityName
+        );
+      }
+    });
+
+    return result;
   }
 }

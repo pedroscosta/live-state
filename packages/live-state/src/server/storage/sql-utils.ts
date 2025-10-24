@@ -189,6 +189,7 @@ export function applyInclude<T extends LiveObjectAny>(
 
     const relation = resourceSchema.relations[key];
     const otherresource = relation.entity.name as string;
+    const includeValue = include[key];
 
     const otherColumnName =
       relation.type === "one" ? "id" : relation.foreignColumn;
@@ -198,35 +199,33 @@ export function applyInclude<T extends LiveObjectAny>(
 
     const aggFunc = relation.type === "one" ? jsonObjectFrom : jsonArrayFrom;
 
-    query = query.select((eb) =>
-      (
-        aggFunc(
-          eb
-            .selectFrom(otherresource)
-            .selectAll(otherresource)
-            .whereRef(
-              `${otherresource}.${otherColumnName}`,
-              "=",
-              `${resource}.${selfColumn}`
-            )
-            .select((eb: any) =>
-              jsonObjectFrom(
-                eb
-                  .selectFrom(`${otherresource}_meta`)
-                  .selectAll(`${otherresource}_meta`)
-                  .whereRef(
-                    `${otherresource}_meta.id`,
-                    "=",
-                    `${otherresource}.id`
-                  )
-              ).as("_meta")
-            )
-        ) as ReturnType<typeof jsonObjectFrom>
-      ).as(key)
-    );
+    const isNestedInclude =
+      typeof includeValue === "object" && includeValue !== null;
 
-    // TODO support deep include
-    // query = this.applyInclude(otherresource, query, val);
+    query = query.select((eb) => {
+      let subQuery = eb
+        .selectFrom(otherresource)
+        .selectAll(otherresource)
+        .whereRef(
+          `${otherresource}.${otherColumnName}`,
+          "=",
+          `${resource}.${selfColumn}`
+        )
+        .select((eb: any) =>
+          jsonObjectFrom(
+            eb
+              .selectFrom(`${otherresource}_meta`)
+              .selectAll(`${otherresource}_meta`)
+              .whereRef(`${otherresource}_meta.id`, "=", `${otherresource}.id`)
+          ).as("_meta")
+        );
+
+      if (isNestedInclude) {
+        subQuery = applyInclude(schema, otherresource, subQuery, includeValue);
+      }
+
+      return (aggFunc(subQuery) as ReturnType<typeof jsonObjectFrom>).as(key);
+    });
   }
 
   return query;
