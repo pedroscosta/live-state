@@ -18,6 +18,7 @@ import {
   router,
 } from "../../src/server/router";
 import { Storage } from "../../src/server/storage";
+import { Batcher } from "../../src/server/storage/batcher";
 
 describe("Router", () => {
   test("should create router instance", () => {
@@ -112,16 +113,13 @@ describe("Route", () => {
     const mockData = { user1: { value: { name: "John" } } };
     (mockStorage.rawFind as Mock).mockResolvedValue(mockData);
 
+    const batcher = new Batcher(mockStorage);
     const result = await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
-      "users",
-      undefined,
-      undefined
-    );
+    expect(mockStorage.rawFind).toHaveBeenCalledWith("users", {}, undefined);
     expect(result).toEqual({
       data: mockData,
     });
@@ -140,9 +138,10 @@ describe("Route", () => {
       context: {},
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
@@ -366,9 +365,10 @@ describe("Route", () => {
       context: {},
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(executionOrder).toEqual([
@@ -504,9 +504,10 @@ describe("Route Authorization", () => {
       context: { userId: "123" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
@@ -531,9 +532,10 @@ describe("Route Authorization", () => {
       context: { userId: "123" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
@@ -556,9 +558,10 @@ describe("Route Authorization", () => {
       context: {},
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(mockStorage.rawFind).toHaveBeenCalledWith(
@@ -571,6 +574,7 @@ describe("Route Authorization", () => {
   test("should handle QUERY authorization with boolean false", async () => {
     const authHandler = vi.fn().mockReturnValue(false);
     const route = new Route(mockResource, undefined, { read: authHandler });
+    const batcher = new Batcher(mockStorage);
 
     const mockRequest: QueryRequest = {
       type: "QUERY",
@@ -584,7 +588,7 @@ describe("Route Authorization", () => {
     await expect(
       route.handleQuery({
         req: mockRequest,
-        db: mockStorage,
+        batcher,
       })
     ).rejects.toThrow("Not authorized");
 
@@ -605,9 +609,10 @@ describe("Route Authorization", () => {
       context: { userId: "123" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
@@ -631,9 +636,10 @@ describe("Route Authorization", () => {
       context: { userId: "123" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
@@ -660,9 +666,10 @@ describe("Route Authorization", () => {
       context: { userId: "123", role: "admin" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(authHandler).toHaveBeenCalledWith({
@@ -1634,10 +1641,11 @@ describe("Route Error Handling", () => {
       context: {},
     };
 
+    const batcher = new Batcher(mockStorage);
     await expect(
       route.handleQuery({
         req: mockRequest,
-        db: mockStorage,
+        batcher,
       })
     ).rejects.toThrow("Middleware error");
   });
@@ -1665,9 +1673,10 @@ describe("Route Error Handling", () => {
       context: {},
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(executionOrder).toEqual([
@@ -1699,9 +1708,10 @@ describe("Route Error Handling", () => {
       context: {},
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(modifyingMiddleware).toHaveBeenCalled();
@@ -1960,10 +1970,11 @@ describe("Route Authorization Error Handling", () => {
       context: { userId: "123" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await expect(
       route.handleQuery({
         req: mockRequest,
-        db: mockStorage,
+        batcher,
       })
     ).rejects.toThrow("Authorization error");
 
@@ -2167,9 +2178,10 @@ describe("Route Complex Authorization Scenarios", () => {
       context: { userId: "123" },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: readRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(readAuth).toHaveBeenCalledWith({ ctx: { userId: "123" } });
@@ -2277,9 +2289,10 @@ describe("Route Complex Authorization Scenarios", () => {
       },
     };
 
+    const batcher = new Batcher(mockStorage);
     await route.handleQuery({
       req: mockRequest,
-      db: mockStorage,
+      batcher,
     });
 
     expect(authHandler).toHaveBeenCalledWith({
