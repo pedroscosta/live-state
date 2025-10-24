@@ -20,6 +20,15 @@ import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
+interface WebSocketClientOptions extends ClientOptions {
+  connection?: {
+    autoConnect?: boolean;
+    autoReconnect?: boolean;
+    reconnectTimeout?: number;
+    maxReconnectAttempts?: number;
+  };
+}
+
 export type ConnectionStateChangeEvent = {
   type: "CONNECTION_STATE_CHANGE";
   open: boolean;
@@ -46,7 +55,7 @@ class InnerClient implements QueryExecutor {
     { timeoutHandle: NodeJS.Timeout; handler: (data: any) => void }
   > = {};
 
-  public constructor(opts: ClientOptions) {
+  public constructor(opts: WebSocketClientOptions) {
     this.url = opts.url;
 
     this.store = new OptimisticStore(opts.schema, opts.storage, (stack) => {
@@ -59,9 +68,10 @@ class InnerClient implements QueryExecutor {
 
     this.ws = new WebSocketClient({
       url: opts.url,
-      autoConnect: true,
-      autoReconnect: true,
-      reconnectTimeout: 5000,
+      autoConnect: opts.connection?.autoConnect ?? true,
+      autoReconnect: opts.connection?.autoReconnect ?? true,
+      reconnectTimeout: opts.connection?.reconnectTimeout ?? 5000,
+      reconnectLimit: opts.connection?.maxReconnectAttempts,
       credentials: opts.credentials,
     });
 
@@ -266,7 +276,7 @@ export type Client<TRouter extends AnyRouter> = {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
-  opts: ClientOptions
+  opts: WebSocketClientOptions
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
 
