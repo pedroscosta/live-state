@@ -480,13 +480,15 @@ export class OptimisticStore {
       result.push(targetEntityName);
 
       if (typeof value === "object" && value !== null) {
-        this.flattenIncludes(
-          value as IncludeClause<LiveObjectAny>,
-          targetEntityName
+        result.push(
+          ...this.flattenIncludes(
+            value as IncludeClause<LiveObjectAny>,
+            targetEntityName
+          )
         );
       }
     });
 
-    return result;
+    return Array.from(new Set(result));
   }
 }
