@@ -137,7 +137,8 @@ export class Route<
   ) {
     return new Route<TResourceSchema, TMiddleware, T>(
       this.resourceSchema,
-      mutationFactory({ mutation: mutationCreator })
+      mutationFactory({ mutation: mutationCreator }),
+      this.authorization
     );
   }
 
