@@ -170,7 +170,10 @@ export class Server<TRouter extends AnyRouter> {
               `${stepPath}.${id}`,
               {
                 data,
-                includedBy: `${stepPath.split(".").slice(0, -1).join(".")}.${result.includedBy}`,
+                includedBy:
+                  stepPath !== "query" && result.includedBy
+                    ? `${stepPath.split(".").slice(0, -1).join(".")}.${result.includedBy}`
+                    : undefined,
                 path: stepPath.split(".").slice(-1)[0],
                 isMany: queryPlan[i].isMany,
                 collectionName: queryPlan[i].collectionName,
