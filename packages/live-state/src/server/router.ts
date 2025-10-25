@@ -300,6 +300,8 @@ export class Route<
             ? authorizationClause
             : applyWhere(inferredValue, authorizationClause);
 
+        console.log("authorized", authorized);
+
         if (!authorized) {
           throw new Error("Not authorized");
         }

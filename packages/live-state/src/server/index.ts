@@ -190,7 +190,7 @@ export class Server<TRouter extends AnyRouter> {
           const path = result.path;
 
           if (path === "query") {
-            acc.data[id] = result.data;
+            acc.data[id.replace("query.", "")] = result.data;
           }
 
           if (result.included.length) {

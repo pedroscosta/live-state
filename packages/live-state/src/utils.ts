@@ -20,6 +20,7 @@ export const applyWhere = <T extends object>(
   not = false
 ): boolean => {
   return Object.entries(where).every(([k, v]) => {
+    console.log("k", k, "v", v);
     if (k === "$and")
       return v.every((w: WhereClause<LiveObjectAny>) =>
         applyWhere(obj, w, not)
