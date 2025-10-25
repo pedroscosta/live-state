@@ -478,7 +478,9 @@ export type WhereClause<T extends LiveObjectAny> =
     };
 
 export type IncludeClause<T extends LiveObjectAny> = {
-  [K in keyof T["relations"]]?: boolean;
+  [K in keyof T["relations"]]?:
+    | boolean
+    | IncludeClause<T["relations"][K]["entity"]>;
 };
 
 type GetFieldType<T> = T extends NullableLiveType<any> ? T["inner"] : T;

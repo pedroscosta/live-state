@@ -13,23 +13,21 @@ export const querySchema = z.object({
 
 export type RawQueryRequest = z.infer<typeof querySchema>;
 
-export const defaultPayloadSchema = z
-  .record(
-    z.string(),
-    z.object({
-      value: z.string().or(z.number()).or(z.boolean()).or(z.date()).nullable(),
-      _meta: z
-        .object({ timestamp: z.string().optional().nullable() })
-        .optional(),
-    })
-  )
-  .superRefine((v, ctx) => {
-    if (v["id"])
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Payload cannot have an id",
-      });
-  });
+export const queryPayloadSchema = z.record(
+  z.string(),
+  z.object({
+    value: z.string().or(z.number()).or(z.boolean()).or(z.date()).nullable(),
+    _meta: z.object({ timestamp: z.string().optional().nullable() }).optional(),
+  })
+);
+
+const mutationPayloadSchema = queryPayloadSchema.superRefine((v, ctx) => {
+  if (v["id"])
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Payload cannot have an id",
+    });
+});
 
 const baseMutationSchema = z.object({
   id: z.string().optional(),
@@ -47,7 +45,7 @@ export type GenericMutation = z.infer<typeof genericMutationSchema>;
 
 export const defaultMutationSchema = baseMutationSchema.extend({
   procedure: z.enum(["INSERT", "UPDATE"]),
-  payload: defaultPayloadSchema,
+  payload: mutationPayloadSchema,
 });
 
 export type DefaultMutation = Omit<

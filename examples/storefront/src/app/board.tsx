@@ -63,9 +63,10 @@ export function Board(): JSX.Element {
           className="w-sm"
           onClick={() => {
             client.query.groups
-              .include({ cards: true })
+              .include({ cards: { group: true } })
               .get()
-              .then((res) => console.log(res));
+              .then((res) => console.log("fetch", res));
+            console.log("store", store.query.groups.include({ cards: { group: true } }).get());
           }}
         >
           Get Groups

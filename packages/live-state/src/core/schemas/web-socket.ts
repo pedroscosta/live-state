@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
   defaultMutationSchema,
-  defaultPayloadSchema,
   genericMutationSchema,
+  queryPayloadSchema,
   querySchema,
 } from "./core-protocol";
 
@@ -80,5 +80,5 @@ export type ServerMessage = z.infer<typeof serverMessageSchema>;
 
 export const syncReplyDataSchema = z.object({
   resource: z.string(),
-  data: z.record(z.string(), defaultPayloadSchema),
+  data: z.record(z.string(), queryPayloadSchema),
 });
