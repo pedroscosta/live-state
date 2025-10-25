@@ -63,9 +63,28 @@ export const appRouter = router({
         organization: {
           userOrganizations: {
             userId: ctx.user,
+            role: "admin",
           },
         },
       }),
+      update: {
+        preMutation: ({ ctx }) => ({
+          organization: {
+            userOrganizations: {
+              userId: ctx.user,
+              role: "admin",
+            },
+          },
+        }),
+        postMutation: ({ ctx }) => ({
+          organization: {
+            userOrganizations: {
+              userId: ctx.user,
+              role: "admin",
+            },
+          },
+        }),
+      },
     }),
   },
 });

@@ -8,7 +8,7 @@
     "dev": "turbo run dev",
     "dev:docs": "turbo run dev --filter=docs",
     "dev:basic-example": "turbo run dev --filter=storefront... --filter=api...",
-    "dev:complex-relations": "turbo run dev --filter=complex-relations... --filter=api...",
+    "dev:complex-relations": "turbo run dev --filter=complex-relations...",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "lint": "turbo run lint",
     "test": "turbo run test",
