@@ -47,7 +47,7 @@ export type MutationHandler = (mutation: DefaultMutation) => void;
 export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
 
 export type Middleware<T = any> = (opts: {
-  req: BaseRequest;
+  req: Request;
   next: NextFunction<T>;
 }) => ReturnType<NextFunction<T>>;
 
