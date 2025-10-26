@@ -12,7 +12,12 @@ import {
 import { generateId } from "../../core/utils";
 import type { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
 import type { AnyRouter } from "../../server";
-import type { Simplify } from "../../utils";
+import {
+  createLogger,
+  type Logger,
+  LogLevel,
+  type Simplify,
+} from "../../utils";
 import type { ClientOptions } from "..";
 import { QueryBuilder, type QueryExecutor } from "../query";
 import type { Client as ClientType } from "../types";
@@ -45,6 +50,7 @@ class InnerClient implements QueryExecutor {
   public readonly url: string;
   public readonly ws: WebSocketClient;
   public readonly store: OptimisticStore;
+  private readonly logger: Logger;
 
   private remoteSubCounters: Record<string, number> = {};
 
@@ -57,6 +63,9 @@ class InnerClient implements QueryExecutor {
 
   public constructor(opts: WebSocketClientOptions) {
     this.url = opts.url;
+    this.logger = createLogger({
+      level: opts.logLevel ?? LogLevel.INFO,
+    });
 
     this.store = new OptimisticStore(opts.schema, opts.storage, (stack) => {
       Object.values(stack)
@@ -124,10 +133,10 @@ class InnerClient implements QueryExecutor {
 
   public handleServerMessage(message: MessageEvent["data"]) {
     try {
-      console.log("Message received from the server:", message);
+      this.logger.debug("Message received from the server:", message);
       const parsedMessage = serverMessageSchema.parse(JSON.parse(message));
 
-      console.log("Parsed message:", parsedMessage);
+      this.logger.debug("Parsed message:", parsedMessage);
 
       this.emitEvent({
         type: "MESSAGE_RECEIVED",
@@ -143,7 +152,7 @@ class InnerClient implements QueryExecutor {
             parsedMessage as DefaultMutationMessage
           );
         } catch (e) {
-          console.error("Error merging mutation from the server:", e);
+          this.logger.error("Error merging mutation from the server:", e);
         }
       } else if (parsedMessage.type === "REJECT") {
         this.store.undoMutation(parsedMessage.resource, parsedMessage.id);
@@ -164,7 +173,7 @@ class InnerClient implements QueryExecutor {
         );
       }
     } catch (e) {
-      console.error("Error parsing message from the server:", e);
+      this.logger.error("Error parsing message from the server:", e);
     }
   }
 
@@ -279,6 +288,10 @@ export const createClient = <TRouter extends AnyRouter>(
   opts: WebSocketClientOptions
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
+  const logger = createLogger({
+    level: opts.logLevel ?? LogLevel.INFO,
+    prefix: "Client",
+  });
 
   return {
     client: {
@@ -291,7 +304,7 @@ export const createClient = <TRouter extends AnyRouter>(
         }
 
         return () => {
-          console.log("Removing listeners", removeListeners);
+          logger.debug("Removing listeners", removeListeners);
           removeListeners.forEach((remove) => {
             remove();
           });

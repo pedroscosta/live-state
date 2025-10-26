@@ -65,7 +65,7 @@ export class OptimisticStore {
             });
           })
           .catch((e) => {
-            console.error("Failed to load state from storage", e);
+            // Silent fail - storage might not be available in some environments
           });
       });
     }
