@@ -11,7 +11,7 @@ import {
   type Schema,
   type WhereClause,
 } from "../../schema";
-import { applyWhere, hash } from "../../utils";
+import { applyWhere, hash, type Logger } from "../../utils";
 import type { ClientOptions } from "..";
 import { filterWithLimit } from "../utils";
 import { ObjectGraph } from "./obj-graph";
@@ -25,8 +25,9 @@ type RawObjPool = Record<
 export class OptimisticStore {
   private rawObjPool: RawObjPool = {} as RawObjPool;
   public optimisticMutationStack: Record<string, DefaultMutationMessage[]> = {};
-  private optimisticObjGraph: ObjectGraph = new ObjectGraph();
+  private optimisticObjGraph: ObjectGraph;
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
+  private logger: Logger;
 
   private collectionSubscriptions: Map<
     string,
@@ -43,8 +44,11 @@ export class OptimisticStore {
   public constructor(
     public readonly schema: Schema<any>,
     storage: ClientOptions["storage"],
+    logger: Logger,
     afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void
   ) {
+    this.logger = logger;
+    this.optimisticObjGraph = new ObjectGraph(logger);
     this.kvStorage = new KVStorage();
 
     if (storage !== false) {
@@ -65,7 +69,10 @@ export class OptimisticStore {
             });
           })
           .catch((e) => {
-            console.error("Failed to load state from storage", e);
+            logger.debug(
+              "Storage initialization failed (may not be available in this environment):",
+              e
+            );
           });
       });
     }
@@ -157,7 +164,7 @@ export class OptimisticStore {
   ) {
     const schema = this.schema[routeName];
 
-    console.log("Adding mutation", mutation);
+    this.logger.debug("Adding mutation", mutation);
 
     if (!schema) throw new Error("Schema not found");
 
@@ -221,7 +228,7 @@ export class OptimisticStore {
     if (mutationIdx === -1) return;
 
     const mutation = this.optimisticMutationStack[routeName][mutationIdx];
-    console.log("Removing mutation", mutation);
+    this.logger.debug("Removing mutation", mutation);
 
     const prevValue =
       this.optimisticRawObjPool[routeName]?.[mutation.resourceId];

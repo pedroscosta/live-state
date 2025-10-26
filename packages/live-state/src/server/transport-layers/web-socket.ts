@@ -22,13 +22,14 @@ export type Subscription = {
 export const webSocketAdapter = (server: Server<AnyRouter>) => {
   const connections: Record<string, WebSocket> = {};
   const subscriptions: Record<string, Record<string, Subscription>> = {};
+  const logger = server.logger;
 
   server.subscribeToMutations((_m) => {
     const m = _m as DefaultMutation;
 
     if (!m.resourceId || !m.payload) return;
 
-    console.log("Mutation propagated:", m);
+    logger.debug("Mutation propagated:", m);
 
     Object.entries(subscriptions[m.resource] ?? {}).forEach(
       ([clientId, _sub]) => {
@@ -72,11 +73,11 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     });
 
     connections[clientId] = ws;
-    console.log("Client connected:", clientId);
+    logger.info("Client connected:", clientId);
 
     ws.on("message", async (message) => {
       try {
-        console.log("Message received from the client:", message);
+        logger.debug("Message received from the client:", message);
 
         const parsedMessage = clientMessageSchema.parse(
           JSON.parse(message.toString())
@@ -124,7 +125,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           });
         } else if (parsedMessage.type === "MUTATE") {
           const { resource } = parsedMessage;
-          console.log("Received mutation from client:", parsedMessage);
+          logger.debug("Received mutation from client:", parsedMessage);
           try {
             const result = await server.handleMutation({
               req: {
@@ -160,17 +161,17 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               resource,
               message: (e as Error).message,
             });
-            console.error("Error parsing mutation from the client:", e);
+            logger.error("Error parsing mutation from the client:", e);
           }
         }
       } catch (e) {
         // TODO send error to client
-        console.error("Error handling message from the client:", e);
+        logger.error("Error handling message from the client:", e);
       }
     });
 
     ws.on("close", () => {
-      console.log("Connection closed", clientId);
+      logger.info("Connection closed", clientId);
       delete connections[clientId];
       for (const subs of Object.values(subscriptions)) {
         delete subs[clientId];

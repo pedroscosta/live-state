@@ -3,6 +3,8 @@
  * Represents a directed graph with nodes that can reference each other
  */
 
+import type { Logger } from "../../utils";
+
 // Define types for node subscriptions
 type NodeSubscription = (nodeId: string) => void;
 
@@ -22,7 +24,7 @@ export type GraphNode = {
 export class ObjectGraph {
   private nodes: Map<string, GraphNode>;
 
-  constructor() {
+  constructor(private readonly logger?: Logger) {
     this.nodes = new Map<string, GraphNode>();
   }
 
@@ -218,7 +220,10 @@ export class ObjectGraph {
       try {
         subscription(nodeId);
       } catch (error) {
-        console.error(`Error in node subscription for node ${nodeId}:`, error);
+        this.logger?.error(
+          `Error in node subscription for node ${nodeId}:`,
+          error
+        );
       }
     });
   }

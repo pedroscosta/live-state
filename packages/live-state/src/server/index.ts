@@ -5,6 +5,7 @@ import type {
 } from "../core/schemas/core-protocol";
 import type { Awaitable } from "../core/utils";
 import type { Schema, WhereClause } from "../schema";
+import { createLogger, type Logger, LogLevel } from "../utils";
 import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import { Batcher } from "./storage/batcher";
@@ -56,6 +57,7 @@ export class Server<TRouter extends AnyRouter> {
   readonly storage: Storage;
   readonly schema: Schema<any>;
   readonly middlewares: Set<Middleware<any>> = new Set();
+  readonly logger: Logger;
 
   contextProvider?: ContextProvider;
 
@@ -67,15 +69,19 @@ export class Server<TRouter extends AnyRouter> {
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
     contextProvider?: ContextProvider;
+    logLevel?: LogLevel;
   }) {
     this.router = opts.router;
     this.storage = opts.storage;
     this.schema = opts.schema;
+    this.logger = createLogger({
+      level: opts.logLevel ?? LogLevel.INFO,
+    });
     opts.middlewares?.forEach((middleware) => {
       this.middlewares.add(middleware);
     });
 
-    this.storage.updateSchema(this.schema);
+    this.storage.init(this.schema, this.logger);
     this.contextProvider = opts.contextProvider;
   }
 
@@ -85,6 +91,7 @@ export class Server<TRouter extends AnyRouter> {
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
     contextProvider?: ContextProvider;
+    logLevel?: LogLevel;
   }) {
     return new Server<TRouter>(opts);
   }

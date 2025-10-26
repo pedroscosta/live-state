@@ -35,7 +35,7 @@ describe("Server", () => {
     } as unknown as AnyRouter;
 
     mockStorage = {
-      updateSchema: vi.fn().mockResolvedValue(undefined),
+      init: vi.fn().mockResolvedValue(undefined),
     } as unknown as Storage;
 
     mockSchema = {
@@ -70,7 +70,15 @@ describe("Server", () => {
     expect(serverInstance.router).toBe(mockRouter);
     expect(serverInstance.storage).toBe(mockStorage);
     expect(serverInstance.schema).toBe(mockSchema);
-    expect(mockStorage.updateSchema).toHaveBeenCalledWith(mockSchema);
+    expect(mockStorage.init).toHaveBeenCalledWith(
+      mockSchema,
+      expect.objectContaining({
+        error: expect.any(Function),
+        warn: expect.any(Function),
+        info: expect.any(Function),
+        debug: expect.any(Function),
+      })
+    );
   });
 
   test("should create server with helper function", () => {

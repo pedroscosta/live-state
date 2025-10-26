@@ -258,15 +258,16 @@ describe("ObjectGraph", () => {
   });
 
   test("should notify subscribers and handle errors gracefully", () => {
-    const graph = new ObjectGraph();
+    const mockLogger = {
+      error: vi.fn(),
+    };
+    const graph = new ObjectGraph(mockLogger);
     graph.createNode("user1", "user", []);
 
     const errorSubscriber = vi.fn().mockImplementation(() => {
       throw new Error("Subscriber error");
     });
     const normalSubscriber = vi.fn();
-
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     graph.subscribe("user1", errorSubscriber);
     graph.subscribe("user1", normalSubscriber);
@@ -275,12 +276,10 @@ describe("ObjectGraph", () => {
 
     expect(errorSubscriber).toHaveBeenCalled();
     expect(normalSubscriber).toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalledWith(
+    expect(mockLogger.error).toHaveBeenCalledWith(
       "Error in node subscription for node user1:",
       expect.any(Error)
     );
-
-    consoleSpy.mockRestore();
   });
 
   test("should handle notifying subscribers of non-existent node gracefully", () => {

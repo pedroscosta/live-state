@@ -18,22 +18,26 @@ import {
   type Schema,
   type WhereClause,
 } from "../../schema";
+import type { Logger } from "../../utils";
 import { Storage } from "./interface";
 import { applyInclude, applyWhere } from "./sql-utils";
 
 export class SQLStorage extends Storage {
   private db: Kysely<{ [x: string]: Selectable<any> }>;
   private schema?: Schema<any>;
+  private logger?: Logger;
 
   public constructor(pool: PostgresPool);
   /** @internal */
   public constructor(
     db: Kysely<{ [x: string]: Selectable<any> }>,
-    schema: Schema<any>
+    schema: Schema<any>,
+    logger?: Logger
   );
   public constructor(
     poolOrDb: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>,
-    schema?: Schema<any>
+    schema?: Schema<any>,
+    logger?: Logger
   ) {
     super();
 
@@ -48,14 +52,16 @@ export class SQLStorage extends Storage {
     }
 
     this.schema = schema;
+    this.logger = logger;
 
     this.rawInsert = this.rawInsert.bind(this);
     this.rawUpdate = this.rawUpdate.bind(this);
   }
 
   /** @internal */
-  public async updateSchema(opts: Schema<any>): Promise<void> {
+  public async init(opts: Schema<any>, logger?: Logger): Promise<void> {
     this.schema = opts;
+    this.logger = logger;
 
     const tables = await this.db.introspection.getTables();
 
@@ -109,7 +115,7 @@ export class SQLStorage extends Storage {
             })
             .execute()
             .catch((e) => {
-              console.error("Error adding column", columnName, e);
+              this.logger?.error("Error adding column", columnName, e);
               throw e;
             });
 
@@ -122,7 +128,7 @@ export class SQLStorage extends Storage {
               .catch(() => {});
           }
         } else if (tableColumn.dataType !== storageFieldType.type) {
-          console.error(
+          this.logger?.warn(
             "Column type mismatch:",
             columnName,
             "expected to have type:",
@@ -405,7 +411,7 @@ export class SQLStorage extends Storage {
 
     try {
       return await fn({
-        trx: new SQLStorage(trx as typeof this.db, this.schema),
+        trx: new SQLStorage(trx as typeof this.db, this.schema, this.logger),
         commit: () => trx.commit().execute(),
         rollback: () => trx.rollback().execute(),
       }).then((v) => {

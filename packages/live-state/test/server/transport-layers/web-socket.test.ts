@@ -54,6 +54,13 @@ describe("webSocketAdapter", () => {
         users: { name: "users" },
         posts: { name: "posts" },
       },
+      logger: {
+        critical: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+      },
     } as unknown as Server<AnyRouter>;
 
     mockWebSocket = {

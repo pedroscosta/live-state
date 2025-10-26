@@ -12,6 +12,8 @@ import type { AnyRouter, Server } from "..";
 export const httpTransportLayer = (
   server: Server<AnyRouter>
 ): ((request: Request) => Promise<Response>) => {
+  const logger = server.logger;
+
   return async (request: Request) => {
     try {
       const headers =
@@ -142,7 +144,7 @@ export const httpTransportLayer = (
 
           return Response.json(result);
         } catch (e) {
-          console.error("Error parsing mutation from the client:", e);
+          logger.error("Error parsing mutation from the client:", e);
 
           return Response.json(
             { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },
@@ -156,7 +158,7 @@ export const httpTransportLayer = (
         { status: 404 }
       );
     } catch (e) {
-      console.error("Unexpected error:", e);
+      logger.error("Unexpected error:", e);
       return Response.json(
         { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },
         { status: 500 }

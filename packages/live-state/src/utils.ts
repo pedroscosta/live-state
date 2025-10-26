@@ -161,3 +161,87 @@ export const applyWhere = <T extends object>(
       : obj[k as keyof T] === comparisonValue;
   });
 };
+
+export const LogLevel = {
+  CRITICAL: 0,
+  ERROR: 1,
+  WARN: 2,
+  INFO: 3,
+  DEBUG: 4,
+} as const;
+
+export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
+
+export type LogLevelName = keyof typeof LogLevel;
+
+/**
+ * Logger configuration options
+ */
+export interface LoggerOptions {
+  /**
+   * Minimum log level to display. Anything below this level will be muted.
+   * @default LogLevel.INFO
+   */
+  level?: LogLevel;
+  /**
+   * Optional prefix to add to all log messages
+   */
+  prefix?: string;
+}
+
+export class Logger {
+  private level: LogLevel;
+  private prefix: string;
+
+  constructor(options: LoggerOptions = {}) {
+    this.level = options.level ?? LogLevel.INFO;
+    this.prefix = options.prefix ? `[${options.prefix}] ` : "";
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: Logger accepts any args like console
+  critical(...args: any[]): void {
+    if (this.level >= LogLevel.CRITICAL) {
+      console.error(`${this.prefix}[CRITICAL]`, ...args);
+    }
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: Logger accepts any args like console
+  error(...args: any[]): void {
+    if (this.level >= LogLevel.ERROR) {
+      console.error(`${this.prefix}[ERROR]`, ...args);
+    }
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: Logger accepts any args like console
+  warn(...args: any[]): void {
+    if (this.level >= LogLevel.WARN) {
+      console.warn(`${this.prefix}[WARN]`, ...args);
+    }
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: Logger accepts any args like console
+  info(...args: any[]): void {
+    if (this.level >= LogLevel.INFO) {
+      console.log(`${this.prefix}[INFO]`, ...args);
+    }
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: Logger accepts any args like console
+  debug(...args: any[]): void {
+    if (this.level >= LogLevel.DEBUG) {
+      console.log(`${this.prefix}[DEBUG]`, ...args);
+    }
+  }
+
+  setLevel(level: LogLevel): void {
+    this.level = level;
+  }
+
+  getLevel(): LogLevel {
+    return this.level;
+  }
+}
+
+export const createLogger = (options?: LoggerOptions): Logger => {
+  return new Logger(options);
+};
