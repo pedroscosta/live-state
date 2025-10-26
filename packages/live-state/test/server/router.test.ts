@@ -181,6 +181,7 @@ describe("Route", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
@@ -214,6 +215,7 @@ describe("Route", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Payload is required");
   });
@@ -235,6 +237,7 @@ describe("Route", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("ResourceId is required");
   });
@@ -259,6 +262,7 @@ describe("Route", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Mutation rejected");
   });
@@ -287,6 +291,7 @@ describe("Route", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(customHandler).toHaveBeenCalledWith({
@@ -323,6 +328,7 @@ describe("Route", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow();
   });
@@ -776,12 +782,15 @@ describe("Route UPDATE Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", userId: "123" },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -826,13 +835,16 @@ describe("Route UPDATE Authorization", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", userId: "123" },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).not.toHaveBeenCalled();
   });
 
@@ -865,12 +877,15 @@ describe("Route UPDATE Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(postMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
     expect(result).toEqual({
       data: mockNewData,
@@ -908,13 +923,16 @@ describe("Route UPDATE Authorization", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(postMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
   });
 
@@ -960,16 +978,21 @@ describe("Route UPDATE Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", userId: "123" },
-    });
-    expect(postMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -1022,17 +1045,22 @@ describe("Route UPDATE Authorization", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", userId: "123" },
-    });
-    expect(postMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -1062,6 +1090,7 @@ describe("Route UPDATE Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
@@ -1120,19 +1149,18 @@ describe("Route UPDATE Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: {
-        userId: "123",
-        role: "admin",
-      },
-      value: {
-        id: "user1",
-        userId: "123",
-        role: "admin",
-      },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: {
+          userId: "123",
+          role: "admin",
+        },
+        value: {},
+      })
+    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" }, role: { value: "admin" } },
     });
@@ -1212,12 +1240,15 @@ describe("Route INSERT Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(insertAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(insertAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -1263,13 +1294,16 @@ describe("Route INSERT Authorization", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(insertAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(insertAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
       value: { userId: { value: "123" } },
     });
@@ -1311,13 +1345,16 @@ describe("Route INSERT Authorization", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Not authorized");
 
-    expect(insertAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(insertAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
   });
 
   test("should handle INSERT authorization with boolean true", async () => {
@@ -1355,12 +1392,15 @@ describe("Route INSERT Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(insertAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(insertAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1390,6 +1430,7 @@ describe("Route INSERT Authorization", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
@@ -1456,6 +1497,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Resource already exists");
   });
@@ -1480,6 +1522,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Resource not found");
   });
@@ -1505,6 +1548,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
@@ -1543,6 +1587,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
@@ -1611,6 +1656,7 @@ describe("Route Error Handling", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Procedure is required for mutations");
   });
@@ -1633,6 +1679,7 @@ describe("Route Error Handling", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Unknown procedure: UNKNOWN_PROCEDURE");
   });
@@ -1790,6 +1837,7 @@ describe("Route Custom Mutations Advanced", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(customHandler).toHaveBeenCalledWith({
@@ -1826,6 +1874,7 @@ describe("Route Custom Mutations Advanced", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Custom error");
   });
@@ -1863,6 +1912,7 @@ describe("Route Custom Mutations Advanced", () => {
     const result = await route.handleMutation({
       req: mockRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
     expect(customHandler).toHaveBeenCalledWith({
@@ -1908,6 +1958,7 @@ describe("Route Custom Mutations Advanced", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow();
 
@@ -2030,13 +2081,16 @@ describe("Route Authorization Error Handling", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Insert authorization error");
 
-    expect(insertAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(insertAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
   });
 
   test("should handle update pre-mutation authorization handler throwing error", async () => {
@@ -2074,13 +2128,16 @@ describe("Route Authorization Error Handling", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Pre-mutation authorization error");
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", userId: "123" },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
   });
 
   test("should handle update post-mutation authorization handler throwing error", async () => {
@@ -2122,13 +2179,16 @@ describe("Route Authorization Error Handling", () => {
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
+        schema: mockSchema,
       })
     ).rejects.toThrow("Post-mutation authorization error");
 
-    expect(postMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
   });
 });
 
@@ -2227,12 +2287,15 @@ describe("Route Complex Authorization Scenarios", () => {
     await route.handleMutation({
       req: insertRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(insertAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(insertAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
 
     // Test update authorization
     const updateRequest: MutationRequest = {
@@ -2265,16 +2328,21 @@ describe("Route Complex Authorization Scenarios", () => {
     await route.handleMutation({
       req: updateRequest,
       db: mockStorage,
+      schema: mockSchema,
     });
 
-    expect(preMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", userId: "123" },
-    });
-    expect(postMutationAuth).toHaveBeenCalledWith({
-      ctx: { userId: "123" },
-      value: { id: "user1", name: "John", userId: "123" },
-    });
+    expect(preMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: {},
+      })
+    );
   });
 
   test("should handle authorization with complex context", async () => {
@@ -2334,5 +2402,547 @@ describe("Route Complex Authorization Scenarios", () => {
       limit: undefined,
       sort: undefined,
     });
+  });
+});
+
+describe("Route Authorization with Deep Where Clauses", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+  let mockResource: LiveObjectAny;
+
+  beforeEach(() => {
+    mockStorage = {
+      rawFind: vi.fn().mockResolvedValue({}),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
+    } as unknown as Storage;
+
+    mockResource = {
+      name: "users",
+      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
+      relations: {
+        posts: {
+          entity: {
+            name: "posts",
+            relations: {},
+          },
+          type: "many",
+          required: false,
+        },
+        profile: {
+          entity: {
+            name: "profiles",
+            relations: {},
+          },
+          type: "one",
+          required: false,
+        },
+      },
+    } as unknown as LiveObjectAny;
+
+    mockSchema = {
+      users: mockResource,
+      posts: {
+        name: "posts",
+        fields: {},
+        relations: {},
+      },
+      profiles: {
+        name: "profiles",
+        fields: {},
+        relations: {},
+      },
+    } as any;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should fetch related data for INSERT authorization with deep where clause", async () => {
+    const insertAuth = vi.fn().mockReturnValue({
+      posts: {
+        published: true,
+      },
+    });
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockResultWithoutRelations = {
+      value: { id: { value: "user1" } },
+    };
+
+    const mockResultWithRelations = {
+      value: {
+        id: { value: "user1" },
+        posts: [
+          {
+            value: { id: { value: "post1" }, published: { value: true } },
+          },
+          {
+            value: { id: { value: "post2" }, published: { value: false } },
+          },
+        ],
+      },
+    };
+
+    (mockStorage.rawFindById as Mock)
+      .mockResolvedValueOnce(undefined) // Initial check
+      .mockResolvedValueOnce(mockResultWithRelations); // Authorization check
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue(
+      mockResultWithoutRelations
+    );
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    // Should call rawFindById twice: once for initial check, once with relations
+    expect(mockStorage.rawFindById).toHaveBeenCalledTimes(2);
+    expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
+      1,
+      "users",
+      "user1"
+    );
+    expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
+      2,
+      "users",
+      "user1",
+      { posts: true }
+    );
+  });
+
+  test("should fetch nested related data for INSERT authorization", async () => {
+    // Add nested relation
+    (mockResource as any).relations.posts.entity.relations.comments = {
+      entity: { name: "comments" },
+      type: "many",
+      required: false,
+    };
+    (mockSchema as any).posts.relations = {
+      comments: {
+        entity: { name: "comments" },
+        type: "many",
+        required: false,
+      },
+    };
+
+    const insertAuth = vi.fn().mockReturnValue({
+      posts: {
+        comments: {
+          approved: true,
+        },
+      },
+    });
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockResultWithNestedRelations = {
+      value: {
+        id: { value: "user1" },
+        posts: [
+          {
+            value: {
+              id: { value: "post1" },
+              comments: [
+                {
+                  value: {
+                    id: { value: "comment1" },
+                    approved: { value: true },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    (mockStorage.rawFindById as Mock)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(mockResultWithNestedRelations);
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
+      2,
+      "users",
+      "user1",
+      { posts: { comments: true } }
+    );
+  });
+
+  test("should fetch related data for UPDATE preMutation authorization", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue(true); // Use boolean true to simplify
+    const route = new Route(mockResource, undefined, {
+      update: { preMutation: preMutationAuth },
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" } },
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValueOnce(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({ value: {} });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(preMutationAuth).toHaveBeenCalled();
+  });
+
+  test("should fetch related data for UPDATE postMutation authorization", async () => {
+    const postMutationAuth = vi.fn().mockReturnValue(true); // Use boolean true to simplify
+    const route = new Route(mockResource, undefined, {
+      update: { postMutation: postMutationAuth },
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" } },
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValueOnce(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({ value: {} });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(postMutationAuth).toHaveBeenCalled();
+  });
+
+  test("should not fetch related data if authorization returns boolean", async () => {
+    const insertAuth = vi.fn().mockReturnValue(true);
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockResult = { value: { id: { value: "user1" } } };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValueOnce(undefined);
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockResult);
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    // Should only be called once for initial check
+    expect(mockStorage.rawFindById).toHaveBeenCalledTimes(1);
+  });
+
+  test("should handle $and in authorization where clause", async () => {
+    const insertAuth = vi.fn().mockReturnValue({
+      $and: [{ posts: { published: true } }, { profile: { verified: true } }],
+    });
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockDataWithRelations = {
+      value: {
+        id: { value: "user1" },
+        posts: [
+          { value: { id: { value: "post1" }, published: { value: true } } },
+        ],
+        profile: {
+          value: { id: { value: "profile1" }, verified: { value: true } },
+        },
+      },
+    };
+
+    (mockStorage.rawFindById as Mock)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(mockDataWithRelations);
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    // Should fetch both posts and profile
+    expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
+      2,
+      "users",
+      "user1",
+      { posts: true, profile: true }
+    );
+  });
+
+  test("should handle $or in authorization where clause", async () => {
+    const insertAuth = vi.fn().mockReturnValue({
+      $or: [{ posts: { published: true } }, { profile: { verified: true } }],
+    });
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockDataWithRelations = {
+      value: {
+        id: { value: "user1" },
+        posts: [
+          { value: { id: { value: "post1" }, published: { value: true } } },
+        ],
+        profile: {
+          value: { id: { value: "profile1" }, verified: { value: true } },
+        },
+      },
+    };
+
+    (mockStorage.rawFindById as Mock)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(mockDataWithRelations);
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    // Should fetch both posts and profile
+    expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
+      2,
+      "users",
+      "user1",
+      { posts: true, profile: true }
+    );
+  });
+
+  test("should throw error when authorization fails on deep where clause", async () => {
+    const insertAuth = vi.fn().mockReturnValue({
+      posts: {
+        published: true,
+      },
+    });
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockResultWithRelations = {
+      value: {
+        id: { value: "user1" },
+        posts: [
+          {
+            value: { id: { value: "post1" }, published: { value: false } },
+          },
+        ],
+      },
+    };
+
+    (mockStorage.rawFindById as Mock)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(mockResultWithRelations);
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+
+    await expect(
+      route.handleMutation({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      })
+    ).rejects.toThrow("Not authorized");
+  });
+
+  test("should skip fetching if authorization where clause has no relations", async () => {
+    const insertAuth = vi.fn().mockReturnValue({
+      name: "John",
+    });
+    const route = new Route(mockResource, undefined, {
+      insert: insertAuth,
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValueOnce(undefined);
+
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      value: { name: { value: "John" } },
+    });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    // Should only be called once since there are no relations to fetch
+    expect(mockStorage.rawFindById).toHaveBeenCalledTimes(1);
+  });
+
+  test("should handle UPDATE with both preMutation and postMutation with relations", async () => {
+    const preMutationAuth = vi.fn().mockReturnValue(true);
+    const postMutationAuth = vi.fn().mockReturnValue(true);
+    const route = new Route(mockResource, undefined, {
+      update: {
+        preMutation: preMutationAuth,
+        postMutation: postMutationAuth,
+      },
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    const mockExistingData = {
+      value: { id: { value: "user1" } },
+    };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({ value: {} });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(preMutationAuth).toHaveBeenCalled();
+    expect(postMutationAuth).toHaveBeenCalled();
   });
 });

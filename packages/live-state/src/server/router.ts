@@ -321,18 +321,12 @@ export class Route<
             throw new Error("Not authorized");
           }
         } else {
-          console.log(
-            "authorizationClause",
-            JSON.stringify(authorizationClause, null, 2)
-          );
           // Extract include clauses from the authorization clause
           const includeClause = extractIncludeFromWhere(
             authorizationClause,
             req.resource,
             schema
           );
-
-          console.log("includeClause", includeClause);
 
           // Get authorization target with relations if needed
           const authorizationTarget =
@@ -347,11 +341,6 @@ export class Route<
           const inferredValue = inferValue(authorizationTarget) as Simplify<
             InferLiveObjectWithRelationalIds<TResourceSchema>
           >;
-
-          console.log(
-            "authorizationTarget",
-            JSON.stringify(inferredValue, null, 2)
-          );
 
           (inferredValue as any)["id"] =
             (inferredValue as any)["id"] ?? req.resourceId!;

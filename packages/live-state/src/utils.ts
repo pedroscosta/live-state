@@ -31,6 +31,10 @@ export const extractIncludeFromWhere = (
 
   const resourceSchema = schema[resource];
 
+  if (!resourceSchema) {
+    return include;
+  }
+
   const processWhere = (w: WhereClause<any>) => {
     if (w.$and) {
       w.$and.forEach(processWhere);
@@ -39,7 +43,7 @@ export const extractIncludeFromWhere = (
     } else {
       Object.entries(w).forEach(([key, value]) => {
         // Check if this key is a relation
-        if (resourceSchema.relations[key]) {
+        if (resourceSchema.relations?.[key]) {
           include[key] = true;
 
           // If the value is a nested where clause, recursively extract includes
@@ -134,10 +138,13 @@ export const applyWhere = <T extends object>(
       }
 
       // Handle nested objects
-      if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
-        return false;
-
       const fieldValue = obj[k as keyof T];
+
+      if (
+        !fieldValue ||
+        (typeof fieldValue !== "object" && !Array.isArray(fieldValue))
+      )
+        return false;
 
       // If the field is an array, check if any element matches the where clause
       if (Array.isArray(fieldValue)) {
