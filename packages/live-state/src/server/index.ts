@@ -96,6 +96,7 @@ export class Server<TRouter extends AnyRouter> {
     return new Server<TRouter>(opts);
   }
 
+  /** @internal @deprecated */
   public subscribeToMutations(handler: MutationHandler) {
     this.mutationSubscriptions.add(handler);
 
@@ -104,6 +105,7 @@ export class Server<TRouter extends AnyRouter> {
     };
   }
 
+  /** @internal */
   public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
     const batcher = new Batcher(this.storage);
 
@@ -236,6 +238,7 @@ export class Server<TRouter extends AnyRouter> {
     })(opts.req);
   }
 
+  /** @internal */
   public async handleMutation(opts: { req: MutationRequest }): Promise<any> {
     const result = await this.wrapInMiddlewares(
       async (req: MutationRequest) => {
@@ -293,6 +296,10 @@ export class Server<TRouter extends AnyRouter> {
   public context(contextProvider: ContextProvider) {
     this.contextProvider = contextProvider;
     return this;
+  }
+
+  public getStorage() {
+    return this.storage;
   }
 
   private wrapInMiddlewares<T extends Request>(
