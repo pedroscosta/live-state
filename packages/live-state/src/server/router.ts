@@ -15,7 +15,7 @@ import {
   type Schema,
   type WhereClause,
 } from "../schema";
-import { applyWhere, type Simplify } from "../utils";
+import { applyWhere, extractIncludeFromWhere, type Simplify } from "../utils";
 import type {
   BaseRequest,
   Middleware,
@@ -181,9 +181,11 @@ export class Route<
   public handleMutation = async ({
     req,
     db,
+    schema,
   }: {
     req: MutationRequest;
     db: Storage;
+    schema: Schema<any>;
   }): Promise<any> => {
     return await this.wrapInMiddlewares(async (req: MutationRequest) => {
       if (!req.procedure)
@@ -204,6 +206,7 @@ export class Route<
           req: req as MutationRequest<LiveObjectMutationInput<TResourceSchema>>,
           db,
           operation: req.procedure,
+          schema,
         });
       } else {
         throw new Error(`Unknown procedure: ${req.procedure}`);
@@ -215,10 +218,12 @@ export class Route<
     req,
     db,
     operation,
+    schema,
   }: {
     req: MutationRequest;
     db: Storage;
     operation: "INSERT" | "UPDATE";
+    schema: Schema<any>;
   }): Promise<MutationResult<TResourceSchema>> => {
     if (!req.input) throw new Error("Payload is required");
     if (!req.resourceId) throw new Error("ResourceId is required");
@@ -253,27 +258,47 @@ export class Route<
         );
 
         if (this.authorization?.insert) {
-          const inferredValue = inferValue(result) as Simplify<
-            InferLiveObjectWithRelationalIds<TResourceSchema>
-          >;
-
-          (inferredValue as any)["id"] =
-            (inferredValue as any)["id"] ?? req.resourceId!;
-
           const authorizationClause = this.authorization.insert({
             ctx: req.context,
-            value: inferredValue as Simplify<
+            value: {} as Simplify<
               InferLiveObjectWithRelationalIds<TResourceSchema>
             >,
           });
 
-          const authorized =
-            typeof authorizationClause === "boolean"
-              ? authorizationClause
-              : applyWhere(inferredValue, authorizationClause);
+          if (typeof authorizationClause === "boolean") {
+            if (!authorizationClause) {
+              throw new Error("Not authorized");
+            }
+          } else {
+            // Extract include clauses from the authorization clause
+            const includeClause = extractIncludeFromWhere(
+              authorizationClause,
+              req.resource,
+              schema
+            );
 
-          if (!authorized) {
-            throw new Error("Not authorized");
+            // Get authorization target with relations if needed
+            const authorizationTarget =
+              Object.keys(includeClause).length > 0
+                ? await trx.rawFindById<TResourceSchema>(
+                    req.resource,
+                    req.resourceId!,
+                    includeClause
+                  )
+                : result;
+
+            const inferredValue = inferValue(authorizationTarget) as Simplify<
+              InferLiveObjectWithRelationalIds<TResourceSchema>
+            >;
+
+            (inferredValue as any)["id"] =
+              (inferredValue as any)["id"] ?? req.resourceId!;
+
+            const authorized = applyWhere(inferredValue, authorizationClause);
+
+            if (!authorized) {
+              throw new Error("Not authorized");
+            }
           }
         }
 
@@ -284,25 +309,58 @@ export class Route<
       }
 
       if (this.authorization?.update?.preMutation) {
-        const inferredValue = inferValue(target) as Simplify<
-          InferLiveObjectWithRelationalIds<TResourceSchema>
-        >;
-
-        (inferredValue as any)["id"] =
-          (inferredValue as any)["id"] ?? req.resourceId!;
-
         const authorizationClause = this.authorization.update.preMutation({
           ctx: req.context,
-          value: inferredValue,
+          value: {} as Simplify<
+            InferLiveObjectWithRelationalIds<TResourceSchema>
+          >,
         });
 
-        const authorized =
-          typeof authorizationClause === "boolean"
-            ? authorizationClause
-            : applyWhere(inferredValue, authorizationClause);
+        if (typeof authorizationClause === "boolean") {
+          if (!authorizationClause) {
+            throw new Error("Not authorized");
+          }
+        } else {
+          console.log(
+            "authorizationClause",
+            JSON.stringify(authorizationClause, null, 2)
+          );
+          // Extract include clauses from the authorization clause
+          const includeClause = extractIncludeFromWhere(
+            authorizationClause,
+            req.resource,
+            schema
+          );
 
-        if (!authorized) {
-          throw new Error("Not authorized");
+          console.log("includeClause", includeClause);
+
+          // Get authorization target with relations if needed
+          const authorizationTarget =
+            Object.keys(includeClause).length > 0
+              ? await trx.rawFindById<TResourceSchema>(
+                  req.resource,
+                  req.resourceId!,
+                  includeClause
+                )
+              : target;
+
+          const inferredValue = inferValue(authorizationTarget) as Simplify<
+            InferLiveObjectWithRelationalIds<TResourceSchema>
+          >;
+
+          console.log(
+            "authorizationTarget",
+            JSON.stringify(inferredValue, null, 2)
+          );
+
+          (inferredValue as any)["id"] =
+            (inferredValue as any)["id"] ?? req.resourceId!;
+
+          const authorized = applyWhere(inferredValue, authorizationClause);
+
+          if (!authorized) {
+            throw new Error("Not authorized");
+          }
         }
       }
 
@@ -313,25 +371,47 @@ export class Route<
       );
 
       if (this.authorization?.update?.postMutation) {
-        const inferredValue = inferValue(result) as Simplify<
-          InferLiveObjectWithRelationalIds<TResourceSchema>
-        >;
-
-        (inferredValue as any)["id"] =
-          (inferredValue as any)["id"] ?? req.resourceId!;
-
         const authorizationClause = this.authorization.update.postMutation({
           ctx: req.context,
-          value: inferredValue,
+          value: {} as Simplify<
+            InferLiveObjectWithRelationalIds<TResourceSchema>
+          >,
         });
 
-        const authorized =
-          typeof authorizationClause === "boolean"
-            ? authorizationClause
-            : applyWhere(inferredValue, authorizationClause);
+        if (typeof authorizationClause === "boolean") {
+          if (!authorizationClause) {
+            throw new Error("Not authorized");
+          }
+        } else {
+          // Extract include clauses from the authorization clause
+          const includeClause = extractIncludeFromWhere(
+            authorizationClause,
+            req.resource,
+            schema
+          );
 
-        if (!authorized) {
-          throw new Error("Not authorized");
+          // Get authorization target with relations if needed
+          const authorizationTarget =
+            Object.keys(includeClause).length > 0
+              ? await trx.rawFindById<TResourceSchema>(
+                  req.resource,
+                  req.resourceId!,
+                  includeClause
+                )
+              : result;
+
+          const inferredValue = inferValue(authorizationTarget) as Simplify<
+            InferLiveObjectWithRelationalIds<TResourceSchema>
+          >;
+
+          (inferredValue as any)["id"] =
+            (inferredValue as any)["id"] ?? req.resourceId!;
+
+          const authorized = applyWhere(inferredValue, authorizationClause);
+
+          if (!authorized) {
+            throw new Error("Not authorized");
+          }
         }
       }
 

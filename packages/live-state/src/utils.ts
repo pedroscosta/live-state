@@ -1,5 +1,10 @@
 import { xxHash32 } from "js-xxhash";
-import type { LiveObjectAny, WhereClause } from "./schema";
+import type {
+  IncludeClause,
+  LiveObjectAny,
+  Schema,
+  WhereClause,
+} from "./schema";
 
 export type Simplify<T> =
   T extends Record<string, unknown>
@@ -12,6 +17,55 @@ export type Simplify<T> =
 
 export const hash = (value: unknown) => {
   return xxHash32(JSON.stringify(value)).toString(32);
+};
+
+/**
+ * Extracts include clauses from a where clause by finding all relation references
+ */
+export const extractIncludeFromWhere = (
+  where: WhereClause<any>,
+  resource: string,
+  schema: Schema<any>
+): IncludeClause<any> => {
+  const include: any = {};
+
+  const resourceSchema = schema[resource];
+
+  const processWhere = (w: WhereClause<any>) => {
+    if (w.$and) {
+      w.$and.forEach(processWhere);
+    } else if (w.$or) {
+      w.$or.forEach(processWhere);
+    } else {
+      Object.entries(w).forEach(([key, value]) => {
+        // Check if this key is a relation
+        if (resourceSchema.relations[key]) {
+          include[key] = true;
+
+          // If the value is a nested where clause, recursively extract includes
+          if (
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value)
+          ) {
+            const nestedInclude = extractIncludeFromWhere(
+              value as WhereClause<any>,
+              resourceSchema.relations[key].entity.name,
+              schema
+            );
+
+            // Only set nested include if it has any relations
+            if (Object.keys(nestedInclude).length > 0) {
+              include[key] = nestedInclude;
+            }
+          }
+        }
+      });
+    }
+  };
+
+  processWhere(where);
+  return include as IncludeClause<any>;
 };
 
 export const applyWhere = <T extends object>(
@@ -83,7 +137,16 @@ export const applyWhere = <T extends object>(
       if (!obj[k as keyof T] || typeof obj[k as keyof T] !== "object")
         return false;
 
-      return applyWhere(obj[k as keyof T] as object, v, not);
+      const fieldValue = obj[k as keyof T];
+
+      // If the field is an array, check if any element matches the where clause
+      if (Array.isArray(fieldValue)) {
+        return not
+          ? !fieldValue.some((item) => applyWhere(item as object, v, false))
+          : fieldValue.some((item) => applyWhere(item as object, v, false));
+      }
+
+      return applyWhere(fieldValue as object, v, not);
     }
 
     return not
