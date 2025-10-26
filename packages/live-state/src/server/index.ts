@@ -81,7 +81,7 @@ export class Server<TRouter extends AnyRouter> {
       this.middlewares.add(middleware);
     });
 
-    this.storage.updateSchema(this.schema);
+    this.storage.init(this.schema, this.logger);
     this.contextProvider = opts.contextProvider;
   }
 

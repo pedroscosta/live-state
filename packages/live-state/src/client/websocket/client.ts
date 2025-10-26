@@ -67,13 +67,18 @@ class InnerClient implements QueryExecutor {
       level: opts.logLevel ?? LogLevel.INFO,
     });
 
-    this.store = new OptimisticStore(opts.schema, opts.storage, (stack) => {
-      Object.values(stack)
-        ?.flat()
-        ?.forEach((m) => {
-          this.sendWsMessage(m);
-        });
-    });
+    this.store = new OptimisticStore(
+      opts.schema,
+      opts.storage,
+      this.logger,
+      (stack) => {
+        Object.values(stack)
+          ?.flat()
+          ?.forEach((m) => {
+            this.sendWsMessage(m);
+          });
+      }
+    );
 
     this.ws = new WebSocketClient({
       url: opts.url,

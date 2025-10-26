@@ -12,11 +12,11 @@ import {
   type Schema,
   type WhereClause,
 } from "../../schema";
-import type { Simplify } from "../../utils";
+import type { Logger, Simplify } from "../../utils";
 
 export abstract class Storage {
   /** @internal */
-  public abstract updateSchema(opts: Schema<any>): Promise<void>;
+  public abstract init(opts: Schema<any>, logger?: Logger): Promise<void>;
 
   /** @internal */
   public abstract rawFindById<T extends LiveObjectAny>(

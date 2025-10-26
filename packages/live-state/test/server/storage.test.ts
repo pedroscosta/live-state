@@ -25,7 +25,7 @@ vi.mock("kysely/helpers/postgres", () => ({
 describe("Storage", () => {
   test("should define abstract methods", () => {
     const storage = new (class extends Storage {
-      async updateSchema() {}
+      async init() {}
       async rawFindById() {
         return undefined;
       }
@@ -49,7 +49,7 @@ describe("Storage", () => {
       }
     })();
 
-    expect(typeof storage.updateSchema).toBe("function");
+    expect(typeof storage.init).toBe("function");
     expect(typeof storage.rawFindById).toBe("function");
     expect(typeof storage.findOne).toBe("function");
     expect(typeof storage.rawFind).toBe("function");
@@ -330,6 +330,7 @@ describe("SQLStorage", () => {
   let storage: SQLStorage;
   let mockDb: any;
   let mockPool: any;
+  let mockLogger: any;
 
   beforeEach(() => {
     mockDb = {
@@ -392,6 +393,14 @@ describe("SQLStorage", () => {
 
     mockPool = {};
 
+    mockLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      critical: vi.fn(),
+    };
+
     (Kysely as Mock).mockImplementation(() => mockDb);
     (PostgresDialect as Mock).mockImplementation(() => ({}));
 
@@ -437,7 +446,7 @@ describe("SQLStorage", () => {
 
     mockDb.introspection.getTables.mockResolvedValue([]);
 
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     expect(mockDb.schema.createTable).toHaveBeenCalledWith("users");
     expect(mockDb.schema.createTable).toHaveBeenCalledWith("users_meta");
@@ -480,7 +489,7 @@ describe("SQLStorage", () => {
 
     mockDb.schema.alterTable.mockReturnValue(mockAlterTable);
 
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     expect(mockDb.schema.alterTable).toHaveBeenCalledWith("users");
     expect(mockAlterTable.addColumn).toHaveBeenCalledWith(
@@ -513,7 +522,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockRawValue = {
       id: "test-id",
@@ -555,7 +564,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     mockDb.executeTakeFirst.mockResolvedValue(undefined);
 
@@ -587,7 +596,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockResource = { name: "users" } as LiveObjectAny;
     const mockRawValue = {
@@ -620,7 +629,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockResource = { name: "users" } as LiveObjectAny;
     mockDb.executeTakeFirst.mockResolvedValue(undefined);
@@ -653,7 +662,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockRawResult = [
       {
@@ -716,7 +725,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     mockDb.execute.mockResolvedValue([]);
 
@@ -748,7 +757,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockResource = { name: "users" } as LiveObjectAny;
     const mockRawResult = [
@@ -791,7 +800,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockValue: MaterializedLiveType<any> = {
       value: {
@@ -846,7 +855,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockValue: MaterializedLiveType<any> = {
       value: {
@@ -968,7 +977,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockTrx = {
       commit: vi
@@ -1029,7 +1038,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockTrx = {
       commit: vi
@@ -1103,7 +1112,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockRawResult = [
       {
@@ -1165,7 +1174,7 @@ describe("SQLStorage", () => {
         },
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockRawResult = [
       {
@@ -1227,7 +1236,7 @@ describe("SQLStorage", () => {
         },
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockRawValue = {
       id: "test-id",
@@ -1283,7 +1292,7 @@ describe("SQLStorage", () => {
         },
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockResource = { name: "users" } as LiveObjectAny;
     const mockRawValue = {
@@ -1330,7 +1339,7 @@ describe("SQLStorage", () => {
         },
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockResource = { name: "users" } as LiveObjectAny;
     const mockRawResult = [
@@ -1421,7 +1430,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockValue: MaterializedLiveType<any> = {
       value: {
@@ -1475,7 +1484,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockValue: MaterializedLiveType<any> = {
       value: {
@@ -1554,7 +1563,7 @@ describe("SQLStorage", () => {
       },
     ]);
 
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Should not create tables or add columns since they already exist
     expect(mockDb.schema.createTable).not.toHaveBeenCalled();
@@ -1562,8 +1571,6 @@ describe("SQLStorage", () => {
   });
 
   test("should handle updateSchema with column type mismatch", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
     const mockSchema: Schema<any> = {
       users: {
         name: "users",
@@ -1603,9 +1610,9 @@ describe("SQLStorage", () => {
       },
     ]);
 
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema, mockLogger);
 
-    expect(consoleSpy).toHaveBeenCalledWith(
+    expect(mockLogger.warn).toHaveBeenCalledWith(
       "Column type mismatch:",
       "age",
       "expected to have type:",
@@ -1613,8 +1620,6 @@ describe("SQLStorage", () => {
       "but has type:",
       "varchar"
     );
-
-    consoleSpy.mockRestore();
   });
 
   test("should handle updateSchema with field that has all storage options", async () => {
@@ -1656,7 +1661,7 @@ describe("SQLStorage", () => {
 
     mockDb.schema.alterTable.mockReturnValue(mockAlterTable);
 
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     expect(mockAlterTable.addColumn).toHaveBeenCalledWith(
       "email",
@@ -1712,12 +1717,10 @@ describe("SQLStorage", () => {
     });
 
     // Should not throw error, just catch and continue
-    await expect(storage.updateSchema(mockSchema)).resolves.not.toThrow();
+    await expect(storage.init(mockSchema)).resolves.not.toThrow();
   });
 
   test("should handle updateSchema with column creation error", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
     const mockSchema: Schema<any> = {
       users: {
         name: "users",
@@ -1752,24 +1755,26 @@ describe("SQLStorage", () => {
 
     mockDb.schema.alterTable.mockReturnValue(mockAlterTable);
 
-    await expect(storage.updateSchema(mockSchema)).rejects.toThrow(
+    await expect(storage.init(mockSchema, mockLogger)).rejects.toThrow(
       "Column creation failed"
     );
 
-    expect(consoleSpy).toHaveBeenCalledWith(
+    expect(mockLogger.error).toHaveBeenCalledWith(
       "Error adding column",
       "name",
       expect.any(Error)
     );
-
-    consoleSpy.mockRestore();
   });
 
   test("should handle SQLStorage constructor with Kysely instance", () => {
     const mockKyselyInstance = {} as any;
     const mockSchema = {} as Schema<any>;
 
-    const storageWithKysely = new SQLStorage(mockKyselyInstance, mockSchema);
+    const storageWithKysely = new SQLStorage(
+      mockKyselyInstance,
+      mockSchema,
+      mockLogger
+    );
 
     expect(storageWithKysely).toBeInstanceOf(SQLStorage);
   });
@@ -1797,7 +1802,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     const mockValue: MaterializedLiveType<any> = {
       value: {
@@ -1851,7 +1856,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations
     const mockSavepoint = {
@@ -1916,7 +1921,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations
     const mockSavepoint = {
@@ -1965,7 +1970,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations
     const mockSavepoint = {
@@ -2014,7 +2019,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations
     const mockSavepoint = {
@@ -2064,7 +2069,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations
     const mockSavepoint = {
@@ -2119,7 +2124,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations for nested transaction
     const mockNestedSavepoint = {
@@ -2171,7 +2176,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations for nested transaction
     const mockNestedSavepoint = {
@@ -2223,7 +2228,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations
     const mockSavepoint = {
@@ -2275,7 +2280,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations for multiple levels
     const mockSavepoint1 = {
@@ -2345,7 +2350,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations with already committed transaction
     const mockSavepoint = {
@@ -2396,7 +2401,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations with already rolled back transaction
     const mockSavepoint = {
@@ -2447,7 +2452,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock savepoint operations with error
     const mockSavepoint = {
@@ -2504,7 +2509,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock outer transaction
     const mockOuterTrx = {
@@ -2544,7 +2549,11 @@ describe("SQLStorage", () => {
     const result = await storage.transaction(async ({ trx }) => {
       // This creates the outer transaction
       // Now create a nested transaction
-      const nestedStorage = new SQLStorage(mockOuterTrx as any, mockSchema);
+      const nestedStorage = new SQLStorage(
+        mockOuterTrx as any,
+        mockSchema,
+        mockLogger
+      );
 
       try {
         await nestedStorage.transaction(async ({ rollback }) => {
@@ -2587,7 +2596,7 @@ describe("SQLStorage", () => {
         relations: {},
       },
     };
-    await storage.updateSchema(mockSchema);
+    await storage.init(mockSchema);
 
     // Mock outer transaction
     const mockOuterTrx = {
@@ -2627,7 +2636,11 @@ describe("SQLStorage", () => {
     await expect(
       storage.transaction(async ({ trx, rollback }) => {
         // Create nested transaction
-        const nestedStorage = new SQLStorage(mockOuterTrx as any, mockSchema);
+        const nestedStorage = new SQLStorage(
+          mockOuterTrx as any,
+          mockSchema,
+          mockLogger
+        );
 
         await nestedStorage.transaction(async ({ commit }) => {
           await commit(); // Commit nested transaction (releases savepoint)

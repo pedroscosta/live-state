@@ -51,6 +51,7 @@ describe("OptimisticStore", () => {
   let mockKVStorage: any;
   let mockObjectGraph: any;
   let afterLoadMutations: Mock;
+  let mockLogger: any;
 
   beforeEach(() => {
     // Create mock schema
@@ -77,6 +78,15 @@ describe("OptimisticStore", () => {
     mockSchema = {
       users: user.setRelations(userRelations.relations),
       posts: post.setRelations(postRelations.relations),
+    };
+
+    // Mock Logger
+    mockLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      critical: vi.fn(),
     };
 
     // Mock KVStorage
@@ -110,7 +120,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should create an OptimisticStore instance", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     expect(store).toBeInstanceOf(OptimisticStore);
     expect(store.schema).toBe(mockSchema);
@@ -135,6 +149,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
+      mockLogger,
       afterLoadMutations
     );
 
@@ -146,7 +161,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should get all objects of a resource type", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mockData = {
       user1: {
@@ -193,7 +212,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should return empty object when no data exists for resource type", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const result = store.get({ resource: "nonexistent" });
 
@@ -201,7 +224,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should apply limit to query results", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mockData = {
       user1: {
@@ -263,7 +290,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should apply limit with where clause", async () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mockData = {
       user1: {
@@ -331,7 +362,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should handle limit larger than available results", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mockData = {
       user1: {
@@ -360,7 +395,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should subscribe to resource type changes", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
     const listener = vi.fn();
 
     const unsubscribe = store.subscribe({ resource: "users" }, listener);
@@ -381,7 +420,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should add optimistic mutation", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -410,7 +453,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should add server mutation and remove optimistic version", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     // Add optimistic mutation first
     const optimisticMutation: DefaultMutationMessage = {
@@ -457,7 +504,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should throw error when schema not found", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -473,7 +524,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should handle relations when adding mutation", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -511,7 +566,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should remove existing link when relation changes", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const mutation: DefaultMutationMessage = {
       id: "mut1",
@@ -553,7 +612,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should notify subscribers after adding mutation", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const listener = vi.fn();
 
@@ -579,7 +642,11 @@ describe("OptimisticStore", () => {
   });
 
   test("should load consolidated state", () => {
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     const data = {
       user1: { name: { value: "John", _meta: { timestamp: "2023-01-01" } } },
@@ -615,6 +682,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
+      mockLogger,
       afterLoadMutations
     );
 
@@ -627,7 +695,11 @@ describe("OptimisticStore", () => {
   test("should handle empty data during initialization", async () => {
     mockKVStorage.get.mockResolvedValue({});
 
-    store = new OptimisticStore(mockSchema, { name: "test-storage" });
+    store = new OptimisticStore(
+      mockSchema,
+      { name: "test-storage" },
+      mockLogger
+    );
 
     // Wait for async initialization
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -639,7 +711,11 @@ describe("OptimisticStore", () => {
 
   describe("Query Sorting", () => {
     beforeEach(() => {
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
     });
 
     test("should sort results by single field ascending", () => {
@@ -811,7 +887,11 @@ describe("OptimisticStore", () => {
 
   describe("Query Caching", () => {
     beforeEach(() => {
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
       (hash as any).mockReturnValue("test-hash");
     });
 
@@ -915,7 +995,11 @@ describe("OptimisticStore", () => {
 
   describe("Undo Mutation", () => {
     beforeEach(() => {
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
     });
 
     test("should undo optimistic mutation", () => {
@@ -977,7 +1061,11 @@ describe("OptimisticStore", () => {
 
   describe("Include Relations", () => {
     beforeEach(() => {
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
     });
 
     test("should include one-to-one relations", () => {
@@ -1127,7 +1215,11 @@ describe("OptimisticStore", () => {
 
   describe("Subscription with Includes", () => {
     beforeEach(() => {
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
       (hash as any).mockReturnValue("test-hash");
     });
 
@@ -1202,7 +1294,11 @@ describe("OptimisticStore", () => {
 
   describe("Where Clause Handling", () => {
     beforeEach(() => {
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
     });
 
     test("should handle where clause with id", () => {
@@ -1291,7 +1387,7 @@ describe("OptimisticStore", () => {
 
   describe("Storage Disabled", () => {
     test("should work without storage", () => {
-      store = new OptimisticStore(mockSchema, false);
+      store = new OptimisticStore(mockSchema, false, mockLogger);
 
       expect(store).toBeInstanceOf(OptimisticStore);
       expect(store.schema).toBe(mockSchema);
@@ -1343,7 +1439,11 @@ describe("OptimisticStore", () => {
         comments: comment.setRelations(commentRelations.relations),
       };
 
-      store = new OptimisticStore(mockSchema, { name: "test-storage" });
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger
+      );
     });
 
     test("should handle deep nested includes in materializeOneWithInclude", () => {
@@ -1478,7 +1578,7 @@ describe("OptimisticStore", () => {
     test("should handle storage initialization gracefully", () => {
       // Test that the store can be created even if storage fails
       expect(() => {
-        new OptimisticStore(mockSchema, { name: "test-storage" });
+        new OptimisticStore(mockSchema, { name: "test-storage" }, mockLogger);
       }).not.toThrow();
     });
   });
