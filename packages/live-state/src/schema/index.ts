@@ -350,12 +350,17 @@ export const inferValue = <T extends LiveTypeAny>(
   )
     return type.value;
 
-  return Object.fromEntries(
-    Object.entries(type.value).map(([key, value]) => [
-      key,
-      inferValue(value as any),
-    ])
+  const result = Object.fromEntries(
+    Object.entries(type.value).map(([key, value]) => {
+      // If value is already a MaterializedLiveType array, process each element
+      if (Array.isArray(value)) {
+        return [key, value.map((item) => inferValue(item as any))];
+      }
+      return [key, inferValue(value as any)];
+    })
   ) as InferLiveType<T>;
+
+  return result;
 };
 
 type ExtractObjectValues<T> = T[keyof T];

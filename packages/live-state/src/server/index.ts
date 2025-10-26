@@ -243,6 +243,7 @@ export class Server<TRouter extends AnyRouter> {
         return route.handleMutation({
           req,
           db: this.storage,
+          schema: this.schema,
         });
       }
     )(opts.req);

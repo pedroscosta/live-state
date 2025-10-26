@@ -471,6 +471,100 @@ describe("inferValue", () => {
     expect(result).toEqual(["item1", "item2"]);
   });
 
+  test("should infer object with array (related data)", () => {
+    const value = {
+      value: {
+        id: {
+          value: "user1",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+        name: {
+          value: "John",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+        posts: [
+          {
+            value: {
+              id: {
+                value: "post1",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+              title: {
+                value: "First Post",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+            },
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+          {
+            value: {
+              id: {
+                value: "post2",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+              title: {
+                value: "Second Post",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+            },
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        ],
+      },
+      _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+    };
+
+    const result = inferValue(value);
+    expect(result).toEqual({
+      id: "user1",
+      name: "John",
+      posts: [
+        { id: "post1", title: "First Post" },
+        { id: "post2", title: "Second Post" },
+      ],
+    });
+  });
+
+  test("should infer nested array within object properties", () => {
+    const value = {
+      value: {
+        userId: {
+          value: "user123",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+        tags: [
+          {
+            value: "react",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+          {
+            value: "typescript",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        ],
+        comments: [
+          {
+            value: {
+              text: {
+                value: "Great post!",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+            },
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        ],
+      },
+      _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+    };
+
+    const result = inferValue(value);
+    expect(result).toEqual({
+      userId: "user123",
+      tags: ["react", "typescript"],
+      comments: [{ text: "Great post!" }],
+    });
+  });
+
   test("should return undefined for undefined input", () => {
     const result = inferValue(undefined);
     expect(result).toBeUndefined();
