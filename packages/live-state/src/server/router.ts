@@ -256,11 +256,16 @@ export class Route<
           req.resourceId!,
           newRecord
         );
+        const inferredResultValue = inferValue(result) as Simplify<
+          InferLiveObjectWithRelationalIds<TResourceSchema>
+        >;
+        (inferredResultValue as any)["id"] =
+          (inferredResultValue as any)["id"] ?? req.resourceId!;
 
         if (this.authorization?.insert) {
           const authorizationClause = this.authorization.insert({
             ctx: req.context,
-            value: {} as Simplify<
+            value: inferredResultValue as Simplify<
               InferLiveObjectWithRelationalIds<TResourceSchema>
             >,
           });
@@ -309,9 +314,15 @@ export class Route<
       }
 
       if (this.authorization?.update?.preMutation) {
+        const inferredTargetValue = inferValue(target) as Simplify<
+          InferLiveObjectWithRelationalIds<TResourceSchema>
+        >;
+        (inferredTargetValue as any)["id"] =
+          (inferredTargetValue as any)["id"] ?? req.resourceId!;
+
         const authorizationClause = this.authorization.update.preMutation({
           ctx: req.context,
-          value: {} as Simplify<
+          value: inferredTargetValue as Simplify<
             InferLiveObjectWithRelationalIds<TResourceSchema>
           >,
         });
@@ -360,9 +371,15 @@ export class Route<
       );
 
       if (this.authorization?.update?.postMutation) {
+        const inferredResultValue = inferValue(result) as Simplify<
+          InferLiveObjectWithRelationalIds<TResourceSchema>
+        >;
+        (inferredResultValue as any)["id"] =
+          (inferredResultValue as any)["id"] ?? req.resourceId!;
+
         const authorizationClause = this.authorization.update.postMutation({
           ctx: req.context,
-          value: {} as Simplify<
+          value: inferredResultValue as Simplify<
             InferLiveObjectWithRelationalIds<TResourceSchema>
           >,
         });

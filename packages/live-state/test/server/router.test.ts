@@ -788,7 +788,10 @@ describe("Route UPDATE Authorization", () => {
     expect(preMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
@@ -842,7 +845,10 @@ describe("Route UPDATE Authorization", () => {
     expect(preMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).not.toHaveBeenCalled();
@@ -883,7 +889,10 @@ describe("Route UPDATE Authorization", () => {
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
@@ -930,10 +939,84 @@ describe("Route UPDATE Authorization", () => {
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+  });
+
+  test("should pass UPDATED values to post-mutation authorization handler", async () => {
+    const postMutationAuth = vi.fn().mockReturnValue(true);
+    const route = new Route(mockResource, undefined, {
+      update: { postMutation: postMutationAuth },
+    });
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "UpdatedName", role: "admin" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { userId: "123" },
+    };
+
+    // Original data before update
+    const mockExistingData = {
+      value: {
+        id: { value: "user1" },
+        name: { value: "OriginalName" },
+        role: { value: "user" },
+      },
+    };
+
+    // Updated data after mutation
+    const mockUpdatedData = {
+      value: {
+        id: { value: "user1" },
+        name: { value: "UpdatedName" },
+        role: { value: "admin" },
+      },
+    };
+
+    (mockResource.mergeMutation as Mock).mockReturnValue([
+      { value: { name: { value: "UpdatedName" }, role: { value: "admin" } } },
+      { accepted: true },
+    ]);
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockUpdatedData);
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    // Verify that post-mutation receives the UPDATED values, not the original ones
+    expect(postMutationAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { userId: "123" },
+        value: expect.objectContaining({
+          id: "user1",
+          name: "UpdatedName", // Should be the updated value
+          role: "admin", // Should be the updated value
+        }),
+      })
+    );
+
+    // Verify that the original values are NOT present
+    const authCall = postMutationAuth.mock.calls[0][0];
+    expect(authCall.value.name).toBe("UpdatedName");
+    expect(authCall.value.name).not.toBe("OriginalName");
+    expect(authCall.value.role).toBe("admin");
+    expect(authCall.value.role).not.toBe("user");
   });
 
   test("should work with both pre and post mutation authorization", async () => {
@@ -984,13 +1067,19 @@ describe("Route UPDATE Authorization", () => {
     expect(preMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
@@ -1052,13 +1141,19 @@ describe("Route UPDATE Authorization", () => {
     expect(preMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
@@ -1158,7 +1253,11 @@ describe("Route UPDATE Authorization", () => {
           userId: "123",
           role: "admin",
         },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+          role: "admin",
+        }),
       })
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
@@ -1246,7 +1345,11 @@ describe("Route INSERT Authorization", () => {
     expect(insertAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
@@ -1301,7 +1404,11 @@ describe("Route INSERT Authorization", () => {
     expect(insertAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
@@ -1352,7 +1459,11 @@ describe("Route INSERT Authorization", () => {
     expect(insertAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
   });
@@ -1398,7 +1509,11 @@ describe("Route INSERT Authorization", () => {
     expect(insertAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
     expect(result).toEqual({
@@ -2088,7 +2203,11 @@ describe("Route Authorization Error Handling", () => {
     expect(insertAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
   });
@@ -2135,7 +2254,10 @@ describe("Route Authorization Error Handling", () => {
     expect(preMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
   });
@@ -2186,7 +2308,11 @@ describe("Route Authorization Error Handling", () => {
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
   });
@@ -2293,7 +2419,11 @@ describe("Route Complex Authorization Scenarios", () => {
     expect(insertAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          name: "John",
+          userId: "123",
+        }),
       })
     );
 
@@ -2334,13 +2464,19 @@ describe("Route Complex Authorization Scenarios", () => {
     expect(preMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         ctx: { userId: "123" },
-        value: {},
+        value: expect.objectContaining({
+          id: "user1",
+          userId: "123",
+        }),
       })
     );
   });
