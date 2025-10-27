@@ -120,6 +120,7 @@ export class Server<TRouter extends AnyRouter> {
         context: req.context,
       };
 
+      console.log("queryPlan", JSON.stringify(queryPlan, null, 2));
       const stepResults: Record<string, QueryStepResult[]> = {};
 
       for (let i = 0; i < queryPlan.length; i++) {
@@ -331,10 +332,10 @@ function getQuerySteps(
   schema: Schema<any>,
   opts: Omit<QueryStep, keyof Omit<RawQueryRequest, "include">>
 ) {
-  const { include, ...rest } = req;
+  const { include, where, ...rest } = req;
   const { stepId } = opts;
 
-  const queryPlan: QueryStep[] = [{ ...rest, ...opts }];
+  const queryPlan: QueryStep[] = [{ ...rest, ...opts, where }];
 
   if (
     include &&
