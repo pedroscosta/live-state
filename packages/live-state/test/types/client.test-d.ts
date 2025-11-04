@@ -483,6 +483,295 @@ describe("complex websocket client", () => {
     >();
   });
 
+  test("should infer deep nested includes", () => {
+    const userQuery = complexQuery.complexUsers.include({
+      posts: {
+        author: true,
+        comments: {
+          author: true,
+        },
+      },
+    }).get;
+
+    const postQuery = complexQuery.complexPosts.include({
+      author: {
+        posts: true,
+      },
+      comments: {
+        author: {
+          posts: true,
+        },
+        post: true,
+      },
+    }).get;
+
+    const commentQuery = complexQuery.complexComments.include({
+      post: {
+        author: {
+          posts: true,
+        },
+        comments: true,
+      },
+      author: {
+        posts: {
+          comments: true,
+        },
+      },
+    }).get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        name: string;
+        email: string | null;
+        age: number | null;
+        isActive: boolean;
+        score: number;
+        createdAt: Date;
+        updatedAt: Date | null;
+        bio: string | null;
+        tags: string | null;
+        posts: {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+          };
+          comments: {
+            id: string;
+            content: string;
+            postId: string;
+            authorId: string;
+            isApproved: boolean;
+            likes: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            parentId: string | null;
+            author: {
+              id: string;
+              name: string;
+              email: string | null;
+              age: number | null;
+              isActive: boolean;
+              score: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              bio: string | null;
+              tags: string | null;
+            };
+          }[];
+        }[];
+      }[]
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        title: string;
+        content: string | null;
+        authorId: string;
+        published: boolean;
+        views: number;
+        rating: number | null;
+        publishedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date | null;
+        metadata: string | null;
+        author: {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+          posts: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+          }[];
+        };
+        comments: {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+            posts: {
+              id: string;
+              title: string;
+              content: string | null;
+              authorId: string;
+              published: boolean;
+              views: number;
+              rating: number | null;
+              publishedAt: Date | null;
+              createdAt: Date;
+              updatedAt: Date | null;
+              metadata: string | null;
+            }[];
+          };
+          post: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+          };
+        }[];
+      }[]
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      {
+        id: string;
+        content: string;
+        postId: string;
+        authorId: string;
+        isApproved: boolean;
+        likes: number;
+        createdAt: Date;
+        updatedAt: Date | null;
+        parentId: string | null;
+        post: {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+            posts: {
+              id: string;
+              title: string;
+              content: string | null;
+              authorId: string;
+              published: boolean;
+              views: number;
+              rating: number | null;
+              publishedAt: Date | null;
+              createdAt: Date;
+              updatedAt: Date | null;
+              metadata: string | null;
+            }[];
+          };
+          comments: {
+            id: string;
+            content: string;
+            postId: string;
+            authorId: string;
+            isApproved: boolean;
+            likes: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            parentId: string | null;
+          }[];
+        };
+        author: {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+          posts: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+            comments: {
+              id: string;
+              content: string;
+              postId: string;
+              authorId: string;
+              isApproved: boolean;
+              likes: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              parentId: string | null;
+            }[];
+          }[];
+        };
+      }[]
+    >();
+  });
+
   test("should infer complex insert types with defaults", () => {
     const userMutate = complexMutate.complexUsers.insert;
     const postMutate = complexMutate.complexPosts.insert;
@@ -1072,6 +1361,301 @@ describe("complex fetch client", () => {
             updatedAt: Date | null;
             parentId: string | null;
           }[];
+        }[]
+      >
+    >();
+  });
+
+  test("should infer deep nested includes for fetch client", () => {
+    const userQuery = complexFetchClient.query.complexUsers.include({
+      posts: {
+        author: true,
+        comments: {
+          author: true,
+        },
+      },
+    }).get;
+
+    const postQuery = complexFetchClient.query.complexPosts.include({
+      author: {
+        posts: true,
+      },
+      comments: {
+        author: {
+          posts: true,
+        },
+        post: true,
+      },
+    }).get;
+
+    const commentQuery = complexFetchClient.query.complexComments.include({
+      post: {
+        author: {
+          posts: true,
+        },
+        comments: true,
+      },
+      author: {
+        posts: {
+          comments: true,
+        },
+      },
+    }).get;
+
+    expectTypeOf(userQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          name: string;
+          email: string | null;
+          age: number | null;
+          isActive: boolean;
+          score: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          bio: string | null;
+          tags: string | null;
+          posts: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+            author: {
+              id: string;
+              name: string;
+              email: string | null;
+              age: number | null;
+              isActive: boolean;
+              score: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              bio: string | null;
+              tags: string | null;
+            };
+            comments: {
+              id: string;
+              content: string;
+              postId: string;
+              authorId: string;
+              isApproved: boolean;
+              likes: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              parentId: string | null;
+              author: {
+                id: string;
+                name: string;
+                email: string | null;
+                age: number | null;
+                isActive: boolean;
+                score: number;
+                createdAt: Date;
+                updatedAt: Date | null;
+                bio: string | null;
+                tags: string | null;
+              };
+            }[];
+          }[];
+        }[]
+      >
+    >();
+
+    expectTypeOf(postQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          title: string;
+          content: string | null;
+          authorId: string;
+          published: boolean;
+          views: number;
+          rating: number | null;
+          publishedAt: Date | null;
+          createdAt: Date;
+          updatedAt: Date | null;
+          metadata: string | null;
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+            posts: {
+              id: string;
+              title: string;
+              content: string | null;
+              authorId: string;
+              published: boolean;
+              views: number;
+              rating: number | null;
+              publishedAt: Date | null;
+              createdAt: Date;
+              updatedAt: Date | null;
+              metadata: string | null;
+            }[];
+          };
+          comments: {
+            id: string;
+            content: string;
+            postId: string;
+            authorId: string;
+            isApproved: boolean;
+            likes: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            parentId: string | null;
+            author: {
+              id: string;
+              name: string;
+              email: string | null;
+              age: number | null;
+              isActive: boolean;
+              score: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              bio: string | null;
+              tags: string | null;
+              posts: {
+                id: string;
+                title: string;
+                content: string | null;
+                authorId: string;
+                published: boolean;
+                views: number;
+                rating: number | null;
+                publishedAt: Date | null;
+                createdAt: Date;
+                updatedAt: Date | null;
+                metadata: string | null;
+              }[];
+            };
+            post: {
+              id: string;
+              title: string;
+              content: string | null;
+              authorId: string;
+              published: boolean;
+              views: number;
+              rating: number | null;
+              publishedAt: Date | null;
+              createdAt: Date;
+              updatedAt: Date | null;
+              metadata: string | null;
+            };
+          }[];
+        }[]
+      >
+    >();
+
+    expectTypeOf(commentQuery).returns.toEqualTypeOf<
+      Promise<
+        {
+          id: string;
+          content: string;
+          postId: string;
+          authorId: string;
+          isApproved: boolean;
+          likes: number;
+          createdAt: Date;
+          updatedAt: Date | null;
+          parentId: string | null;
+          post: {
+            id: string;
+            title: string;
+            content: string | null;
+            authorId: string;
+            published: boolean;
+            views: number;
+            rating: number | null;
+            publishedAt: Date | null;
+            createdAt: Date;
+            updatedAt: Date | null;
+            metadata: string | null;
+            author: {
+              id: string;
+              name: string;
+              email: string | null;
+              age: number | null;
+              isActive: boolean;
+              score: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              bio: string | null;
+              tags: string | null;
+              posts: {
+                id: string;
+                title: string;
+                content: string | null;
+                authorId: string;
+                published: boolean;
+                views: number;
+                rating: number | null;
+                publishedAt: Date | null;
+                createdAt: Date;
+                updatedAt: Date | null;
+                metadata: string | null;
+              }[];
+            };
+            comments: {
+              id: string;
+              content: string;
+              postId: string;
+              authorId: string;
+              isApproved: boolean;
+              likes: number;
+              createdAt: Date;
+              updatedAt: Date | null;
+              parentId: string | null;
+            }[];
+          };
+          author: {
+            id: string;
+            name: string;
+            email: string | null;
+            age: number | null;
+            isActive: boolean;
+            score: number;
+            createdAt: Date;
+            updatedAt: Date | null;
+            bio: string | null;
+            tags: string | null;
+            posts: {
+              id: string;
+              title: string;
+              content: string | null;
+              authorId: string;
+              published: boolean;
+              views: number;
+              rating: number | null;
+              publishedAt: Date | null;
+              createdAt: Date;
+              updatedAt: Date | null;
+              metadata: string | null;
+              comments: {
+                id: string;
+                content: string;
+                postId: string;
+                authorId: string;
+                isApproved: boolean;
+                likes: number;
+                createdAt: Date;
+                updatedAt: Date | null;
+                parentId: string | null;
+              }[];
+            }[];
+          };
         }[]
       >
     >();
