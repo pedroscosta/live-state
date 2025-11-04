@@ -27,16 +27,32 @@ export type InferLiveObject<
 > = InferLiveObjectWithoutRelations<T> &
   (Include extends IncludeClause<T>
     ? {
-        [K in keyof T["relations"] as Include[K] extends true
+        [K in keyof T["relations"] as Include[K] extends
+          | true
+          | IncludeClause<T["relations"][K]["entity"]>
           ? K
-          : never]: T["relations"][K]["type"] extends "one"
-          ? T["fields"][Exclude<
-              T["relations"][K]["relationalColumn"],
-              undefined
-            >] extends NullableLiveType<any>
-            ? InferLiveObject<T["relations"][K]["entity"]> | null
-            : InferLiveObject<T["relations"][K]["entity"]>
-          : InferLiveObject<T["relations"][K]["entity"]>[];
+          : never]: Include[K] extends true
+          ? T["relations"][K]["type"] extends "one"
+            ? T["fields"][Exclude<
+                T["relations"][K]["relationalColumn"],
+                undefined
+              >] extends NullableLiveType<any>
+              ? InferLiveObject<T["relations"][K]["entity"]> | null
+              : InferLiveObject<T["relations"][K]["entity"]>
+            : InferLiveObject<T["relations"][K]["entity"]>[]
+          : Include[K] extends IncludeClause<T["relations"][K]["entity"]>
+            ? T["relations"][K]["type"] extends "one"
+              ? T["fields"][Exclude<
+                  T["relations"][K]["relationalColumn"],
+                  undefined
+                >] extends NullableLiveType<any>
+                ? InferLiveObject<
+                    T["relations"][K]["entity"],
+                    Include[K]
+                  > | null
+                : InferLiveObject<T["relations"][K]["entity"], Include[K]>
+              : InferLiveObject<T["relations"][K]["entity"], Include[K]>[]
+            : never;
       }
     : {});
 

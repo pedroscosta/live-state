@@ -120,7 +120,6 @@ export class Server<TRouter extends AnyRouter> {
         context: req.context,
       };
 
-      console.log("queryPlan", JSON.stringify(queryPlan, null, 2));
       const stepResults: Record<string, QueryStepResult[]> = {};
 
       for (let i = 0; i < queryPlan.length; i++) {
