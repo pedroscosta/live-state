@@ -11,8 +11,45 @@ import { QueryBuilder, type QueryExecutor } from "../query";
 import type { Client } from "../types";
 import { createObservable } from "../utils";
 
-const safeFetch = async (...args: Parameters<typeof fetch>) => {
-  const res = await fetch(...args);
+export type FetchClientOptions = Omit<ClientOptions, "storage"> & {
+  fetchOptions?: RequestInit;
+};
+
+const safeFetch = async (
+  url: string,
+  options?: RequestInit,
+  baseOptions?: RequestInit
+) => {
+  const normalizeHeaders = (
+    headers: HeadersInit | undefined
+  ): Record<string, string> => {
+    if (!headers) return {};
+    if (headers instanceof Headers) {
+      const result: Record<string, string> = {};
+      headers.forEach((value, key) => {
+        result[key] = value;
+      });
+      return result;
+    }
+    if (Array.isArray(headers)) {
+      return Object.fromEntries(headers);
+    }
+    return headers as Record<string, string>;
+  };
+
+  const baseHeaders = normalizeHeaders(baseOptions?.headers);
+  const optionsHeaders = normalizeHeaders(options?.headers);
+
+  const mergedOptions: RequestInit = {
+    ...baseOptions,
+    ...options,
+    headers: {
+      ...baseHeaders,
+      ...optionsHeaders,
+    },
+  };
+
+  const res = await fetch(url, mergedOptions);
 
   let data: any;
   try {
@@ -29,7 +66,7 @@ const safeFetch = async (...args: Parameters<typeof fetch>) => {
 };
 
 export const createClient = <TRouter extends AnyRouter>(
-  opts: Omit<ClientOptions, "storage">
+  opts: FetchClientOptions
 ): Client<TRouter, true> => {
   const queryExecutor: QueryExecutor = {
     get: async (query) => {
@@ -43,7 +80,8 @@ export const createClient = <TRouter extends AnyRouter>(
             ...headers,
             "Content-Type": "application/json",
           },
-        }
+        },
+        opts.fetchOptions
       );
 
       if (!res || typeof res !== "object") {
@@ -91,21 +129,25 @@ export const createClient = <TRouter extends AnyRouter>(
 
         if (method === "insert") {
           const { id, ...input } = argumentsList[0];
-          await safeFetch(`${opts.url}/${route}/insert`, {
-            method: "POST",
-            headers: {
-              ...headers,
-              "Content-Type": "application/json",
+          await safeFetch(
+            `${opts.url}/${route}/insert`,
+            {
+              method: "POST",
+              headers: {
+                ...headers,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                resourceId: id,
+                payload: opts.schema[route].encodeMutation(
+                  "set",
+                  input as LiveObjectMutationInput<LiveObjectAny>,
+                  new Date().toISOString()
+                ),
+              }),
             },
-            body: JSON.stringify({
-              resourceId: id,
-              payload: opts.schema[route].encodeMutation(
-                "set",
-                input as LiveObjectMutationInput<LiveObjectAny>,
-                new Date().toISOString()
-              ),
-            }),
-          });
+            opts.fetchOptions
+          );
           return;
         }
 
@@ -113,32 +155,40 @@ export const createClient = <TRouter extends AnyRouter>(
           const [id, input] = argumentsList;
 
           const { id: _id, ...rest } = input;
-          await safeFetch(`${opts.url}/${route}/update`, {
+          await safeFetch(
+            `${opts.url}/${route}/update`,
+            {
+              method: "POST",
+              headers: {
+                ...headers,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                resourceId: id,
+                payload: opts.schema[route].encodeMutation(
+                  "set",
+                  rest as LiveObjectMutationInput<LiveObjectAny>,
+                  new Date().toISOString()
+                ),
+              }),
+            },
+            opts.fetchOptions
+          );
+          return;
+        }
+
+        await safeFetch(
+          `${opts.url}/${route}/${method}`,
+          {
             method: "POST",
             headers: {
               ...headers,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              resourceId: id,
-              payload: opts.schema[route].encodeMutation(
-                "set",
-                rest as LiveObjectMutationInput<LiveObjectAny>,
-                new Date().toISOString()
-              ),
-            }),
-          });
-          return;
-        }
-
-        await safeFetch(`${opts.url}/${route}/${method}`, {
-          method: "POST",
-          headers: {
-            ...headers,
-            "Content-Type": "application/json",
+            body: JSON.stringify({ payload: argumentsList[0] }),
           },
-          body: JSON.stringify({ payload: argumentsList[0] }),
-        });
+          opts.fetchOptions
+        );
       },
     }) as unknown as Client<TRouter, true>["mutate"],
   };
