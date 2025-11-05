@@ -250,7 +250,6 @@ export class Server<TRouter extends AnyRouter> {
       };
 
       const flattenedKeys = Object.keys(flattenedResults);
-      // Process in reverse order (equivalent to reduceRight)
       for (let i = flattenedKeys.length - 1; i >= 0; i--) {
         const id = flattenedKeys[i];
         const result = flattenedResults[id];
