@@ -156,7 +156,15 @@ export class SQLStorage extends Storage {
 
               return builder;
             })
-            .execute();
+            .execute()
+            .catch((e) => {
+              // Ignore errors if column already exists (e.g., in persistent test databases)
+              if (e.code !== "42701") {
+                // 42701 is the PostgreSQL error code for duplicate column
+                this.logger?.error("Error adding meta column", columnName, e);
+                throw e;
+              }
+            });
         }
       }
     }
