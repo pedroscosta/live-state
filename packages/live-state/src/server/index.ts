@@ -132,88 +132,151 @@ export class Server<TRouter extends AnyRouter> {
           throw new Error("Invalid resource");
         }
 
-        const wheres =
-          step.getWhere && step.referenceGetter
-            ? step.referenceGetter(stepResults).map(step.getWhere)
-            : [undefined];
+        let wheres: (WhereClause<any> | undefined)[];
+        if (step.getWhere && step.referenceGetter) {
+          const referenceIds = step.referenceGetter(stepResults);
+          wheres = [];
+          for (let j = 0; j < referenceIds.length; j++) {
+            wheres.push(step.getWhere(referenceIds[j]));
+          }
+        } else {
+          wheres = [undefined];
+        }
 
-        const prevStepKeys = stepResults[step.prevStepId ?? ""]?.flatMap(
-          (result) => Object.keys(result?.result?.data ?? {})
-        );
+        const prevStepResults = stepResults[step.prevStepId ?? ""];
+        const prevStepKeys: string[] = [];
+        if (prevStepResults) {
+          for (let j = 0; j < prevStepResults.length; j++) {
+            const result = prevStepResults[j];
+            const keys = Object.keys(result?.result?.data ?? {});
+            for (let k = 0; k < keys.length; k++) {
+              prevStepKeys.push(keys[k]);
+            }
+          }
+        }
 
-        const stepSettledResults = await Promise.allSettled(
-          wheres.map(async (where, i) => {
-            const includedBy = prevStepKeys?.[i];
+        const promises = [];
+        for (let j = 0; j < wheres.length; j++) {
+          const where = wheres[j];
+          const includedBy = prevStepKeys[j];
+          promises.push(
+            (async () => {
+              const result = await route.handleQuery({
+                req: {
+                  type: "QUERY",
+                  ...step,
+                  ...sharedContext,
+                  where: step.where,
+                  relationalWhere: where,
+                },
+                batcher,
+              });
 
-            const result = await route.handleQuery({
-              req: {
-                type: "QUERY",
-                ...step,
-                ...sharedContext,
-                where: step.where,
-                relationalWhere: where,
-              },
-              batcher,
-            });
+              return {
+                includedBy,
+                result,
+              } satisfies QueryStepResult;
+            })()
+          );
+        }
 
-            return {
-              includedBy,
-              result,
-            } satisfies QueryStepResult;
-          })
-        );
+        const stepSettledResults = await Promise.allSettled(promises);
 
-        const results = stepSettledResults.flatMap((result) =>
-          result.status === "fulfilled" ? [result.value] : []
-        );
+        const results: QueryStepResult[] = [];
+        for (let j = 0; j < stepSettledResults.length; j++) {
+          const settled = stepSettledResults[j];
+          if (settled.status === "fulfilled") {
+            results.push(settled.value);
+          }
+        }
 
         stepResults[step.stepId] = results;
       }
 
-      const flattenedResults = Object.fromEntries(
-        Object.entries(stepResults).flatMap(([stepPath, results], i) =>
-          results.flatMap((result) =>
-            Object.entries(result.result.data).map(([id, data]) => [
-              `${stepPath}.${id}`,
-              {
+      const entriesMap = new Map<
+        string,
+        {
+          data: any;
+          includedBy: Set<string>;
+          path: string;
+          isMany: boolean;
+          collectionName: string;
+          included: string[];
+        }
+      >();
+
+      let stepIndex = 0;
+      for (const stepPath in stepResults) {
+        const results = stepResults[stepPath];
+        const step = queryPlan[stepIndex];
+        stepIndex++;
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          const dataEntries = result.result.data;
+
+          for (const id in dataEntries) {
+            const data = dataEntries[id];
+            const key = `${stepPath}.${id}`;
+
+            let parentKeys: string[] = [];
+            if (stepPath !== "query" && result.includedBy) {
+              parentKeys = [`${step.prevStepId}.${result.includedBy}`];
+            }
+
+            const existing = entriesMap.get(key);
+            if (existing) {
+              for (let k = 0; k < parentKeys.length; k++) {
+                existing.includedBy.add(parentKeys[k]);
+              }
+            } else {
+              entriesMap.set(key, {
                 data,
-                includedBy:
-                  stepPath !== "query" && result.includedBy
-                    ? `${stepPath.split(".").slice(0, -1).join(".")}.${result.includedBy}`
-                    : undefined,
+                includedBy: new Set(parentKeys),
                 path: stepPath.split(".").slice(-1)[0],
-                isMany: queryPlan[i].isMany,
-                collectionName: queryPlan[i].collectionName,
-                included: queryPlan[i].included,
-              },
-            ])
-          )
-        )
-      );
-
-      const results = Object.keys(flattenedResults).reduceRight(
-        (acc, id) => {
-          const result = flattenedResults[id];
-          const path = result.path;
-
-          if (path === "query") {
-            acc.data[id.replace("query.", "")] = result.data;
-          }
-
-          if (result.included.length) {
-            for (const included of result.included) {
-              result.data.value[included] ??=
-                this.schema[result.collectionName]?.relations[included]
-                  ?.type === "many"
-                  ? { value: [] }
-                  : { value: null };
+                isMany: step.isMany ?? false,
+                collectionName: step.collectionName,
+                included: step.included,
+              });
             }
           }
+        }
+      }
 
-          if (result.includedBy) {
-            const parentResult = flattenedResults[result.includedBy];
+      const flattenedResults = Object.fromEntries(entriesMap);
 
-            if (!parentResult) return acc;
+      const acc: QueryResult<any> = {
+        data: {},
+      };
+
+      const flattenedKeys = Object.keys(flattenedResults);
+      for (let i = flattenedKeys.length - 1; i >= 0; i--) {
+        const id = flattenedKeys[i];
+        const result = flattenedResults[id];
+        const path = result.path;
+
+        if (path === "query") {
+          acc.data[id.replace("query.", "")] = result.data;
+        }
+
+        if (result.included.length) {
+          for (let j = 0; j < result.included.length; j++) {
+            const included = result.included[j];
+            result.data.value[included] ??=
+              this.schema[result.collectionName]?.relations[included]?.type ===
+              "many"
+                ? { value: [] }
+                : { value: null };
+          }
+        }
+
+        if (result.includedBy.size > 0) {
+          const parentKeysArray = Array.from(result.includedBy);
+          for (let j = 0; j < parentKeysArray.length; j++) {
+            const parentKey = parentKeysArray[j];
+            const parentResult = flattenedResults[parentKey];
+
+            if (!parentResult) continue;
 
             if (result.isMany) {
               parentResult.data.value[path] ??= {
@@ -224,13 +287,10 @@ export class Server<TRouter extends AnyRouter> {
               parentResult.data.value[path] = result.data;
             }
           }
+        }
+      }
 
-          return acc;
-        },
-        {
-          data: {},
-        } as QueryResult<any>
-      );
+      const results = acc;
 
       return results;
     })(opts.req);
