@@ -22,6 +22,8 @@ import type { Logger } from "../../utils";
 import { Storage } from "./interface";
 import { applyInclude, applyWhere } from "./sql-utils";
 
+const POSTGRES_DUPLICATE_COLUMN_ERROR_CODE = "42701";
+
 export class SQLStorage extends Storage {
   private db: Kysely<{ [x: string]: Selectable<any> }>;
   private schema?: Schema<any>;
@@ -115,8 +117,10 @@ export class SQLStorage extends Storage {
             })
             .execute()
             .catch((e) => {
-              this.logger?.error("Error adding column", columnName, e);
-              throw e;
+              if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
+                this.logger?.error("Error adding column", columnName, e);
+                throw e;
+              }
             });
 
           if (storageFieldType.index) {
@@ -158,9 +162,7 @@ export class SQLStorage extends Storage {
             })
             .execute()
             .catch((e) => {
-              // Ignore errors if column already exists (e.g., in persistent test databases)
-              if (e.code !== "42701") {
-                // 42701 is the PostgreSQL error code for duplicate column
+              if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
                 this.logger?.error("Error adding meta column", columnName, e);
                 throw e;
               }
