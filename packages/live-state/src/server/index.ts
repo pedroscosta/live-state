@@ -5,7 +5,7 @@ import type {
 } from "../core/schemas/core-protocol";
 import type { Awaitable } from "../core/utils";
 import type { Schema, WhereClause } from "../schema";
-import { createLogger, type Logger, LogLevel } from "../utils";
+import { createLogger, hash, type Logger, LogLevel } from "../utils";
 import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import { Batcher } from "./storage/batcher";
@@ -44,6 +44,10 @@ export type ContextProvider = (
 ) => Record<string, any>;
 
 export type MutationHandler = (mutation: DefaultMutation) => void;
+interface CollectionSubscription {
+  callbacks: Set<MutationHandler>;
+  query: RawQueryRequest;
+}
 
 export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
 
@@ -61,7 +65,12 @@ export class Server<TRouter extends AnyRouter> {
 
   contextProvider?: ContextProvider;
 
+  /** @deprecated */
   private mutationSubscriptions: Set<MutationHandler> = new Set();
+  private collectionSubscriptions: Map<
+    string,
+    Map<string, CollectionSubscription>
+  > = new Map();
 
   private constructor(opts: {
     router: TRouter;
@@ -81,7 +90,7 @@ export class Server<TRouter extends AnyRouter> {
       this.middlewares.add(middleware);
     });
 
-    this.storage.init(this.schema, this.logger);
+    this.storage.init(this.schema, this.logger, this);
     this.contextProvider = opts.contextProvider;
   }
 
@@ -94,14 +103,6 @@ export class Server<TRouter extends AnyRouter> {
     logLevel?: LogLevel;
   }) {
     return new Server<TRouter>(opts);
-  }
-
-  public subscribeToMutations(handler: MutationHandler) {
-    this.mutationSubscriptions.add(handler);
-
-    return () => {
-      this.mutationSubscriptions.delete(handler);
-    };
   }
 
   public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
@@ -353,6 +354,58 @@ export class Server<TRouter extends AnyRouter> {
   public context(contextProvider: ContextProvider) {
     this.contextProvider = contextProvider;
     return this;
+  }
+
+  /** @internal */
+  public subscribeToMutations(
+    query: RawQueryRequest,
+    handler: MutationHandler
+  ) {
+    const resource = query.resource;
+    const key = hash(query);
+
+    let resourceSubscriptions = this.collectionSubscriptions.get(resource);
+
+    if (!resourceSubscriptions) {
+      resourceSubscriptions = new Map();
+      this.collectionSubscriptions.set(resource, resourceSubscriptions);
+    }
+
+    resourceSubscriptions.set(key, {
+      callbacks: new Set([handler]),
+      query,
+    });
+
+    return () => {
+      const resourceSubscription = this.collectionSubscriptions.get(resource);
+      if (resourceSubscription) {
+        resourceSubscription.get(key)?.callbacks.delete(handler);
+
+        if (resourceSubscription.get(key)?.callbacks.size === 0) {
+          resourceSubscription.delete(key);
+        }
+      }
+    };
+  }
+
+  /** @internal */
+  public notifySubscribers(mutation: DefaultMutation) {
+    const resource = mutation.resource;
+    const resourceSubscriptions = this.collectionSubscriptions.get(resource);
+    if (!resourceSubscriptions) return;
+
+    for (const subscription of Array.from(resourceSubscriptions.values())) {
+      subscription.callbacks.forEach((handler) => {
+        try {
+          handler(mutation);
+        } catch (error) {
+          this.logger?.error(
+            `Error in mutation subscription for resource ${resource}:`,
+            error
+          );
+        }
+      });
+    }
   }
 
   private wrapInMiddlewares<T extends Request>(

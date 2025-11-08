@@ -10,6 +10,7 @@ import {
 } from "vitest";
 import { LiveObjectAny, MaterializedLiveType, Schema } from "../../src/schema";
 import { SQLStorage, Storage } from "../../src/server/storage";
+import type { Logger } from "../../src/utils";
 
 // Mock Kysely and PostgresDialect
 vi.mock("kysely", () => ({
@@ -25,7 +26,7 @@ vi.mock("kysely/helpers/postgres", () => ({
 describe("Storage", () => {
   test("should define abstract methods", () => {
     const storage = new (class extends Storage {
-      async init() {}
+      async init(opts: Schema<any>, logger?: Logger, server?: any) {}
       async rawFindById() {
         return undefined;
       }
@@ -1766,17 +1767,336 @@ describe("SQLStorage", () => {
     );
   });
 
-  test("should handle SQLStorage constructor with Kysely instance", () => {
+  test("should handle SQLStorage constructor with Kysely instance and server", () => {
     const mockKyselyInstance = {} as any;
     const mockSchema = {} as Schema<any>;
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
 
     const storageWithKysely = new SQLStorage(
       mockKyselyInstance,
       mockSchema,
-      mockLogger
+      mockLogger,
+      mockServer
     );
 
     expect(storageWithKysely).toBeInstanceOf(SQLStorage);
+  });
+
+  test("should track mutations and notify server on insert", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
+
+    await storage.init(mockSchema, mockLogger, mockServer);
+
+    const mockValue: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "John",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+
+    // Mock insertInto chain for both tables
+    const mockInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    await storage.rawInsert("users", "test-id", mockValue);
+
+    // Verify mutation was notified
+    expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        resourceId: "test-id",
+        procedure: "INSERT",
+        payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "John",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  test("should track mutations and notify server on update", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
+
+    await storage.init(mockSchema, mockLogger, mockServer);
+
+    const mockValue: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "Jane",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+
+    // Mock updateTable chain for both tables
+    const mockUpdateTable = {
+      set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+    // Mock insertInto chain for meta table
+    const mockInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    await storage.rawUpdate("users", "test-id", mockValue);
+
+    // Verify mutation was notified
+    expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        resourceId: "test-id",
+        procedure: "UPDATE",
+        payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "Jane",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  test("should not notify mutations when no server is provided", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    await storage.init(mockSchema, mockLogger);
+
+    const mockValue: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "John",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+
+    // Mock insertInto chain for both tables
+    const mockInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    // Should not throw error even without server
+    await expect(
+      storage.rawInsert("users", "test-id", mockValue)
+    ).resolves.toBeDefined();
+  });
+
+  test("should track mutations in transaction and notify on commit", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
+
+    await storage.init(mockSchema, mockLogger, mockServer);
+
+    const mockTrx = {
+      commit: vi
+        .fn()
+        .mockReturnValue({ execute: vi.fn().mockResolvedValue(undefined) }),
+      rollback: vi
+        .fn()
+        .mockReturnValue({ execute: vi.fn().mockResolvedValue(undefined) }),
+      isCommitted: false,
+      isRolledBack: false,
+      isTransaction: false,
+    };
+
+    // Mock startTransaction
+    mockDb.startTransaction = vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue(mockTrx),
+    });
+
+    // Mock insertInto for transaction
+    const mockTrxInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const mockTrxDb = {
+      ...mockDb,
+      isTransaction: true,
+      insertInto: vi.fn().mockReturnValue(mockTrxInsertInto),
+    };
+
+    // Override transaction storage creation
+    const originalTransaction = storage.transaction.bind(storage);
+    storage.transaction = async (fn: any) => {
+      const trxStorage = new SQLStorage(
+        mockTrxDb as any,
+        mockSchema,
+        mockLogger,
+        mockServer
+      );
+      (trxStorage as any).mutationStack = [];
+      return fn({
+        trx: trxStorage,
+        commit: async () => {
+          await mockTrx.commit().execute();
+          mockServer.notifySubscribers({
+            type: "MUTATE",
+            resource: "users",
+            resourceId: "test-id",
+            procedure: "INSERT",
+            payload: {
+              name: {
+                value: "John",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+            },
+          });
+        },
+        rollback: async () => {
+          await mockTrx.rollback().execute();
+        },
+      });
+    };
+
+    await storage.transaction(async ({ trx, commit }) => {
+      const mockValue: MaterializedLiveType<any> = {
+        value: {
+          id: { value: "test-id" },
+          name: {
+            value: "John",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        },
+      };
+      await trx.rawInsert("users", "test-id", mockValue);
+      await commit();
+    });
+
+    // Verify mutation was notified after commit
+    expect(mockServer.notifySubscribers).toHaveBeenCalled();
   });
 
   test("should handle rawInsert with meta table insert", async () => {
