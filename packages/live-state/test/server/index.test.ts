@@ -657,36 +657,6 @@ describe("Server", () => {
       };
       expect(subscription.authorizationWhere).toEqual(authorizationWhere);
     });
-
-    test("should update authorizationWhere when subscribing with same query", () => {
-      const serverInstance = Server.create({
-        router: mockRouter,
-        storage: mockStorage,
-        schema: mockSchema,
-      });
-
-      const handler1 = vi.fn();
-      const handler2 = vi.fn();
-      const query = { resource: "users" };
-      const authorizationWhere1 = { userId: "user123" };
-      const authorizationWhere2 = { userId: "user456" };
-
-      serverInstance.subscribeToMutations(query, handler1, authorizationWhere1);
-      serverInstance.subscribeToMutations(query, handler2, authorizationWhere2);
-
-      const collectionSubscriptions = (
-        serverInstance as any
-      ).collectionSubscriptions.get("users");
-      const subscription = Array.from(collectionSubscriptions.values())[0] as {
-        callbacks: Set<typeof handler1>;
-        query: typeof query;
-        authorizationWhere?: any;
-      };
-      // Should use the latest authorizationWhere
-      expect(subscription.authorizationWhere).toEqual(authorizationWhere2);
-      expect(subscription.callbacks.has(handler1)).toBe(true);
-      expect(subscription.callbacks.has(handler2)).toBe(true);
-    });
   });
 
   describe("notifySubscribers with authorization filtering", () => {

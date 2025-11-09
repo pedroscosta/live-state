@@ -372,7 +372,11 @@ export class Server<TRouter extends AnyRouter> {
     authorizationWhere?: WhereClause<any>
   ) {
     const resource = query.resource;
-    const key = hash(query);
+    const subscriptionConditions = {
+      query,
+      authorizationWhere,
+    };
+    const key = hash(subscriptionConditions);
 
     let resourceSubscriptions = this.collectionSubscriptions.get(resource);
 
@@ -392,8 +396,7 @@ export class Server<TRouter extends AnyRouter> {
     } else {
       resourceSubscriptions.set(key, {
         callbacks: new Set([handler]),
-        query,
-        authorizationWhere,
+        ...subscriptionConditions,
       });
     }
 
