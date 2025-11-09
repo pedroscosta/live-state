@@ -371,10 +371,16 @@ export class Server<TRouter extends AnyRouter> {
       this.collectionSubscriptions.set(resource, resourceSubscriptions);
     }
 
-    resourceSubscriptions.set(key, {
-      callbacks: new Set([handler]),
-      query,
-    });
+    const existing = resourceSubscriptions.get(key);
+
+    if (existing) {
+      existing.callbacks.add(handler);
+    } else {
+      resourceSubscriptions.set(key, {
+        callbacks: new Set([handler]),
+        query,
+      });
+    }
 
     return () => {
       const resourceSubscription = this.collectionSubscriptions.get(resource);
