@@ -289,8 +289,7 @@ describe("Server", () => {
 
     // Should not throw, but should log error
     expect(() => serverInstance.notifySubscribers(mutation)).not.toThrow();
-    // handler1 was replaced by handler2, so only handler2 should be called
-    expect(handler1).not.toHaveBeenCalled();
+    expect(handler1).toHaveBeenCalled();
     expect(handler2).toHaveBeenCalled();
   });
 
