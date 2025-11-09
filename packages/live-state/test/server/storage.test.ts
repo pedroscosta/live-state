@@ -72,7 +72,7 @@ describe("Storage", () => {
     });
 
     const storage = new (class extends Storage {
-      async updateSchema() {}
+      async init() {}
       async rawFindById() {
         return undefined;
       }
@@ -126,7 +126,7 @@ describe("Storage", () => {
     });
 
     const storage = new (class extends Storage {
-      async updateSchema() {}
+      async init() {}
       async rawFindById() {
         return undefined;
       }
@@ -194,7 +194,7 @@ describe("Storage", () => {
     });
 
     const storage = new (class extends Storage {
-      async updateSchema() {}
+      async init() {}
       async rawFindById() {
         return undefined;
       }
@@ -276,7 +276,7 @@ describe("Storage", () => {
     });
 
     const storage = new (class extends Storage {
-      async updateSchema() {}
+      async init() {}
       async rawFindById() {
         return undefined;
       }
@@ -1836,7 +1836,7 @@ describe("SQLStorage", () => {
 
     await storage.rawInsert("users", "test-id", mockValue);
 
-    // Verify mutation was notified
+    // Verify mutation was notified with entityData
     expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "MUTATE",
@@ -1844,6 +1844,17 @@ describe("SQLStorage", () => {
         resourceId: "test-id",
         procedure: "INSERT",
         payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "John",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        value: expect.objectContaining({
+          id: expect.objectContaining({ value: "test-id" }),
           name: expect.objectContaining({
             value: "John",
             _meta: expect.objectContaining({
@@ -1915,7 +1926,7 @@ describe("SQLStorage", () => {
 
     await storage.rawUpdate("users", "test-id", mockValue);
 
-    // Verify mutation was notified
+    // Verify mutation was notified with entityData
     expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "MUTATE",
@@ -1923,6 +1934,17 @@ describe("SQLStorage", () => {
         resourceId: "test-id",
         procedure: "UPDATE",
         payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "Jane",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        value: expect.objectContaining({
+          id: expect.objectContaining({ value: "test-id" }),
           name: expect.objectContaining({
             value: "Jane",
             _meta: expect.objectContaining({
@@ -2978,5 +3000,369 @@ describe("SQLStorage", () => {
     expect(mockNestedSavepoint.releaseSavepoint).toHaveBeenCalled();
     // Nested savepoint should not be rolled back (it was committed)
     expect(mockNestedSavepoint.rollbackToSavepoint).not.toHaveBeenCalled();
+  });
+
+  describe("entityData tracking and notification", () => {
+    let mockServer: any;
+
+    beforeEach(async () => {
+      mockServer = {
+        notifySubscribers: vi.fn(),
+      };
+
+      const mockSchema: Schema<any> = {
+        users: {
+          name: "users",
+          fields: {
+            id: {
+              getStorageFieldType: () => ({
+                type: "varchar",
+                primary: true,
+                nullable: false,
+              }),
+            },
+            name: {
+              getStorageFieldType: () => ({
+                type: "varchar",
+                nullable: true,
+              }),
+            },
+          },
+          relations: {},
+          encodeMutation: vi.fn(),
+          mergeMutation: vi.fn(),
+          decode: vi.fn(),
+          encode: vi.fn(),
+          validate: vi.fn(),
+          infer: vi.fn(),
+          materialize: vi.fn(),
+          inferValue: vi.fn((v) => v),
+        },
+      };
+
+      await storage.init(mockSchema, mockLogger, mockServer);
+    });
+
+    test("should track entityData with mutation when not in transaction", async () => {
+      const mockValue: MaterializedLiveType<any> = {
+        value: {
+          id: { value: "test-id" },
+          name: {
+            value: "John",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        },
+        _meta: {},
+      };
+
+      const mockInsertInto = {
+        values: vi.fn().mockReturnThis(),
+        onConflict: vi.fn().mockReturnValue({
+          execute: vi.fn().mockResolvedValue(undefined),
+        }),
+        execute: vi.fn().mockResolvedValue(undefined),
+      };
+      mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+      await storage.rawInsert("users", "test-id", mockValue);
+
+      // Verify notifySubscribers was called with mutation and entityData
+      expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MUTATE",
+          resource: "users",
+          resourceId: "test-id",
+          procedure: "INSERT",
+        }),
+        expect.objectContaining({
+          value: expect.objectContaining({
+            id: expect.objectContaining({ value: "test-id" }),
+            name: expect.objectContaining({
+              value: "John",
+              _meta: expect.objectContaining({
+                timestamp: "2023-01-01T00:00:00.000Z",
+              }),
+            }),
+          }),
+        })
+      );
+    });
+
+    test("should store entityData in mutationStack when in transaction", async () => {
+      const mockTrxInsertInto = {
+        values: vi.fn().mockReturnThis(),
+        onConflict: vi.fn().mockReturnValue({
+          execute: vi.fn().mockResolvedValue(undefined),
+        }),
+        execute: vi.fn().mockResolvedValue(undefined),
+      };
+
+      // Mock insertInto to return different mocks for main table and meta table
+      const insertIntoMock = vi.fn().mockReturnValue(mockTrxInsertInto);
+
+      const mockTrx = {
+        commit: vi
+          .fn()
+          .mockReturnValue({ execute: vi.fn().mockResolvedValue(undefined) }),
+        rollback: vi
+          .fn()
+          .mockReturnValue({ execute: vi.fn().mockResolvedValue(undefined) }),
+        isCommitted: false,
+        isRolledBack: false,
+        isTransaction: true,
+        insertInto: insertIntoMock,
+        updateTable: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              execute: vi.fn().mockResolvedValue(undefined),
+            }),
+          }),
+        }),
+      };
+
+      mockDb.startTransaction = vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(mockTrx),
+      });
+
+      const mockValue: MaterializedLiveType<any> = {
+        value: {
+          id: { value: "test-id" },
+          name: {
+            value: "John",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        },
+        _meta: {},
+      };
+
+      await storage.transaction(async ({ trx, commit }) => {
+        await trx.rawInsert("users", "test-id", mockValue);
+        await commit();
+      });
+
+      // After commit, verify notifySubscribers was called with entityData
+      expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MUTATE",
+          resource: "users",
+          resourceId: "test-id",
+          procedure: "INSERT",
+        }),
+        expect.objectContaining({
+          value: expect.objectContaining({
+            id: expect.objectContaining({ value: "test-id" }),
+            name: expect.objectContaining({
+              value: "John",
+              _meta: expect.objectContaining({
+                timestamp: "2023-01-01T00:00:00.000Z",
+              }),
+            }),
+          }),
+        })
+      );
+    });
+
+    test("should pass entityData when calling notifyMutations with single entityData", async () => {
+      const mutations = [
+        {
+          id: "mutation-1",
+          type: "MUTATE" as const,
+          resource: "users",
+          resourceId: "user-1",
+          procedure: "INSERT" as const,
+          payload: { name: { value: "John" } },
+        },
+        {
+          id: "mutation-2",
+          type: "MUTATE" as const,
+          resource: "users",
+          resourceId: "user-2",
+          procedure: "INSERT" as const,
+          payload: { name: { value: "Jane" } },
+        },
+      ];
+
+      const entityData: MaterializedLiveType<any> = {
+        value: {
+          id: { value: "user-1" },
+          name: {
+            value: "John",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        },
+        _meta: {},
+      };
+
+      // Access private method for testing
+      const notifyMutations = (storage as any).notifyMutations.bind(storage);
+      notifyMutations(mutations, entityData);
+
+      // Both mutations should be notified with the same entityData
+      expect(mockServer.notifySubscribers).toHaveBeenCalledTimes(2);
+      expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MUTATE",
+          resource: "users",
+          resourceId: "user-1",
+          procedure: "INSERT",
+        }),
+        expect.objectContaining({
+          value: expect.objectContaining({
+            id: expect.objectContaining({ value: "user-1" }),
+          }),
+        })
+      );
+      expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MUTATE",
+          resource: "users",
+          resourceId: "user-2",
+          procedure: "INSERT",
+        }),
+        expect.objectContaining({
+          value: expect.objectContaining({
+            id: expect.objectContaining({ value: "user-1" }),
+          }),
+        })
+      );
+    });
+
+    test("should pass entityData when calling notifyMutations with mutation entries", async () => {
+      const mutationEntries = [
+        {
+          mutation: {
+            id: "mutation-1",
+            type: "MUTATE" as const,
+            resource: "users",
+            resourceId: "user-1",
+            procedure: "INSERT" as const,
+            payload: { name: { value: "John" } },
+          },
+          entityData: {
+            value: {
+              id: { value: "user-1" },
+              name: {
+                value: "John",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+            },
+            _meta: {},
+          } as MaterializedLiveType<any>,
+        },
+        {
+          mutation: {
+            id: "mutation-2",
+            type: "MUTATE" as const,
+            resource: "users",
+            resourceId: "user-2",
+            procedure: "INSERT" as const,
+            payload: { name: { value: "Jane" } },
+          },
+          entityData: {
+            value: {
+              id: { value: "user-2" },
+              name: {
+                value: "Jane",
+                _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+              },
+            },
+            _meta: {},
+          } as MaterializedLiveType<any>,
+        },
+      ];
+
+      // Access private method for testing
+      const notifyMutations = (storage as any).notifyMutations.bind(storage);
+      notifyMutations(mutationEntries);
+
+      // Each mutation should be notified with its corresponding entityData
+      expect(mockServer.notifySubscribers).toHaveBeenCalledTimes(2);
+      expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MUTATE",
+          resource: "users",
+          resourceId: "user-1",
+          procedure: "INSERT",
+        }),
+        expect.objectContaining({
+          value: expect.objectContaining({
+            id: expect.objectContaining({ value: "user-1" }),
+          }),
+        })
+      );
+      expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "MUTATE",
+          resource: "users",
+          resourceId: "user-2",
+          procedure: "INSERT",
+        }),
+        expect.objectContaining({
+          value: expect.objectContaining({
+            id: expect.objectContaining({ value: "user-2" }),
+          }),
+        })
+      );
+    });
+
+    test("should not notify when server is not set", async () => {
+      const storageWithoutServer = new SQLStorage(mockDb as any);
+      const mockSchema: Schema<any> = {
+        users: {
+          name: "users",
+          fields: {
+            id: {
+              getStorageFieldType: () => ({
+                type: "varchar",
+                primary: true,
+                nullable: false,
+              }),
+            },
+          },
+          relations: {},
+          encodeMutation: vi.fn(),
+          mergeMutation: vi.fn(),
+          decode: vi.fn(),
+          encode: vi.fn(),
+          validate: vi.fn(),
+          infer: vi.fn(),
+          materialize: vi.fn(),
+          inferValue: vi.fn((v) => v),
+        },
+      };
+
+      await storageWithoutServer.init(mockSchema);
+
+      const mutations = [
+        {
+          id: "mutation-1",
+          type: "MUTATE" as const,
+          resource: "users",
+          resourceId: "user-1",
+          procedure: "INSERT" as const,
+          payload: { name: { value: "John" } },
+        },
+      ];
+
+      const entityData: MaterializedLiveType<any> = {
+        value: {
+          id: { value: "user-1" },
+          name: {
+            value: "John",
+            _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+          },
+        },
+        _meta: {},
+      };
+
+      // Access private method for testing
+      const notifyMutations = (
+        storageWithoutServer as any
+      ).notifyMutations.bind(storageWithoutServer);
+      notifyMutations(mutations, entityData);
+
+      // Should not throw, but also should not call notifySubscribers
+      expect(mockServer.notifySubscribers).not.toHaveBeenCalled();
+    });
   });
 });

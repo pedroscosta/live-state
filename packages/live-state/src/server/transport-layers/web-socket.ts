@@ -59,13 +59,39 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
         );
 
         if (parsedMessage.type === "SUBSCRIBE") {
-          subscriptions.add(
-            server.subscribeToMutations(parsedMessage, (m) => {
-              if (!m.resourceId || !m.payload || !Object.keys(m.payload).length)
-                return;
+          const context = (await initialContext) ?? {};
+          const resource = parsedMessage.resource;
+          const route = server.router.routes[resource] as
+            | { authorization?: { read?: (opts: { ctx: any }) => any } }
+            | undefined;
 
-              connections[clientId]?.send(JSON.stringify(m));
-            })
+          // Evaluate authorization where clause if it exists
+          let authorizationWhere: any;
+          if (route?.authorization?.read) {
+            const authorizationClause = route.authorization.read({
+              ctx: context,
+            });
+            authorizationWhere =
+              typeof authorizationClause === "object"
+                ? authorizationClause
+                : undefined;
+          }
+
+          subscriptions.add(
+            server.subscribeToMutations(
+              parsedMessage,
+              (m) => {
+                if (
+                  !m.resourceId ||
+                  !m.payload ||
+                  !Object.keys(m.payload).length
+                )
+                  return;
+
+                connections[clientId]?.send(JSON.stringify(m));
+              },
+              authorizationWhere
+            )
           );
 
           // TODO send bootstrap

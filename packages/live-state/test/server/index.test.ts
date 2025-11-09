@@ -164,7 +164,11 @@ describe("Server", () => {
       serverInstance as any
     ).collectionSubscriptions.get("users");
     expect(collectionSubscriptions).toBeDefined();
-    const subscription = Array.from(collectionSubscriptions.values())[0];
+    const subscription = Array.from(collectionSubscriptions.values())[0] as {
+      callbacks: Set<typeof handler>;
+      query: typeof query;
+      authorizationWhere?: any;
+    };
     expect(subscription.callbacks.has(handler)).toBe(true);
   });
 
@@ -184,7 +188,13 @@ describe("Server", () => {
       serverInstance as any
     ).collectionSubscriptions.get("users");
     expect(collectionSubscriptions).toBeDefined();
-    const subscriptionBefore = Array.from(collectionSubscriptions.values())[0];
+    const subscriptionBefore = Array.from(
+      collectionSubscriptions.values()
+    )[0] as {
+      callbacks: Set<typeof handler>;
+      query: typeof query;
+      authorizationWhere?: any;
+    };
     expect(subscriptionBefore.callbacks.has(handler)).toBe(true);
 
     unsubscribe();
@@ -228,7 +238,12 @@ describe("Server", () => {
       payload: { name: { value: "John" } },
     };
 
-    serverInstance.notifySubscribers(mutation);
+    const entityData = {
+      value: { id: "user-1", name: "John" },
+      _meta: {},
+    };
+
+    serverInstance.notifySubscribers(mutation, entityData);
 
     // Both handlers should be called since they're subscribed to the same resource
     expect(handler1).toHaveBeenCalledWith(mutation);
@@ -256,7 +271,12 @@ describe("Server", () => {
       payload: { title: { value: "Post" } },
     };
 
-    serverInstance.notifySubscribers(mutation);
+    const entityData = {
+      value: { id: "post-1", title: "Post" },
+      _meta: {},
+    };
+
+    serverInstance.notifySubscribers(mutation, entityData);
 
     expect(handler).not.toHaveBeenCalled();
   });
@@ -287,8 +307,15 @@ describe("Server", () => {
       payload: { name: { value: "John" } },
     };
 
+    const entityData = {
+      value: { id: "user-1", name: "John" },
+      _meta: {},
+    };
+
     // Should not throw, but should log error
-    expect(() => serverInstance.notifySubscribers(mutation)).not.toThrow();
+    expect(() =>
+      serverInstance.notifySubscribers(mutation, entityData)
+    ).not.toThrow();
     expect(handler1).toHaveBeenCalled();
     expect(handler2).toHaveBeenCalled();
   });
@@ -602,6 +629,400 @@ describe("Server", () => {
         where: undefined,
       }),
       batcher: expect.any(Batcher),
+    });
+  });
+
+  describe("subscribeToMutations with authorization", () => {
+    test("should store authorizationWhere when provided", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      const query = { resource: "users" };
+      const authorizationWhere = { userId: "user123" };
+
+      serverInstance.subscribeToMutations(query, handler, authorizationWhere);
+
+      const collectionSubscriptions = (
+        serverInstance as any
+      ).collectionSubscriptions.get("users");
+      expect(collectionSubscriptions).toBeDefined();
+      const subscription = Array.from(collectionSubscriptions.values())[0] as {
+        callbacks: Set<typeof handler>;
+        query: typeof query;
+        authorizationWhere?: any;
+      };
+      expect(subscription.authorizationWhere).toEqual(authorizationWhere);
+    });
+
+    test("should update authorizationWhere when subscribing with same query", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+      const query = { resource: "users" };
+      const authorizationWhere1 = { userId: "user123" };
+      const authorizationWhere2 = { userId: "user456" };
+
+      serverInstance.subscribeToMutations(query, handler1, authorizationWhere1);
+      serverInstance.subscribeToMutations(query, handler2, authorizationWhere2);
+
+      const collectionSubscriptions = (
+        serverInstance as any
+      ).collectionSubscriptions.get("users");
+      const subscription = Array.from(collectionSubscriptions.values())[0] as {
+        callbacks: Set<typeof handler1>;
+        query: typeof query;
+        authorizationWhere?: any;
+      };
+      // Should use the latest authorizationWhere
+      expect(subscription.authorizationWhere).toEqual(authorizationWhere2);
+      expect(subscription.callbacks.has(handler1)).toBe(true);
+      expect(subscription.callbacks.has(handler2)).toBe(true);
+    });
+  });
+
+  describe("notifySubscribers with authorization filtering", () => {
+    beforeEach(() => {
+      // Create a more complete mock schema with fields
+      // inferValue should extract plain values from MaterializedLiveType
+      const inferValueMock = (v: any): any => {
+        if (!v || typeof v !== "object") return v;
+        if (v.value !== undefined && v._meta !== undefined) {
+          // It's a MaterializedLiveType, extract the value
+          if (
+            typeof v.value === "object" &&
+            v.value !== null &&
+            !Array.isArray(v.value) &&
+            !(v.value instanceof Date)
+          ) {
+            return Object.fromEntries(
+              Object.entries(v.value).map(([key, val]: [string, any]) => {
+                if (val && typeof val === "object" && val.value !== undefined) {
+                  return [key, val.value];
+                }
+                return [key, val];
+              })
+            );
+          }
+          return v.value;
+        }
+        return v;
+      };
+
+      mockSchema = {
+        users: {
+          name: "users",
+          fields: {
+            id: {
+              _value: "string",
+              _meta: {},
+              encodeMutation: vi.fn(),
+              mergeMutation: vi.fn(),
+              infer: vi.fn(),
+              materialize: vi.fn(),
+              inferValue: inferValueMock,
+            },
+            name: {
+              _value: "string",
+              _meta: {},
+              encodeMutation: vi.fn(),
+              mergeMutation: vi.fn(),
+              infer: vi.fn(),
+              materialize: vi.fn(),
+              inferValue: inferValueMock,
+            },
+            userId: {
+              _value: "string",
+              _meta: {},
+              encodeMutation: vi.fn(),
+              mergeMutation: vi.fn(),
+              infer: vi.fn(),
+              materialize: vi.fn(),
+              inferValue: inferValueMock,
+            },
+          },
+          relations: {},
+          encodeMutation: vi.fn(),
+          mergeMutation: vi.fn(),
+          decode: vi.fn(),
+          encode: vi.fn(),
+          validate: vi.fn(),
+          infer: vi.fn(),
+          materialize: vi.fn(),
+          inferValue: inferValueMock,
+        },
+      } as unknown as Schema<any>;
+    });
+
+    test("should not notify when entityData is missing", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      const query = { resource: "users" };
+
+      serverInstance.subscribeToMutations(query, handler);
+
+      const mutation = {
+        id: "mutation-1",
+        type: "MUTATE" as const,
+        resource: "users",
+        resourceId: "user-1",
+        procedure: "INSERT" as const,
+        payload: { name: { value: "John" } },
+      };
+
+      serverInstance.notifySubscribers(mutation, null);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("should filter mutations based on subscription where clause", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      const query = { resource: "users", where: { name: "John" } };
+
+      serverInstance.subscribeToMutations(query, handler);
+
+      const mutation = {
+        id: "mutation-1",
+        type: "MUTATE" as const,
+        resource: "users",
+        resourceId: "user-1",
+        procedure: "INSERT" as const,
+        payload: { name: { value: "John" } },
+      };
+
+      // Entity matches where clause - use MaterializedLiveType structure
+      const matchingEntityData = {
+        value: {
+          id: { value: "user-1" },
+          name: { value: "John", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      serverInstance.notifySubscribers(mutation, matchingEntityData);
+      expect(handler).toHaveBeenCalledWith(mutation);
+
+      handler.mockClear();
+
+      // Entity doesn't match where clause
+      const nonMatchingEntityData = {
+        value: {
+          id: { value: "user-2" },
+          name: { value: "Jane", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      const mutation2 = {
+        ...mutation,
+        resourceId: "user-2",
+      };
+
+      serverInstance.notifySubscribers(mutation2, nonMatchingEntityData);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("should filter mutations based on authorization where clause", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      const query = { resource: "users" };
+      const authorizationWhere = { userId: "user123" };
+
+      serverInstance.subscribeToMutations(query, handler, authorizationWhere);
+
+      const mutation = {
+        id: "mutation-1",
+        type: "MUTATE" as const,
+        resource: "users",
+        resourceId: "user-1",
+        procedure: "INSERT" as const,
+        payload: { name: { value: "John" } },
+      };
+
+      // Entity matches authorization where clause
+      const matchingEntityData = {
+        value: {
+          id: { value: "user-1" },
+          name: { value: "John", _meta: {} },
+          userId: { value: "user123", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      serverInstance.notifySubscribers(mutation, matchingEntityData);
+      expect(handler).toHaveBeenCalledWith(mutation);
+
+      handler.mockClear();
+
+      // Entity doesn't match authorization where clause
+      const nonMatchingEntityData = {
+        value: {
+          id: { value: "user-2" },
+          name: { value: "Jane", _meta: {} },
+          userId: { value: "user456", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      const mutation2 = {
+        ...mutation,
+        resourceId: "user-2",
+      };
+
+      serverInstance.notifySubscribers(mutation2, nonMatchingEntityData);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("should filter mutations based on merged subscription and authorization where clauses", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      const query = { resource: "users", where: { name: "John" } };
+      const authorizationWhere = { userId: "user123" };
+
+      serverInstance.subscribeToMutations(query, handler, authorizationWhere);
+
+      const mutation = {
+        id: "mutation-1",
+        type: "MUTATE" as const,
+        resource: "users",
+        resourceId: "user-1",
+        procedure: "INSERT" as const,
+        payload: { name: { value: "John" } },
+      };
+
+      // Entity matches both where clauses
+      const matchingEntityData = {
+        value: {
+          id: { value: "user-1" },
+          name: { value: "John", _meta: {} },
+          userId: { value: "user123", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      serverInstance.notifySubscribers(mutation, matchingEntityData);
+      expect(handler).toHaveBeenCalledWith(mutation);
+
+      handler.mockClear();
+
+      // Entity matches subscription where but not authorization where
+      const nonMatchingEntityData = {
+        value: {
+          id: { value: "user-2" },
+          name: { value: "John", _meta: {} },
+          userId: { value: "user456", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      const mutation2 = {
+        ...mutation,
+        resourceId: "user-2",
+      };
+
+      serverInstance.notifySubscribers(mutation2, nonMatchingEntityData);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test("should notify all subscribers when no where clause (empty object)", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      const query = { resource: "users" };
+
+      serverInstance.subscribeToMutations(query, handler);
+
+      const mutation = {
+        id: "mutation-1",
+        type: "MUTATE" as const,
+        resource: "users",
+        resourceId: "user-1",
+        procedure: "INSERT" as const,
+        payload: { name: { value: "John" } },
+      };
+
+      const entityData = {
+        value: {
+          id: { value: "user-1" },
+          name: { value: "John", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      serverInstance.notifySubscribers(mutation, entityData);
+      expect(handler).toHaveBeenCalledWith(mutation);
+    });
+
+    test("should extract first-level where clause and ignore relation where clauses", () => {
+      const serverInstance = Server.create({
+        router: mockRouter,
+        storage: mockStorage,
+        schema: mockSchema,
+      });
+
+      const handler = vi.fn();
+      // Include relation where clause (should be ignored)
+      const query = {
+        resource: "users",
+        where: { name: "John", posts: { title: "Post" } },
+      };
+
+      serverInstance.subscribeToMutations(query, handler);
+
+      const mutation = {
+        id: "mutation-1",
+        type: "MUTATE" as const,
+        resource: "users",
+        resourceId: "user-1",
+        procedure: "INSERT" as const,
+        payload: { name: { value: "John" } },
+      };
+
+      // Entity matches first-level where clause (name: "John")
+      // Relation where clause should be ignored
+      const matchingEntityData = {
+        value: {
+          id: { value: "user-1" },
+          name: { value: "John", _meta: {} },
+        },
+        _meta: {},
+      };
+
+      serverInstance.notifySubscribers(mutation, matchingEntityData);
+      expect(handler).toHaveBeenCalledWith(mutation);
     });
   });
 });
