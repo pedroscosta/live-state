@@ -12,10 +12,9 @@ export const msgId = z.string();
  * Client messages
  */
 
-export const clSubscribeMsgSchema = z.object({
+export const clSubscribeMsgSchema = querySchema.extend({
   id: msgId,
   type: z.literal("SUBSCRIBE"),
-  resource: z.string(),
 });
 
 export const clQueryMsgSchema = querySchema.extend({

@@ -8,42 +8,16 @@ import type {
 } from "../../core/schemas/core-protocol";
 import {
   clientMessageSchema,
-  type MutationMessage,
   type ServerMessage,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
 import type { LiveObjectAny, MaterializedLiveType } from "../../schema";
 import type { AnyRouter, Server } from "../";
 
-export type Subscription = {
-  filters?: Record<string, any>;
-};
-
 export const webSocketAdapter = (server: Server<AnyRouter>) => {
   const connections: Record<string, WebSocket> = {};
-  const subscriptions: Record<string, Record<string, Subscription>> = {};
+
   const logger = server.logger;
-
-  server.subscribeToMutations((_m) => {
-    const m = _m as DefaultMutation;
-
-    if (!m.resourceId || !m.payload) return;
-
-    logger.debug("Mutation propagated:", m);
-
-    Object.entries(subscriptions[m.resource] ?? {}).forEach(
-      ([clientId, _sub]) => {
-        // TODO handle subscription filters
-        connections[clientId]?.send(
-          JSON.stringify({
-            ...m,
-            id: m.id ?? generateId(),
-          } satisfies MutationMessage)
-        );
-      }
-    );
-  });
-
   // TODO make this adapter agnostic
   return (ws: WebSocket, request: any) => {
     const reply = (msg: ServerMessage) => {
@@ -51,6 +25,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     };
 
     const clientId = generateId();
+    const subscriptions: Set<() => void> = new Set();
 
     const requestContext: {
       headers: Record<string, any>;
@@ -84,11 +59,14 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
         );
 
         if (parsedMessage.type === "SUBSCRIBE") {
-          const { resource } = parsedMessage;
+          subscriptions.add(
+            server.subscribeToMutations(parsedMessage, (m) => {
+              if (!m.resourceId || !m.payload || !Object.keys(m.payload).length)
+                return;
 
-          if (!subscriptions[resource]) subscriptions[resource] = {};
-
-          subscriptions[resource][clientId] = {};
+              connections[clientId]?.send(JSON.stringify(m));
+            })
+          );
 
           // TODO send bootstrap
         } else if (parsedMessage.type === "QUERY") {
@@ -173,8 +151,8 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     ws.on("close", () => {
       logger.info("Connection closed", clientId);
       delete connections[clientId];
-      for (const subs of Object.values(subscriptions)) {
-        delete subs[clientId];
+      for (const unsubscribe of Array.from(subscriptions)) {
+        unsubscribe();
       }
     });
   };

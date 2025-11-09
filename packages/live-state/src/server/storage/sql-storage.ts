@@ -7,7 +7,11 @@ import {
   type Selectable,
 } from "kysely";
 import { jsonObjectFrom } from "kysely/helpers/postgres";
-import type { RawQueryRequest } from "../../core/schemas/core-protocol";
+import type {
+  DefaultMutation,
+  RawQueryRequest,
+} from "../../core/schemas/core-protocol";
+import { generateId } from "../../core/utils";
 import {
   type IncludeClause,
   type InferLiveObject,
@@ -19,6 +23,7 @@ import {
   type WhereClause,
 } from "../../schema";
 import type { Logger } from "../../utils";
+import type { Server } from "..";
 import { Storage } from "./interface";
 import { applyInclude, applyWhere } from "./sql-utils";
 
@@ -28,18 +33,22 @@ export class SQLStorage extends Storage {
   private db: Kysely<{ [x: string]: Selectable<any> }>;
   private schema?: Schema<any>;
   private logger?: Logger;
+  private server?: Server<any>;
+  private mutationStack: DefaultMutation[] = [];
 
   public constructor(pool: PostgresPool);
   /** @internal */
   public constructor(
     db: Kysely<{ [x: string]: Selectable<any> }>,
     schema: Schema<any>,
-    logger?: Logger
+    logger?: Logger,
+    server?: Server<any>
   );
   public constructor(
     poolOrDb: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>,
     schema?: Schema<any>,
-    logger?: Logger
+    logger?: Logger,
+    server?: Server<any>
   ) {
     super();
 
@@ -55,15 +64,21 @@ export class SQLStorage extends Storage {
 
     this.schema = schema;
     this.logger = logger;
+    this.server = server;
 
     this.rawInsert = this.rawInsert.bind(this);
     this.rawUpdate = this.rawUpdate.bind(this);
   }
 
   /** @internal */
-  public async init(opts: Schema<any>, logger?: Logger): Promise<void> {
+  public async init(
+    opts: Schema<any>,
+    logger?: Logger,
+    server?: Server<any>
+  ): Promise<void> {
     this.schema = opts;
     this.logger = logger;
+    this.server = server;
 
     const tables = await this.db.introspection.getTables();
 
@@ -334,6 +349,17 @@ export class SQLStorage extends Storage {
           .execute();
       });
 
+    const mutation = this.buildMutation(
+      resourceName,
+      resourceId,
+      "INSERT",
+      value
+    );
+
+    if (mutation) {
+      this.trackMutation(mutation);
+    }
+
     return value;
   }
 
@@ -366,6 +392,17 @@ export class SQLStorage extends Storage {
         .execute(),
     ]);
 
+    const mutation = this.buildMutation(
+      resourceName,
+      resourceId,
+      "UPDATE",
+      value
+    );
+
+    if (mutation) {
+      this.trackMutation(mutation);
+    }
+
     return value;
   }
 
@@ -380,6 +417,9 @@ export class SQLStorage extends Storage {
 
     if (this.db.isTransaction) {
       const savepointName = Math.random().toString(36).substring(2, 15);
+      const parentStack = this.mutationStack;
+      const nestedStack: DefaultMutation[] = [];
+      this.mutationStack = nestedStack;
 
       const trx = await (this.db as ControlledTransaction<any>)
         .savepoint(savepointName)
@@ -388,23 +428,27 @@ export class SQLStorage extends Storage {
       try {
         return await fn({
           trx: this,
-          commit: () =>
-            trx
-              .releaseSavepoint(savepointName)
-              .execute()
-              .then(() => {}),
-          rollback: () =>
-            trx
-              .rollbackToSavepoint(savepointName)
-              .execute()
-              .then(() => {}),
+          commit: async () => {
+            await trx.releaseSavepoint(savepointName).execute();
+            // Push nested mutations to parent stack
+            parentStack.push(...nestedStack);
+          },
+          rollback: async () => {
+            await trx.rollbackToSavepoint(savepointName).execute();
+            // Clear nested mutations on rollback
+            nestedStack.length = 0;
+          },
         }).then((v) => {
           if (trx.isCommitted || trx.isRolledBack) return v;
 
           return trx
             .releaseSavepoint(savepointName)
             .execute()
-            .then(() => v);
+            .then(() => {
+              // Push nested mutations to parent stack
+              parentStack.push(...nestedStack);
+              return v;
+            });
         });
       } catch (e) {
         await trx
@@ -413,28 +457,63 @@ export class SQLStorage extends Storage {
           .catch(() => {
             // Ignoring this error because it's already rolled back
           });
+        // Clear nested mutations on rollback
+        nestedStack.length = 0;
         throw e;
+      } finally {
+        // Restore parent stack
+        this.mutationStack = parentStack;
       }
     }
+
+    const transactionStack: DefaultMutation[] = [];
+    const previousStack = this.mutationStack;
+    this.mutationStack = transactionStack;
 
     const trx = await this.db.startTransaction().execute();
 
     try {
+      const transactionStorage = new SQLStorage(
+        trx as typeof this.db,
+        this.schema,
+        this.logger,
+        this.server
+      );
+      // Share the mutation stack with the transaction storage instance
+      (transactionStorage as any).mutationStack = transactionStack;
+
       return await fn({
-        trx: new SQLStorage(trx as typeof this.db, this.schema, this.logger),
-        commit: () => trx.commit().execute(),
-        rollback: () => trx.rollback().execute(),
+        trx: transactionStorage,
+        commit: async () => {
+          await trx.commit().execute();
+          // Notify all mutations when transaction commits
+          this.notifyMutations(transactionStack);
+        },
+        rollback: async () => {
+          await trx.rollback().execute();
+          // Clear mutations on rollback
+          transactionStack.length = 0;
+        },
       }).then((v) => {
         if (trx.isCommitted || trx.isRolledBack) return v;
 
         return trx
           .commit()
           .execute()
-          .then(() => v);
+          .then(() => {
+            // Notify all mutations when transaction commits
+            this.notifyMutations(transactionStack);
+            return v;
+          });
       });
     } catch (e) {
       await trx.rollback().execute();
+      // Clear mutations on rollback
+      transactionStack.length = 0;
       throw e;
+    } finally {
+      // Restore previous stack
+      this.mutationStack = previousStack;
     }
   }
 
@@ -494,5 +573,59 @@ export class SQLStorage extends Storage {
       (hasSelectFrom && hasStartTransaction) ||
       (hasSavepoint && hasIsTransaction)
     );
+  }
+
+  private buildMutation<T extends LiveObjectAny>(
+    resourceName: string,
+    resourceId: string,
+    procedure: "INSERT" | "UPDATE",
+    value: MaterializedLiveType<T>
+  ): DefaultMutation | null {
+    // Extract payload from MaterializedLiveType
+    const payload: Record<
+      string,
+      { value: any; _meta?: { timestamp: string } }
+    > = {};
+
+    for (const [key, val] of Object.entries(value.value)) {
+      if (key === "id") continue;
+
+      const metaVal = val._meta?.timestamp;
+      if (!metaVal) continue;
+
+      payload[key] = {
+        value: val.value,
+        _meta: { timestamp: metaVal },
+      };
+    }
+
+    if (Object.keys(payload).length === 0) return null;
+
+    return {
+      id: generateId(),
+      type: "MUTATE",
+      resource: resourceName,
+      resourceId,
+      procedure,
+      payload,
+    };
+  }
+
+  private trackMutation(mutation: DefaultMutation): void {
+    // If we're in a transaction, add to stack
+    if (this.db.isTransaction) {
+      this.mutationStack.push(mutation);
+    } else {
+      // If not in transaction, notify immediately
+      this.notifyMutations([mutation]);
+    }
+  }
+
+  private notifyMutations(mutations: DefaultMutation[]): void {
+    if (!this.server || mutations.length === 0) return;
+
+    for (const mutation of mutations) {
+      this.server.notifySubscribers(mutation);
+    }
   }
 }
