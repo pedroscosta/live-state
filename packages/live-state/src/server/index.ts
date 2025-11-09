@@ -4,8 +4,16 @@ import type {
   RawQueryRequest,
 } from "../core/schemas/core-protocol";
 import type { Awaitable } from "../core/utils";
-import type { Schema, WhereClause } from "../schema";
-import { createLogger, hash, type Logger, LogLevel } from "../utils";
+import { mergeWhereClauses } from "../core/utils";
+import type { LiveObjectAny, Schema, WhereClause } from "../schema";
+import { inferValue } from "../schema";
+import {
+  applyWhere,
+  createLogger,
+  hash,
+  type Logger,
+  LogLevel,
+} from "../utils";
 import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import { Batcher } from "./storage/batcher";
@@ -47,6 +55,7 @@ export type MutationHandler = (mutation: DefaultMutation) => void;
 interface CollectionSubscription {
   callbacks: Set<MutationHandler>;
   query: RawQueryRequest;
+  authorizationWhere?: WhereClause<any>;
 }
 
 export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
@@ -359,10 +368,15 @@ export class Server<TRouter extends AnyRouter> {
   /** @internal */
   public subscribeToMutations(
     query: RawQueryRequest,
-    handler: MutationHandler
+    handler: MutationHandler,
+    authorizationWhere?: WhereClause<any>
   ) {
     const resource = query.resource;
-    const key = hash(query);
+    const subscriptionConditions = {
+      query,
+      authorizationWhere,
+    };
+    const key = hash(subscriptionConditions);
 
     let resourceSubscriptions = this.collectionSubscriptions.get(resource);
 
@@ -375,10 +389,14 @@ export class Server<TRouter extends AnyRouter> {
 
     if (existing) {
       existing.callbacks.add(handler);
+      // Update authorizationWhere if provided
+      if (authorizationWhere !== undefined) {
+        existing.authorizationWhere = authorizationWhere;
+      }
     } else {
       resourceSubscriptions.set(key, {
         callbacks: new Set([handler]),
-        query,
+        ...subscriptionConditions,
       });
     }
 
@@ -395,22 +413,74 @@ export class Server<TRouter extends AnyRouter> {
   }
 
   /** @internal */
-  public notifySubscribers(mutation: DefaultMutation) {
+  public notifySubscribers(mutation: DefaultMutation, entityData: any) {
     const resource = mutation.resource;
     const resourceSubscriptions = this.collectionSubscriptions.get(resource);
     if (!resourceSubscriptions) return;
 
+    if (!entityData) return;
+
     for (const subscription of Array.from(resourceSubscriptions.values())) {
-      subscription.callbacks.forEach((handler) => {
-        try {
-          handler(mutation);
-        } catch (error) {
-          this.logger?.error(
-            `Error in mutation subscription for resource ${resource}:`,
-            error
-          );
-        }
-      });
+      // Extract first-level where clause from subscription query
+      const subscriptionWhere = extractFirstLevelWhere(
+        subscription.query.where,
+        this.schema[resource]
+      );
+
+      // Merge subscription where clause with stored authorization where clause
+      // mergeWhereClauses always returns a WhereClause, never undefined
+      const mergedWhereResult = mergeWhereClauses(
+        subscriptionWhere,
+        subscription.authorizationWhere
+      );
+
+      // Check if entity matches the where clause
+      // If no where clause (empty object), always match (subscribe to all)
+      const entityValue = inferValue(entityData);
+      if (!entityValue) continue;
+
+      // Ensure id field is included in entity value (it comes from mutation.resourceId)
+      // Only set if not already present or if it's different
+      if (
+        mutation.resourceId &&
+        typeof entityValue === "object" &&
+        entityValue !== null &&
+        !("id" in entityValue)
+      ) {
+        (entityValue as any).id = mutation.resourceId;
+      } else if (
+        mutation.resourceId &&
+        typeof entityValue === "object" &&
+        entityValue !== null &&
+        (entityValue as any).id !== mutation.resourceId
+      ) {
+        // Ensure id matches mutation.resourceId (it's the source of truth)
+        (entityValue as any).id = mutation.resourceId;
+      }
+
+      const hasWhereClause = Object.keys(mergedWhereResult).length > 0;
+
+      let matches = true;
+      if (hasWhereClause) {
+        // mergeWhereClauses always returns a valid WhereClause, never undefined
+        matches = applyWhere(
+          entityValue,
+          mergedWhereResult as WhereClause<LiveObjectAny>
+        );
+      }
+
+      if (matches) {
+        subscription.callbacks.forEach((handler) => {
+          try {
+            handler(mutation);
+          } catch (error) {
+            this.logger?.error(
+              `Error in mutation subscription for resource ${resource}:`,
+              error
+            );
+          }
+        });
+      }
     }
   }
 
@@ -505,4 +575,50 @@ function getQuerySteps(
   }
 
   return queryPlan;
+}
+
+/**
+ * Extracts first-level where clauses, removing nested relation where clauses.
+ * Only considers fields that are direct properties of the resource, not relations.
+ */
+function extractFirstLevelWhere<T extends LiveObjectAny>(
+  where: WhereClause<T> | undefined,
+  resourceSchema: T | undefined
+): WhereClause<T> | undefined {
+  if (!where || !resourceSchema) return where;
+  if (Object.keys(where).length === 0) return where;
+
+  // Handle $and operator
+  if (where.$and) {
+    const filteredAnd = (where.$and as WhereClause<T>[])
+      .map((w: WhereClause<T>) => extractFirstLevelWhere(w, resourceSchema))
+      .filter((w): w is WhereClause<T> => !!w && Object.keys(w).length > 0);
+    if (filteredAnd.length === 0) return undefined;
+    if (filteredAnd.length === 1) return filteredAnd[0];
+    return { $and: filteredAnd } as WhereClause<T>;
+  }
+
+  // Handle $or operator
+  if (where.$or) {
+    const filteredOr = (where.$or as WhereClause<T>[])
+      .map((w: WhereClause<T>) => extractFirstLevelWhere(w, resourceSchema))
+      .filter((w): w is WhereClause<T> => !!w && Object.keys(w).length > 0);
+    if (filteredOr.length === 0) return undefined;
+    if (filteredOr.length === 1) return filteredOr[0];
+    return { $or: filteredOr } as WhereClause<T>;
+  }
+
+  // Filter out relation fields, keep only direct fields
+  const filtered: Record<string, any> = {};
+  for (const [key, value] of Object.entries(where)) {
+    // Only include fields that are in the schema's fields (not relations)
+    if (resourceSchema.fields[key]) {
+      filtered[key] = value;
+    }
+    // Skip relation fields - they are nested where clauses we want to ignore
+  }
+
+  return Object.keys(filtered).length > 0
+    ? (filtered as WhereClause<T>)
+    : undefined;
 }

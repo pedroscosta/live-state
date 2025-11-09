@@ -34,7 +34,10 @@ export class SQLStorage extends Storage {
   private schema?: Schema<any>;
   private logger?: Logger;
   private server?: Server<any>;
-  private mutationStack: DefaultMutation[] = [];
+  private mutationStack: Array<{
+    mutation: DefaultMutation;
+    entityData: MaterializedLiveType<any>;
+  }> = [];
 
   public constructor(pool: PostgresPool);
   /** @internal */
@@ -357,7 +360,7 @@ export class SQLStorage extends Storage {
     );
 
     if (mutation) {
-      this.trackMutation(mutation);
+      this.trackMutation(mutation, value);
     }
 
     return value;
@@ -400,7 +403,7 @@ export class SQLStorage extends Storage {
     );
 
     if (mutation) {
-      this.trackMutation(mutation);
+      this.trackMutation(mutation, value);
     }
 
     return value;
@@ -418,7 +421,10 @@ export class SQLStorage extends Storage {
     if (this.db.isTransaction) {
       const savepointName = Math.random().toString(36).substring(2, 15);
       const parentStack = this.mutationStack;
-      const nestedStack: DefaultMutation[] = [];
+      const nestedStack: Array<{
+        mutation: DefaultMutation;
+        entityData: MaterializedLiveType<any>;
+      }> = [];
       this.mutationStack = nestedStack;
 
       const trx = await (this.db as ControlledTransaction<any>)
@@ -466,7 +472,10 @@ export class SQLStorage extends Storage {
       }
     }
 
-    const transactionStack: DefaultMutation[] = [];
+    const transactionStack: Array<{
+      mutation: DefaultMutation;
+      entityData: MaterializedLiveType<any>;
+    }> = [];
     const previousStack = this.mutationStack;
     this.mutationStack = transactionStack;
 
@@ -611,21 +620,55 @@ export class SQLStorage extends Storage {
     };
   }
 
-  private trackMutation(mutation: DefaultMutation): void {
+  private trackMutation(
+    mutation: DefaultMutation,
+    entityData: MaterializedLiveType<any>
+  ): void {
     // If we're in a transaction, add to stack
     if (this.db.isTransaction) {
-      this.mutationStack.push(mutation);
+      this.mutationStack.push({ mutation, entityData });
     } else {
       // If not in transaction, notify immediately
-      this.notifyMutations([mutation]);
+      this.notifyMutations([mutation], entityData);
     }
   }
 
-  private notifyMutations(mutations: DefaultMutation[]): void {
-    if (!this.server || mutations.length === 0) return;
+  private notifyMutations(
+    mutations: DefaultMutation[],
+    entityData: MaterializedLiveType<any>
+  ): void;
+  private notifyMutations(
+    mutationEntries: Array<{
+      mutation: DefaultMutation;
+      entityData: MaterializedLiveType<any>;
+    }>
+  ): void;
+  private notifyMutations(
+    mutationsOrEntries:
+      | DefaultMutation[]
+      | Array<{
+          mutation: DefaultMutation;
+          entityData: MaterializedLiveType<any>;
+        }>,
+    entityData?: MaterializedLiveType<any>
+  ): void {
+    if (!this.server) return;
 
-    for (const mutation of mutations) {
-      this.server.notifySubscribers(mutation);
+    if (entityData !== undefined) {
+      // Single entityData for all mutations
+      const mutations = mutationsOrEntries as DefaultMutation[];
+      for (const mutation of mutations) {
+        this.server.notifySubscribers(mutation, entityData);
+      }
+    } else {
+      // Array of mutation entries with their entityData
+      const entries = mutationsOrEntries as Array<{
+        mutation: DefaultMutation;
+        entityData: MaterializedLiveType<any>;
+      }>;
+      for (const { mutation, entityData: data } of entries) {
+        this.server.notifySubscribers(mutation, data);
+      }
     }
   }
 }

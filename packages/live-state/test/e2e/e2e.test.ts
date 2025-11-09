@@ -917,4 +917,465 @@ describe("End-to-End Query Tests", () => {
       });
     });
   });
+
+  describe("Authorization Where Clause Filtering", () => {
+    let authorizedRouter: ReturnType<typeof router>;
+    let authorizedServer: ReturnType<typeof server>;
+    let authorizedHttpServer: HttpServer | null = null;
+    let authorizedServerPort: number;
+    let client1: ReturnType<typeof createClient<typeof authorizedRouter>>;
+    let client2: ReturnType<typeof createClient<typeof authorizedRouter>>;
+
+    beforeEach(async () => {
+      // Create router with authorization
+      const authorizedRoute = routeFactory();
+      authorizedRouter = router({
+        schema: testSchema,
+        routes: {
+          users: authorizedRoute.collectionRoute(testSchema.users, {
+            read: ({ ctx }) => {
+              // Only allow users to see their own data
+              if (ctx.userId) {
+                return { id: ctx.userId };
+              }
+              return false;
+            },
+          }),
+          posts: authorizedRoute.collectionRoute(testSchema.posts),
+        },
+      });
+
+      // Create server with context provider
+      authorizedServer = server({
+        router: authorizedRouter,
+        storage,
+        schema: testSchema,
+        contextProvider: async ({ queryParams }) => {
+          // Extract userId from query params for testing
+          return {
+            userId: queryParams["userId"],
+          };
+        },
+      });
+
+      // Create Express server
+      const { app } = expressWs(express());
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: true }));
+
+      expressAdapter(app, authorizedServer);
+
+      // Start server on a random port
+      authorizedServerPort = await new Promise<number>((resolve) => {
+        authorizedHttpServer = app.listen(0, () => {
+          const address = authorizedHttpServer?.address();
+          const port =
+            typeof address === "object" && address?.port ? address.port : 0;
+          resolve(port);
+        });
+      });
+
+      // Create first client with userId1
+      client1 = createClient({
+        url: `ws://localhost:${authorizedServerPort}/ws?userId=user1`,
+        schema: testSchema,
+        storage: false,
+        connection: {
+          autoConnect: true,
+          autoReconnect: false,
+        },
+      });
+
+      client1.client.subscribe();
+      await waitForConnection(client1);
+
+      // Create second client with userId2
+      client2 = createClient({
+        url: `ws://localhost:${authorizedServerPort}/ws?userId=user2`,
+        schema: testSchema,
+        storage: false,
+        connection: {
+          autoConnect: true,
+          autoReconnect: false,
+        },
+      });
+
+      client2.client.subscribe();
+      await waitForConnection(client2);
+    });
+
+    afterEach(async () => {
+      // Disconnect clients
+      if (client1?.client?.ws) {
+        client1.client.ws.disconnect();
+      }
+      if (client2?.client?.ws) {
+        client2.client.ws.disconnect();
+      }
+
+      // Close HTTP server
+      if (authorizedHttpServer) {
+        await new Promise<void>((resolve) => {
+          authorizedHttpServer?.close(() => resolve());
+        });
+        authorizedHttpServer = null;
+      }
+    });
+
+    test("should filter mutations based on authorization where clause", async () => {
+      const user1Id = "user1";
+      const user2Id = "user2";
+
+      // Subscribe client1 to users collection FIRST
+      const client1Updates: any[] = [];
+      const unsubscribe1 = client1.store.query.users.subscribe((users) => {
+        client1Updates.push(users);
+      });
+
+      // Subscribe client2 to users collection FIRST
+      const client2Updates: any[] = [];
+      const unsubscribe2 = client2.store.query.users.subscribe((users) => {
+        client2Updates.push(users);
+      });
+
+      // Wait for subscriptions to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert users via storage AFTER subscribing (so mutations are sent)
+      await storage.insert(testSchema.users, {
+        id: user1Id,
+        name: "User 1",
+        email: "user1@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: user2Id,
+        name: "User 2",
+        email: "user2@example.com",
+      });
+
+      // Wait for mutations to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Client1 should only receive updates for user1 (their own user)
+      // Client1 should see user1 in their updates
+      expect(client1Updates.length).toBeGreaterThan(0);
+      const client1Latest = client1Updates[client1Updates.length - 1];
+      const client1User1 = client1Latest.find((u: any) => u.id === user1Id);
+      expect(client1User1).toBeDefined();
+      expect(client1User1?.name).toBe("User 1");
+
+      // Client1 should NOT see user2
+      const client1User2 = client1Latest.find((u: any) => u.id === user2Id);
+      expect(client1User2).toBeUndefined();
+
+      // Client2 should only receive updates for user2 (their own user)
+      expect(client2Updates.length).toBeGreaterThan(0);
+      const client2Latest = client2Updates[client2Updates.length - 1];
+      const client2User2 = client2Latest.find((u: any) => u.id === user2Id);
+      expect(client2User2).toBeDefined();
+      expect(client2User2?.name).toBe("User 2");
+
+      // Client2 should NOT see user1
+      const client2User1 = client2Latest.find((u: any) => u.id === user1Id);
+      expect(client2User1).toBeUndefined();
+
+      unsubscribe1();
+      unsubscribe2();
+    });
+
+    test("should filter mutations when client performs mutation", async () => {
+      const user2Id = "user2";
+
+      // Insert user2 via storage first
+      await storage.insert(testSchema.users, {
+        id: user2Id,
+        name: "User 2",
+        email: "user2@example.com",
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Subscribe client2 to users collection
+      const client2Updates: any[] = [];
+      const unsubscribe2 = client2.store.query.users.subscribe((users) => {
+        client2Updates.push(users);
+      });
+
+      // Wait for subscription
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Client1 performs INSERT mutation for their own user (should be allowed)
+      const user1NewId = generateId();
+      client1.store.mutate.users.insert({
+        id: user1NewId,
+        name: "User 1 New",
+        email: "user1new@example.com",
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Client2 should NOT receive the mutation because it's not authorized to see user1's data
+      // Check the latest update - it should only contain user2
+      if (client2Updates.length > 0) {
+        const client2Latest = client2Updates[client2Updates.length - 1];
+        const client2User1New = client2Latest.find(
+          (u: any) => u.id === user1NewId
+        );
+        expect(client2User1New).toBeUndefined();
+
+        // Client2 should still see user2
+        const client2User2 = client2Latest.find((u: any) => u.id === user2Id);
+        expect(client2User2).toBeDefined();
+      }
+
+      unsubscribe2();
+    });
+
+    test("should filter mutations based on merged where clauses (subscription + authorization)", async () => {
+      const user1Id = "user1";
+
+      // Subscribe client1 FIRST (no subscription where clause, just authorization)
+      const client1Updates: any[] = [];
+      const unsubscribe1 = client1.store.query.users.subscribe((users) => {
+        client1Updates.push(users);
+      });
+
+      // Wait for subscription
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert user1 via storage (should match authorization)
+      await storage.insert(testSchema.users, {
+        id: user1Id,
+        name: "User 1",
+        email: "user1@example.com",
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Client1 should receive the update for user1 (matches authorization)
+      expect(client1Updates.length).toBeGreaterThan(0);
+      const client1Latest = client1Updates[client1Updates.length - 1];
+      const client1User1 = client1Latest.find((u: any) => u.id === user1Id);
+      expect(client1User1).toBeDefined();
+      expect(client1User1?.name).toBe("User 1");
+
+      // Now update user1's name (should still match authorization)
+      await storage.update(testSchema.users, user1Id, {
+        name: "User 1 Updated",
+      });
+
+      // Wait for mutations to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Client1 should receive the update
+      const client1LatestAfterUpdate =
+        client1Updates[client1Updates.length - 1];
+      const client1User1AfterUpdate = client1LatestAfterUpdate.find(
+        (u: any) => u.id === user1Id
+      );
+      expect(client1User1AfterUpdate).toBeDefined();
+      expect(client1User1AfterUpdate?.name).toBe("User 1 Updated");
+
+      unsubscribe1();
+    });
+
+    test("should pass entity data correctly for filtering", async () => {
+      const user1Id = "user1";
+      const user2Id = "user2";
+
+      // Insert users via storage
+      await storage.insert(testSchema.users, {
+        id: user1Id,
+        name: "User 1",
+        email: "user1@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: user2Id,
+        name: "User 2",
+        email: "user2@example.com",
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Subscribe client1 to users collection
+      const client1Updates: any[] = [];
+      const unsubscribe1 = client1.store.query.users.subscribe((users) => {
+        client1Updates.push(users);
+      });
+
+      // Wait for subscription
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update user1 via storage (should trigger notification with entity data)
+      await storage.update(testSchema.users, user1Id, {
+        name: "User 1 Updated",
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Client1 should receive the update with correct entity data
+      expect(client1Updates.length).toBeGreaterThan(0);
+      const client1Latest = client1Updates[client1Updates.length - 1];
+      const client1User1 = client1Latest.find((u: any) => u.id === user1Id);
+      expect(client1User1).toBeDefined();
+      expect(client1User1?.name).toBe("User 1 Updated");
+      expect(client1User1?.email).toBe("user1@example.com");
+
+      // Client1 should NOT see user2
+      const client1User2 = client1Latest.find((u: any) => u.id === user2Id);
+      expect(client1User2).toBeUndefined();
+
+      unsubscribe1();
+    });
+
+    test("should handle authorization where clause with complex conditions", async () => {
+      // Create router with complex authorization using email domain
+      const complexAuthorizedRoute = routeFactory();
+      const complexRouter = router({
+        schema: testSchema,
+        routes: {
+          users: complexAuthorizedRoute.collectionRoute(testSchema.users, {
+            read: ({ ctx }) => {
+              // Allow users to see their own data OR users with specific public emails
+              if (ctx.userId) {
+                return {
+                  $or: [
+                    { id: ctx.userId },
+                    {
+                      email: {
+                        $in: ["public@public.com", "anotherpublic@public.com"],
+                      },
+                    },
+                  ],
+                };
+              }
+              return {
+                email: {
+                  $in: ["public@public.com", "anotherpublic@public.com"],
+                },
+              };
+            },
+          }),
+          posts: complexAuthorizedRoute.collectionRoute(testSchema.posts),
+        },
+      });
+
+      const complexServer = server({
+        router: complexRouter,
+        storage,
+        schema: testSchema,
+        contextProvider: async ({ queryParams }) => {
+          return {
+            userId: queryParams["userId"],
+          };
+        },
+      });
+
+      const { app } = expressWs(express());
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: true }));
+      expressAdapter(app, complexServer);
+
+      let complexHttpServer: HttpServer | null = null;
+      const complexPort = await new Promise<number>((resolve) => {
+        complexHttpServer = app.listen(0, () => {
+          const address = complexHttpServer?.address();
+          const port =
+            typeof address === "object" && address?.port ? address.port : 0;
+          resolve(port);
+        });
+      });
+
+      const complexClient = createClient({
+        url: `ws://localhost:${complexPort}/ws?userId=user1`,
+        schema: testSchema,
+        storage: false,
+        connection: {
+          autoConnect: true,
+          autoReconnect: false,
+        },
+      });
+
+      complexClient.client.subscribe();
+      await waitForConnection(complexClient);
+
+      // Insert users with different email domains
+      const publicUserId = generateId();
+      const privateUserId = generateId();
+
+      await storage.insert(testSchema.users, {
+        id: publicUserId,
+        name: "Public User",
+        email: "public@public.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: privateUserId,
+        name: "Private User",
+        email: "private@private.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: "user1",
+        name: "User 1",
+        email: "user1@private.com",
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Subscribe to users collection
+      const updates: any[] = [];
+      const unsubscribe = complexClient.store.query.users.subscribe((users) => {
+        updates.push(users);
+      });
+
+      // Wait for subscription
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert another public user
+      const anotherPublicUserId = generateId();
+      await storage.insert(testSchema.users, {
+        id: anotherPublicUserId,
+        name: "Another Public User",
+        email: "anotherpublic@public.com",
+      });
+
+      // Wait for mutations to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Client should see: user1 (their own), publicUserId, anotherPublicUserId
+      // Client should NOT see: privateUserId
+      expect(updates.length).toBeGreaterThan(0);
+      const latest = updates[updates.length - 1];
+
+      const seenUser1 = latest.find((u: any) => u.id === "user1");
+      const seenPublic = latest.find((u: any) => u.id === publicUserId);
+      const seenAnotherPublic = latest.find(
+        (u: any) => u.id === anotherPublicUserId
+      );
+      const seenPrivate = latest.find((u: any) => u.id === privateUserId);
+
+      expect(seenUser1).toBeDefined();
+      expect(seenPublic).toBeDefined();
+      expect(seenAnotherPublic).toBeDefined();
+      expect(seenPrivate).toBeUndefined();
+
+      unsubscribe();
+      complexClient.client.ws.disconnect();
+
+      if (complexHttpServer) {
+        await new Promise<void>((resolve) => {
+          complexHttpServer?.close(() => resolve());
+        });
+      }
+    });
+  });
 });
