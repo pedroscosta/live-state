@@ -275,14 +275,12 @@ export class Route<
               throw new Error("Not authorized");
             }
           } else {
-            // Extract include clauses from the authorization clause
             const includeClause = extractIncludeFromWhere(
               authorizationClause,
               req.resource,
               schema
             );
 
-            // Get authorization target with relations if needed
             const authorizationTarget =
               Object.keys(includeClause).length > 0
                 ? await trx.rawFindById<TResourceSchema>(
@@ -332,14 +330,12 @@ export class Route<
             throw new Error("Not authorized");
           }
         } else {
-          // Extract include clauses from the authorization clause
           const includeClause = extractIncludeFromWhere(
             authorizationClause,
             req.resource,
             schema
           );
 
-          // Get authorization target with relations if needed
           const authorizationTarget =
             Object.keys(includeClause).length > 0
               ? await trx.rawFindById<TResourceSchema>(
@@ -389,14 +385,12 @@ export class Route<
             throw new Error("Not authorized");
           }
         } else {
-          // Extract include clauses from the authorization clause
           const includeClause = extractIncludeFromWhere(
             authorizationClause,
             req.resource,
             schema
           );
 
-          // Get authorization target with relations if needed
           const authorizationTarget =
             Object.keys(includeClause).length > 0
               ? await trx.rawFindById<TResourceSchema>(
