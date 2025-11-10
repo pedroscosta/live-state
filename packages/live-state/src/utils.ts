@@ -42,11 +42,9 @@ export const extractIncludeFromWhere = (
       w.$or.forEach(processWhere);
     } else {
       Object.entries(w).forEach(([key, value]) => {
-        // Check if this key is a relation
         if (resourceSchema.relations?.[key]) {
           include[key] = true;
 
-          // If the value is a nested where clause, recursively extract includes
           if (
             typeof value === "object" &&
             value !== null &&
@@ -58,7 +56,6 @@ export const extractIncludeFromWhere = (
               schema
             );
 
-            // Only set nested include if it has any relations
             if (Object.keys(nestedInclude).length > 0) {
               include[key] = nestedInclude;
             }
@@ -88,7 +85,6 @@ export const applyWhere = <T extends object>(
     const comparisonValue = v?.$eq !== undefined ? v?.$eq : v;
 
     if (typeof v === "object" && v !== null && v?.$eq === undefined) {
-      // Handle $in operator
       if (v.$in !== undefined) {
         const value = obj[k as keyof T];
         if (value === undefined) {
@@ -97,11 +93,9 @@ export const applyWhere = <T extends object>(
         return not ? !v.$in.includes(value) : v.$in.includes(value);
       }
 
-      // Handle $not operator
       if (v.$not !== undefined && !not)
         return applyWhere(obj, { [k]: v.$not }, true);
 
-      // Handle $gt operator
       if (v.$gt !== undefined) {
         const value = obj[k as keyof T];
         if (typeof value !== "number") {
@@ -110,7 +104,6 @@ export const applyWhere = <T extends object>(
         return not ? value <= v.$gt : value > v.$gt;
       }
 
-      // Handle $gte operator
       if (v.$gte !== undefined) {
         const value = obj[k as keyof T];
         if (typeof value !== "number") {
@@ -119,7 +112,6 @@ export const applyWhere = <T extends object>(
         return not ? value < v.$gte : value >= v.$gte;
       }
 
-      // Handle $lt operator
       if (v.$lt !== undefined) {
         const value = obj[k as keyof T];
         if (typeof value !== "number") {
@@ -128,7 +120,6 @@ export const applyWhere = <T extends object>(
         return not ? value >= v.$lt : value < v.$lt;
       }
 
-      // Handle $lte operator
       if (v.$lte !== undefined) {
         const value = obj[k as keyof T];
         if (typeof value !== "number") {
@@ -137,7 +128,6 @@ export const applyWhere = <T extends object>(
         return not ? value > v.$lte : value <= v.$lte;
       }
 
-      // Handle nested objects
       const fieldValue = obj[k as keyof T];
 
       if (
@@ -146,7 +136,6 @@ export const applyWhere = <T extends object>(
       )
         return false;
 
-      // If the field is an array, check if any element matches the where clause
       if (Array.isArray(fieldValue)) {
         return not
           ? !fieldValue.some((item) => applyWhere(item as object, v, false))

@@ -65,7 +65,6 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             | { authorization?: { read?: (opts: { ctx: any }) => any } }
             | undefined;
 
-          // Evaluate authorization where clause if it exists
           let authorizationWhere: any;
           if (route?.authorization?.read) {
             const authorizationClause = route.authorization.read({
