@@ -515,6 +515,15 @@ export class SQLStorage extends Storage {
     }
   }
 
+  /**
+   * Provides direct access to the underlying Kysely database instance.
+   * 
+   * ⚠️ Warning: Direct database operations bypass mutation tracking and 
+   * subscriber notifications. Use this only when you need to execute 
+   * queries not supported by the Storage API.
+   * 
+   * @returns The Kysely database instance
+   */
   public get internalDB() {
     return this.db;
   }
