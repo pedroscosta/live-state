@@ -190,7 +190,12 @@ describe("Route", () => {
       { name: "John" },
       mockExistingData
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -794,9 +799,14 @@ describe("Route UPDATE Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
-      value: { userId: { value: "123" } },
-    });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {
+        value: { userId: { value: "123" } },
+      },
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -895,7 +905,12 @@ describe("Route UPDATE Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -946,7 +961,12 @@ describe("Route UPDATE Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
   });
 
   test("should pass UPDATED values to post-mutation authorization handler", async () => {
@@ -1082,9 +1102,14 @@ describe("Route UPDATE Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
-      value: { userId: { value: "123" } },
-    });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {
+        value: { userId: { value: "123" } },
+      },
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1156,9 +1181,14 @@ describe("Route UPDATE Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
-      value: { userId: { value: "123" } },
-    });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {
+        value: { userId: { value: "123" } },
+      },
+      undefined
+    );
   });
 
   test("should handle UPDATE operations without authorization", async () => {
@@ -1189,7 +1219,12 @@ describe("Route UPDATE Authorization", () => {
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1260,9 +1295,14 @@ describe("Route UPDATE Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {
-      value: { userId: { value: "123" }, role: { value: "admin" } },
-    });
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {
+        value: { userId: { value: "123" }, role: { value: "admin" } },
+      },
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1352,9 +1392,14 @@ describe("Route INSERT Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
-      value: { userId: { value: "123" } },
-    });
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {
+        value: { userId: { value: "123" } },
+      },
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1411,9 +1456,14 @@ describe("Route INSERT Authorization", () => {
         }),
       })
     );
-    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {
-      value: { userId: { value: "123" } },
-    });
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {
+        value: { userId: { value: "123" } },
+      },
+      undefined
+    );
   });
 
   test("should handle INSERT authorization with boolean false", async () => {
@@ -1549,7 +1599,12 @@ describe("Route INSERT Authorization", () => {
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
-    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1672,7 +1727,12 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       { name: "John" },
       undefined
     );
-    expect(mockStorage.rawInsert).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },
@@ -1711,7 +1771,124 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       { name: "John" },
       mockExistingData
     );
-    expect(mockStorage.rawUpdate).toHaveBeenCalledWith("users", "user1", {});
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should pass mutation ID from context.messageId to rawInsert", async () => {
+    const route = new Route(mockResource);
+    const mutationId = "external-mutation-id-123";
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { messageId: mutationId },
+    };
+
+    const mockNewData = { value: { name: { value: "John" } } };
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      mutationId
+    );
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should pass mutation ID from context.messageId to rawUpdate", async () => {
+    const route = new Route(mockResource);
+    const mutationId = "external-mutation-id-456";
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: { messageId: mutationId },
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    const mockNewData = { value: { name: { value: "John" } } };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      mutationId
+    );
+    expect(result).toEqual({
+      data: mockNewData,
+      acceptedValues: { accepted: true },
+    });
+  });
+
+  test("should pass undefined mutationId when context.messageId is not present", async () => {
+    const route = new Route(mockResource);
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "INSERT",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {}, // No messageId
+    };
+
+    const mockNewData = { value: { name: { value: "John" } } };
+    (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
+    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+
+    const result = await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage.rawInsert).toHaveBeenCalledWith(
+      "users",
+      "user1",
+      {},
+      undefined
+    );
     expect(result).toEqual({
       data: mockNewData,
       acceptedValues: { accepted: true },

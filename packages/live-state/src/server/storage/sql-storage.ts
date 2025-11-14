@@ -329,7 +329,8 @@ export class SQLStorage extends Storage {
   public async rawInsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
-    value: MaterializedLiveType<T>
+    value: MaterializedLiveType<T>,
+    mutationId?: string
   ): Promise<MaterializedLiveType<T>> {
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
@@ -356,7 +357,8 @@ export class SQLStorage extends Storage {
       resourceName,
       resourceId,
       "INSERT",
-      value
+      value,
+      mutationId
     );
 
     if (mutation) {
@@ -370,7 +372,8 @@ export class SQLStorage extends Storage {
   public async rawUpdate<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
-    value: MaterializedLiveType<T>
+    value: MaterializedLiveType<T>,
+    mutationId?: string
   ): Promise<MaterializedLiveType<T>> {
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
@@ -399,7 +402,8 @@ export class SQLStorage extends Storage {
       resourceName,
       resourceId,
       "UPDATE",
-      value
+      value,
+      mutationId
     );
 
     if (mutation) {
@@ -517,11 +521,11 @@ export class SQLStorage extends Storage {
 
   /**
    * Provides direct access to the underlying Kysely database instance.
-   * 
-   * ⚠️ Warning: Direct database operations bypass mutation tracking and 
-   * subscriber notifications. Use this only when you need to execute 
+   *
+   * ⚠️ Warning: Direct database operations bypass mutation tracking and
+   * subscriber notifications. Use this only when you need to execute
    * queries not supported by the Storage API.
-   * 
+   *
    * @returns The Kysely database instance
    */
   public get internalDB() {
@@ -590,7 +594,8 @@ export class SQLStorage extends Storage {
     resourceName: string,
     resourceId: string,
     procedure: "INSERT" | "UPDATE",
-    value: MaterializedLiveType<T>
+    value: MaterializedLiveType<T>,
+    mutationId?: string
   ): DefaultMutation | null {
     const payload: Record<
       string,
@@ -612,7 +617,7 @@ export class SQLStorage extends Storage {
     if (Object.keys(payload).length === 0) return null;
 
     return {
-      id: generateId(),
+      id: mutationId ?? generateId(),
       type: "MUTATE",
       resource: resourceName,
       resourceId,
