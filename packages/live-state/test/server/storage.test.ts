@@ -1843,6 +1843,7 @@ describe("SQLStorage", () => {
         resource: "users",
         resourceId: "test-id",
         procedure: "INSERT",
+        id: expect.any(String), // Generated ID when no mutationId provided
         payload: expect.objectContaining({
           name: expect.objectContaining({
             value: "John",
@@ -1933,6 +1934,7 @@ describe("SQLStorage", () => {
         resource: "users",
         resourceId: "test-id",
         procedure: "UPDATE",
+        id: expect.any(String), // Generated ID when no mutationId provided
         payload: expect.objectContaining({
           name: expect.objectContaining({
             value: "Jane",
@@ -1954,6 +1956,273 @@ describe("SQLStorage", () => {
         }),
       })
     );
+  });
+
+  test("should preserve mutation ID when provided in rawInsert", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
+
+    await storage.init(mockSchema, mockLogger, mockServer);
+
+    const mockValue: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "John",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+
+    const providedMutationId = "external-mutation-id-123";
+
+    // Mock insertInto chain for both tables
+    const mockInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    await storage.rawInsert("users", "test-id", mockValue, providedMutationId);
+
+    // Verify mutation was notified with the provided ID
+    expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        resourceId: "test-id",
+        procedure: "INSERT",
+        id: providedMutationId, // Should use provided ID
+        payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "John",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        value: expect.objectContaining({
+          id: expect.objectContaining({ value: "test-id" }),
+          name: expect.objectContaining({
+            value: "John",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  test("should preserve mutation ID when provided in rawUpdate", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
+
+    await storage.init(mockSchema, mockLogger, mockServer);
+
+    const mockValue: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "Jane",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+
+    const providedMutationId = "external-mutation-id-456";
+
+    // Mock updateTable chain for both tables
+    const mockUpdateTable = {
+      set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+    // Mock insertInto chain for meta table
+    const mockInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    await storage.rawUpdate("users", "test-id", mockValue, providedMutationId);
+
+    // Verify mutation was notified with the provided ID
+    expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        resourceId: "test-id",
+        procedure: "UPDATE",
+        id: providedMutationId, // Should use provided ID
+        payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "Jane",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        value: expect.objectContaining({
+          id: expect.objectContaining({ value: "test-id" }),
+          name: expect.objectContaining({
+            value: "Jane",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  test("should generate new mutation ID when not provided in rawInsert", async () => {
+    // Initialize schema first
+    const mockSchema: Schema<any> = {
+      users: {
+        name: "users",
+        fields: {
+          id: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              primary: true,
+              nullable: false,
+            }),
+          },
+          name: {
+            getStorageFieldType: () => ({
+              type: "varchar",
+              nullable: true,
+            }),
+          },
+        },
+        relations: {},
+      },
+    };
+
+    const mockServer = {
+      notifySubscribers: vi.fn(),
+    } as any;
+
+    await storage.init(mockSchema, mockLogger, mockServer);
+
+    const mockValue: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "John",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+
+    // Mock insertInto chain for both tables
+    const mockInsertInto = {
+      values: vi.fn().mockReturnThis(),
+      onConflict: vi.fn().mockReturnValue({
+        execute: vi.fn().mockResolvedValue(undefined),
+      }),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    await storage.rawInsert("users", "test-id", mockValue);
+
+    // Verify mutation was notified with a generated ID
+    expect(mockServer.notifySubscribers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        resourceId: "test-id",
+        procedure: "INSERT",
+        id: expect.any(String), // Should generate a new ID
+        payload: expect.objectContaining({
+          name: expect.objectContaining({
+            value: "John",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        value: expect.objectContaining({
+          id: expect.objectContaining({ value: "test-id" }),
+          name: expect.objectContaining({
+            value: "John",
+            _meta: expect.objectContaining({
+              timestamp: "2023-01-01T00:00:00.000Z",
+            }),
+          }),
+        }),
+      })
+    );
+
+    // Verify the ID is actually a string (generated)
+    const callArgs = mockServer.notifySubscribers.mock.calls[0];
+    const mutation = callArgs[0];
+    expect(typeof mutation.id).toBe("string");
+    expect(mutation.id.length).toBeGreaterThan(0);
   });
 
   test("should not notify mutations when no server is provided", async () => {

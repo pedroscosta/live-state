@@ -254,7 +254,8 @@ export class Route<
         const result = await trx.rawInsert<TResourceSchema>(
           req.resource,
           req.resourceId!,
-          newRecord
+          newRecord,
+          req.context?.messageId
         );
         const inferredResultValue = inferValue(result) as Simplify<
           InferLiveObjectWithRelationalIds<TResourceSchema>
@@ -363,7 +364,8 @@ export class Route<
       const result = await trx.rawUpdate<TResourceSchema>(
         req.resource,
         req.resourceId!,
-        newRecord
+        newRecord,
+        req.context?.messageId
       );
 
       if (this.authorization?.update?.postMutation) {

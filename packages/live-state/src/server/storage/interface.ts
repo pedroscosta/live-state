@@ -55,14 +55,16 @@ export abstract class Storage {
   public abstract rawInsert<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
-    value: MaterializedLiveType<T>
+    value: MaterializedLiveType<T>,
+    mutationId?: string
   ): Promise<MaterializedLiveType<T>>;
 
   /** @internal */
   public abstract rawUpdate<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
-    value: MaterializedLiveType<T>
+    value: MaterializedLiveType<T>,
+    mutationId?: string
   ): Promise<MaterializedLiveType<T>>;
 
   public async insert<T extends LiveObjectAny>(
