@@ -30,7 +30,7 @@ import { applyInclude, applyWhere } from "./sql-utils";
 const POSTGRES_DUPLICATE_COLUMN_ERROR_CODE = "42701";
 
 export class SQLStorage extends Storage {
-  private db: Kysely<{ [x: string]: Selectable<any> }>;
+  private readonly db: Kysely<{ [x: string]: Selectable<any> }>;
   private schema?: Schema<any>;
   private logger?: Logger;
   private server?: Server<any>;
@@ -513,6 +513,19 @@ export class SQLStorage extends Storage {
     } finally {
       this.mutationStack = previousStack;
     }
+  }
+
+  /**
+   * Provides direct access to the underlying Kysely database instance.
+   * 
+   * ⚠️ Warning: Direct database operations bypass mutation tracking and 
+   * subscriber notifications. Use this only when you need to execute 
+   * queries not supported by the Storage API.
+   * 
+   * @returns The Kysely database instance
+   */
+  public get internalDB() {
+    return this.db;
   }
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
