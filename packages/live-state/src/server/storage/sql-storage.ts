@@ -30,7 +30,7 @@ import { applyInclude, applyWhere } from "./sql-utils";
 const POSTGRES_DUPLICATE_COLUMN_ERROR_CODE = "42701";
 
 export class SQLStorage extends Storage {
-  private db: Kysely<{ [x: string]: Selectable<any> }>;
+  private readonly db: Kysely<{ [x: string]: Selectable<any> }>;
   private schema?: Schema<any>;
   private logger?: Logger;
   private server?: Server<any>;
@@ -513,6 +513,10 @@ export class SQLStorage extends Storage {
     } finally {
       this.mutationStack = previousStack;
     }
+  }
+
+  public get internalDB() {
+    return this.db;
   }
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
