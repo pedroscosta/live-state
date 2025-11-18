@@ -98,16 +98,16 @@ describe("createClient", () => {
 
   describe("query.get", () => {
     test("should make GET request with correct URL and headers", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -137,16 +137,16 @@ describe("createClient", () => {
     });
 
     test("should handle query parameters", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -174,16 +174,16 @@ describe("createClient", () => {
     });
 
     test("should handle complex query parameters", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -219,16 +219,16 @@ describe("createClient", () => {
     });
 
     test("should handle empty query parameters", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -257,16 +257,16 @@ describe("createClient", () => {
 
     test("should handle credentials that return null", async () => {
       mockConsumeGeneratable.mockImplementationOnce(() => null);
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -294,16 +294,16 @@ describe("createClient", () => {
     });
 
     test("should handle different base URLs", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -635,16 +635,16 @@ describe("createClient", () => {
 
   describe("URL construction", () => {
     test("should handle URLs with trailing slash", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -668,16 +668,16 @@ describe("createClient", () => {
     });
 
     test("should handle URLs without trailing slash", async () => {
-      const mockResponse = { 
-        "1": { 
+      const mockResponse = {
+        "1": {
           value: {
-            name: { 
-              value: "John", 
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" } 
-            }
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
           },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" }
-        } 
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
       };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -746,6 +746,210 @@ describe("createClient", () => {
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.payload.name).toHaveProperty("_meta");
       expect(body.payload.name._meta).toHaveProperty("timestamp");
+    });
+  });
+
+  describe("null where clause serialization", () => {
+    test("should serialize implicit null equality in where clause", async () => {
+      const mockResponse = {
+        "1": {
+          value: {
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      await client.query.users.where({ name: null } as any).get();
+
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("where%5Bname%5D=null");
+    });
+
+    test("should serialize explicit null equality with $eq operator", async () => {
+      const mockResponse = {
+        "1": {
+          value: {
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      await client.query.users.where({ name: { $eq: null } } as any).get();
+
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("where%5Bname%5D%5B%24eq%5D=null");
+    });
+
+    test("should serialize null with $not operator", async () => {
+      const mockResponse = {
+        "1": {
+          value: {
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      await client.query.users.where({ name: { $not: null } } as any).get();
+
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("where%5Bname%5D%5B%24not%5D=null");
+    });
+
+    test("should serialize null in nested where clauses", async () => {
+      const mockResponse = {
+        "1": {
+          value: {
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      await client.query.users
+        .where({
+          $and: [{ name: null }, { name: { $eq: null } }],
+        } as any)
+        .get();
+
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("where%5B%24and%5D%5B0%5D%5Bname%5D=null");
+      expect(url).toContain(
+        "where%5B%24and%5D%5B1%5D%5Bname%5D%5B%24eq%5D=null"
+      );
+    });
+
+    test("should serialize null in $in array", async () => {
+      const mockResponse = {
+        "1": {
+          value: {
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      await client.query.users
+        .where({ name: { $in: [null, "John"] } } as any)
+        .get();
+
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("where%5Bname%5D%5B%24in%5D%5B0%5D=null");
+      expect(url).toContain("where%5Bname%5D%5B%24in%5D%5B1%5D=John");
+    });
+
+    test("should serialize multiple null fields in where clause", async () => {
+      const mockResponse = {
+        "1": {
+          value: {
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      await client.query.users
+        .where({
+          name: null,
+          id: { $eq: null },
+        } as any)
+        .get();
+
+      const url = mockFetch.mock.calls[0][0];
+      expect(url).toContain("where%5Bname%5D=null");
+      expect(url).toContain("where%5Bid%5D%5B%24eq%5D=null");
     });
   });
 });

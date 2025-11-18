@@ -65,12 +65,37 @@ const safeFetch = async (
   return data;
 };
 
+const serializeNullValues = (value: any): any => {
+  if (value === null) {
+    return "null";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(serializeNullValues);
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    value.constructor === Object
+  ) {
+    const serialized: Record<string, any> = {};
+    for (const [key, val] of Object.entries(value)) {
+      serialized[key] = serializeNullValues(val);
+    }
+    return serialized;
+  }
+
+  return value;
+};
+
 export const createClient = <TRouter extends AnyRouter>(
   opts: FetchClientOptions
 ): Client<TRouter, true> => {
   const queryExecutor: QueryExecutor = {
     get: async (query) => {
-      const qs = stringify(query);
+      const serializedQuery = serializeNullValues(query);
+      const qs = stringify(serializedQuery);
       const headers = (await consumeGeneratable(opts.credentials)) ?? {};
 
       const res = await safeFetch(
