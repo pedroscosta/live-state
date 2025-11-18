@@ -9,6 +9,36 @@ import {
 } from "../../core/schemas/http";
 import type { AnyRouter, Server } from "..";
 
+/**
+ * Recursively normalizes null values in parsed query strings.
+ * Converts string "null" to actual null values, which is necessary
+ * because qs.parse() converts null in URLs to the string "null".
+ */
+const normalizeNullValues = (value: any): any => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (value === "null") {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeNullValues);
+  }
+
+  // Handle special objects like Date, RegExp, etc. that shouldn't be normalized
+  if (typeof value === "object" && value.constructor === Object) {
+    const normalized: Record<string, any> = {};
+    for (const [key, val] of Object.entries(value)) {
+      normalized[key] = normalizeNullValues(val);
+    }
+    return normalized;
+  }
+
+  return value;
+};
+
 export const httpTransportLayer = (
   server: Server<AnyRouter>
 ): ((request: Request) => Promise<Response>) => {
@@ -34,10 +64,9 @@ export const httpTransportLayer = (
 
       const searchParams = url.searchParams;
 
-      const rawParsedQs = qs.parse(searchParams.toString()) as Record<
-        string,
-        any
-      >;
+      const rawParsedQs = normalizeNullValues(
+        qs.parse(searchParams.toString())
+      ) as Record<string, any>;
 
       const initialContext =
         (await server.contextProvider?.({
