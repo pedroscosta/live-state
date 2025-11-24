@@ -202,7 +202,7 @@ export const createClient = <TRouter extends AnyRouter>(
           return;
         }
 
-        await safeFetch(
+        return await safeFetch(
           `${opts.url}/${route}/${method}`,
           {
             method: "POST",
