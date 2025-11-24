@@ -1,4 +1,5 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
+import { z } from "zod";
 import { createClient } from "../../src/client/fetch";
 import { createSchema, object, id, string, reference } from "../../src/schema";
 import { router as createRouter, routeFactory } from "../../src/server/router";
@@ -576,6 +577,68 @@ describe("createClient", () => {
       await expect(async () => {
         await (client.mutate as any).users.method.submethod(customData);
       }).rejects.toThrow("Trying to access an invalid path");
+    });
+
+    test("should return value from custom mutation", async () => {
+      const customMutationResponse = {
+        message: "Hello World",
+        userId: "user-123",
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve(customMutationResponse),
+      });
+
+      // Create a schema with a route that has custom mutations
+      const user = object("users", {
+        id: id(),
+        name: string(),
+      });
+
+      const schemaWithCustomMutations = createSchema({
+        user,
+      });
+
+      const publicRoute = routeFactory();
+      const routerWithCustomMutations = createRouter({
+        schema: schemaWithCustomMutations,
+        routes: {
+          users: publicRoute
+            .collectionRoute(schemaWithCustomMutations.users)
+            .withMutations(({ mutation }) => ({
+              hello: mutation(z.string()).handler(async ({ req }) => {
+                return {
+                  message: `Hello ${req.input}`,
+                  userId: "user-123",
+                };
+              }),
+            })),
+        },
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: schemaWithCustomMutations,
+        credentials: async () => ({}),
+      });
+
+      const result = await (client.mutate as any).users.hello("World");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:3000/users/hello",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ payload: "World" }),
+        }
+      );
+
+      expect(result).toEqual(customMutationResponse);
     });
   });
 
