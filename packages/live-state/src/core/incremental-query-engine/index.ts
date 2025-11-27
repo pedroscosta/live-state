@@ -132,6 +132,67 @@ export class IncrementalQueryEngine {
       return;
     }
 
-    // TODO handle UPDATE
+    if (mutation.procedure === "UPDATE") {
+      const objectNode = this.objectNodes.get(mutation.resourceId);
+
+      if (!objectNode) {
+        // TODO should we throw an error here?
+        return;
+      }
+
+      const objValue = inferValue({
+        value: mutation.payload,
+      } as MaterializedLiveType<LiveObjectAny>);
+
+      if (!objValue) {
+        // TODO should we throw an error here?
+        return;
+      }
+
+      const previouslyMatchedQueries = new Set(objectNode.matchedQueries);
+      const newlyMatchedQueries: string[] = [];
+      const queriesToNotify = new Set<string>();
+
+      for (const queryNode of Array.from(this.queryNodes.values())) {
+        if (queryNode.resource !== mutation.resource) continue;
+
+        const matchesNow =
+          !queryNode.where || applyWhere(objValue, queryNode.where);
+        const matchedBefore = previouslyMatchedQueries.has(queryNode.hash);
+
+        if (matchesNow && !matchedBefore) {
+          // Query didn't match before but matches now
+          queryNode.matchingObjectNodes.add(mutation.resourceId);
+          newlyMatchedQueries.push(queryNode.hash);
+          queriesToNotify.add(queryNode.hash);
+        } else if (!matchesNow && matchedBefore) {
+          // Query matched before but doesn't match now
+          queryNode.matchingObjectNodes.delete(mutation.resourceId);
+          objectNode.matchedQueries.delete(queryNode.hash);
+          queriesToNotify.add(queryNode.hash);
+        } else if (matchesNow && matchedBefore) {
+          // Query still matches - notify subscribers about the update
+          queriesToNotify.add(queryNode.hash);
+        }
+      }
+
+      // Update objectNode with newly matched queries
+      for (const queryHash of newlyMatchedQueries) {
+        objectNode.matchedQueries.add(queryHash);
+      }
+
+      // Notify subscribers for all queries that need to be notified
+      for (const queryHash of Array.from(queriesToNotify)) {
+        const queryNode = this.queryNodes.get(queryHash);
+
+        if (!queryNode) continue; // TODO should we throw an error here?
+
+        queryNode.subscriptions.forEach((subscription) => {
+          subscription();
+        });
+      }
+
+      return;
+    }
   }
 }
