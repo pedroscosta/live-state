@@ -112,6 +112,20 @@ export const createClient = <TRouter extends AnyRouter>(
       if (!res || typeof res !== "object") {
         return [];
       }
+
+      if (Array.isArray(res)) {
+        return res.map((item: any) => {
+          const inferred = inferValue(item);
+          const id = item?.value?.id?.value ?? item?.id;
+          return {
+            ...inferred,
+            id,
+          };
+        }) as any[];
+      }
+
+      // TODO remove this
+      // Handle object response (legacy format)
       return Object.entries(res).map(([key, value]) => ({
         ...inferValue(value as any),
         id: key,

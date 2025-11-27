@@ -116,13 +116,8 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             type: "REPLY",
             data: {
               resource,
-              data: Object.fromEntries(
-                Object.entries(
-                  (result.data ?? {}) as Record<
-                    string,
-                    MaterializedLiveType<LiveObjectAny>
-                  >
-                ).map(([id, v]) => [id, v.value])
+              data: (result.data ?? []).map(
+                (v: MaterializedLiveType<LiveObjectAny>) => v.value
               ),
             },
           });

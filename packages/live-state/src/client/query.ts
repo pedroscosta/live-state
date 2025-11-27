@@ -9,13 +9,16 @@ import type {
 } from "../schema";
 import type { Simplify } from "../utils";
 
-export type QueryExecutor = {
+export interface DataSource {
   get(query: RawQueryRequest): Awaitable<any[]>;
+}
+
+export interface QueryExecutor extends DataSource {
   subscribe(
     query: RawQueryRequest,
     callback: (value: any[]) => void
   ): () => void;
-};
+}
 
 type InferQueryResult<
   TCollection extends LiveObjectAny,

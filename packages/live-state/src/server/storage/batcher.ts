@@ -11,7 +11,7 @@ interface BatchedRawFindRequest<T extends LiveObjectAny> {
   include?: Record<string, any>;
   limit?: number;
   sort?: { key: string; direction: "asc" | "desc" }[];
-  resolve: (value: Record<string, MaterializedLiveType<T>>) => void;
+  resolve: (value: MaterializedLiveType<T>[]) => void;
   reject: (reason?: any) => void;
 }
 
@@ -38,7 +38,7 @@ export class Batcher {
     include?: Record<string, any>;
     limit?: number;
     sort?: { key: string; direction: "asc" | "desc" }[];
-  }): Promise<Record<string, MaterializedLiveType<T>>> {
+  }): Promise<MaterializedLiveType<T>[]> {
     return new Promise((resolve, reject) => {
       const batchKey = this.getBatchKey({ resource, commonWhere, ...rest });
       const request: BatchedRawFindRequest<T> = {
@@ -126,7 +126,7 @@ export class Batcher {
       }
     }
 
-    const result = await this.storage.rawFind<T>({
+    const result = await this.storage.get({
       resource,
       where,
       include,
@@ -134,30 +134,24 @@ export class Batcher {
       limit: firstLimit,
     });
 
-    // Group results by unique ID for each request
     for (const request of requests) {
-      const filteredResult: Record<string, MaterializedLiveType<T>> = {};
+      let filteredResult: MaterializedLiveType<T>[] = result;
 
       if (request.uniqueWhere) {
         const [uniqueColName, uniqueValue] = Object.entries(
           request.uniqueWhere
         )[0];
 
-        for (const [id, materializedResult] of Object.entries(result)) {
-          if (
+        filteredResult = result.filter((materializedResult) => {
+          return (
             (materializedResult as MaterializedLiveType<LiveObjectAny>).value[
               uniqueColName
             ]?.value === uniqueValue
-          ) {
-            filteredResult[id] = materializedResult;
-          }
-        }
-      } else {
-        // If no unique where, include all results
-        Object.assign(filteredResult, result);
+          );
+        });
       }
 
-      request.resolve(filteredResult);
+      request.resolve(filteredResult as MaterializedLiveType<T>[]);
     }
   }
 }

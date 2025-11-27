@@ -11,3 +11,4 @@ dist-ssr
 server/dist
 public/dist
 .pg-data
+todo.md

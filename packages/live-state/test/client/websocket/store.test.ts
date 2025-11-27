@@ -648,10 +648,16 @@ describe("OptimisticStore", () => {
       mockLogger
     );
 
-    const data = {
-      user1: { name: { value: "John", _meta: { timestamp: "2023-01-01" } } },
-      user2: { name: { value: "Jane", _meta: { timestamp: "2023-01-01" } } },
-    };
+    const data = [
+      {
+        id: { value: "user1" },
+        name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+      },
+      {
+        id: { value: "user2" },
+        name: { value: "Jane", _meta: { timestamp: "2023-01-01" } },
+      },
+    ];
 
     const addMutationSpy = vi.spyOn(store, "addMutation");
 
@@ -663,7 +669,7 @@ describe("OptimisticStore", () => {
       type: "MUTATE",
       resource: "users",
       resourceId: "user1",
-      payload: data.user1,
+      payload: data[0],
       procedure: "INSERT",
     });
     expect(addMutationSpy).toHaveBeenCalledWith("users", {
@@ -671,7 +677,7 @@ describe("OptimisticStore", () => {
       type: "MUTATE",
       resource: "users",
       resourceId: "user2",
-      payload: data.user2,
+      payload: data[1],
       procedure: "INSERT",
     });
   });

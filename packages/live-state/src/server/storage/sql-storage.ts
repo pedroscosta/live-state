@@ -239,20 +239,12 @@ export class SQLStorage extends Storage {
   }
 
   /** @internal */
-  public async rawFind<T extends LiveObjectAny>(
-    queryRequest: RawQueryRequest
-  ): Promise<Record<string, MaterializedLiveType<T>>> {
+  public async get(query: RawQueryRequest): Promise<any[]> {
     if (!this.schema) throw new Error("Schema not initialized");
 
-    const {
-      resource: resourceName,
-      where,
-      include,
-      limit,
-      sort,
-    } = queryRequest;
+    const { resource: resourceName, where, include, limit, sort } = query;
 
-    let query = this.db
+    let queryBuilder = this.db
       .selectFrom(resourceName)
       .selectAll(resourceName)
       .select((eb) =>
@@ -264,43 +256,32 @@ export class SQLStorage extends Storage {
         ).as("_meta")
       );
 
-    query = applyWhere(this.schema, resourceName, query, where);
+    queryBuilder = applyWhere(this.schema, resourceName, queryBuilder, where);
 
-    query = applyInclude(this.schema, resourceName, query, include);
+    queryBuilder = applyInclude(
+      this.schema,
+      resourceName,
+      queryBuilder,
+      include
+    );
 
     if (limit !== undefined) {
-      query = query.limit(limit);
+      queryBuilder = queryBuilder.limit(limit);
     }
 
     if (sort !== undefined) {
       sort.forEach((s) => {
-        query = query.orderBy(s.key, s.direction);
+        queryBuilder = queryBuilder.orderBy(s.key, s.direction);
       });
     }
 
-    const rawResult = await query.execute();
+    const rawResult = await queryBuilder.execute();
 
-    const rawValues: Record<string, Record<string, any>> = Object.fromEntries(
-      rawResult.map((v) => {
-        const { id } = v;
-        return [id, v];
-      })
-    );
+    if (rawResult.length === 0) return [];
 
-    if (Object.keys(rawValues).length === 0) return {};
-
-    const value = Object.entries(rawValues).reduce(
-      (acc, [id, value]) => {
-        acc[id] = this.convertToMaterializedLiveType(value);
-        return acc;
-      },
-      {} as Record<string, MaterializedLiveType<T>>
-    );
-
-    return value;
+    return rawResult.map((v) => this.convertToMaterializedLiveType(v));
   }
 
-  // TODO use query builder
   public async find<T extends LiveObjectAny>(
     resource: T,
     options?: {
@@ -309,8 +290,8 @@ export class SQLStorage extends Storage {
       limit?: number;
       sort?: { key: string; direction: "asc" | "desc" }[];
     }
-  ): Promise<Record<string, InferLiveObject<T>>> {
-    const rawResult = await this.rawFind({
+  ): Promise<InferLiveObject<T>[]> {
+    const materializedResults = await this.get({
       resource: resource.name,
       where: options?.where,
       include: options?.include,
@@ -318,10 +299,8 @@ export class SQLStorage extends Storage {
       sort: options?.sort,
     });
 
-    return Object.fromEntries(
-      Object.entries(rawResult).map(([id, value]) => {
-        return [id, inferValue(value) as InferLiveObject<T>];
-      })
+    return materializedResults.map(
+      (value) => inferValue(value) as InferLiveObject<T>
     );
   }
 

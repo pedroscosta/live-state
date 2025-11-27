@@ -44,7 +44,7 @@ describe("webSocketAdapter", () => {
       }),
       contextProvider: vi.fn().mockReturnValue({ userId: "user123" }),
       handleQuery: vi.fn().mockResolvedValue({
-        data: { user1: { value: { name: "John" } } },
+        data: [{ value: { id: { value: "user1" }, name: { value: "John" } } }],
       }),
       handleMutation: vi.fn().mockResolvedValue({
         data: { name: "John Updated" },
@@ -167,7 +167,7 @@ describe("webSocketAdapter", () => {
         type: "REPLY",
         data: {
           resource: "users",
-          data: { user1: { name: "John" } },
+          data: [{ id: { value: "user1" }, name: { value: "John" } }],
         },
       })
     );

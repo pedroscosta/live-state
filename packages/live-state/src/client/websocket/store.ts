@@ -61,10 +61,11 @@ export class OptimisticStore {
             afterLoadMutations?.(this.optimisticMutationStack);
           })
           .then(() => {
-            Object.entries(this.schema).forEach(([k, v]) => {
+            Object.entries(this.schema).forEach(([k]) => {
               this.kvStorage.get(k).then((data) => {
                 if (!data || Object.keys(data).length === 0) return;
-                this.loadConsolidatedState(k, data);
+                const dataArray = Object.values(data);
+                this.loadConsolidatedState(k, dataArray);
               });
             });
           })
@@ -252,9 +253,12 @@ export class OptimisticStore {
 
   public loadConsolidatedState(
     resourceType: string,
-    data: Record<string, DefaultMutationMessage["payload"]>
+    data: DefaultMutationMessage["payload"][]
   ) {
-    Object.entries(data).forEach(([id, payload]) => {
+    data.forEach((payload) => {
+      const id = payload.id?.value as string | undefined;
+      if (!id) return;
+
       this.addMutation(resourceType, {
         // this id is not used because only this client will see this mutation, so it can be any unique string
         // since resource's ids are already unique, there is no need to generate a new id
@@ -262,7 +266,7 @@ export class OptimisticStore {
         type: "MUTATE",
         resource: resourceType,
         resourceId: id,
-        procedure: "INSERT", // this is not used by the store, but it's required by the schema
+        procedure: "INSERT",
         payload,
       });
     });
