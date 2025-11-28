@@ -1421,6 +1421,8 @@ describe("End-to-End Query Tests", () => {
         email: "jane@example.com",
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       // Initial query should be loaded
       expect(receivedUpdates.length).toBe(1);
       // const initialUpdate = receivedUpdates[0];
@@ -1431,6 +1433,202 @@ describe("End-to-End Query Tests", () => {
       // const jane = initialUpdate.find((u: any) => u.id === userId2);
       // expect(john).toBeDefined();
       // expect(jane).toBeDefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("should register query with deep where clause and load results when subscribing", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId1 = generateId();
+      const postId2 = generateId();
+
+      // Insert users before subscribing
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert posts
+      await storage.insert(testSchema.posts, {
+        id: postId1,
+        title: "Post 1",
+        content: "Content 1",
+        authorId: userId1,
+        likes: 10,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            author: {
+              name: "John Doe",
+            },
+          },
+        },
+        subscription: () => {
+          receivedUpdates.push({});
+        },
+      });
+
+      // Insert another post that matches
+      await storage.insert(testSchema.posts, {
+        id: postId2,
+        title: "Post 2",
+        content: "Content 2",
+        authorId: userId1,
+        likes: 5,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Initial query should be loaded
+      expect(receivedUpdates.length).toBe(1);
+
+      result.unsubscribe?.();
+    });
+
+    test("should register query and load results when subscribing with UPDATE mutations", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+
+      // Insert users before subscribing
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "users",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: {
+              $in: [userId1, userId2],
+            },
+          },
+        },
+        subscription: () => {
+          receivedUpdates.push({});
+        },
+      });
+
+      // Update user that matches the query
+      await storage.update(testSchema.users, userId1, {
+        name: "John Updated",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should receive update notification
+      expect(receivedUpdates.length).toBeGreaterThanOrEqual(1);
+
+      result.unsubscribe?.();
+    });
+
+    test("should register query with deep where clause and load results when subscribing with UPDATE mutations", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId1 = generateId();
+      const postId2 = generateId();
+
+      // Insert users before subscribing
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert posts
+      await storage.insert(testSchema.posts, {
+        id: postId1,
+        title: "Post 1",
+        content: "Content 1",
+        authorId: userId1,
+        likes: 10,
+      });
+
+      await storage.insert(testSchema.posts, {
+        id: postId2,
+        title: "Post 2",
+        content: "Content 2",
+        authorId: userId2,
+        likes: 5,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            author: {
+              name: "John Doe",
+            },
+          },
+        },
+        subscription: () => {
+          receivedUpdates.push({});
+        },
+      });
+
+      // Update the author name - this should trigger the subscription
+      await storage.update(testSchema.posts, postId1, {
+        title: "Post 1 Updated",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Should receive update notification
+      expect(receivedUpdates.length).toBeGreaterThanOrEqual(1);
 
       result.unsubscribe?.();
     });

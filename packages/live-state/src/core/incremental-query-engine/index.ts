@@ -3,8 +3,10 @@ import {
   inferValue,
   type LiveObjectAny,
   type MaterializedLiveType,
+  type Schema,
+  type WhereClause,
 } from "../../schema";
-import { applyWhere, hash } from "../../utils";
+import { applyWhere, extractIncludeFromWhere, hash } from "../../utils";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -27,9 +29,11 @@ export class IncrementalQueryEngine implements QueryExecutor {
   private queryNodes = new Map<string, QueryNode>();
   private objectNodes = new Map<string, ObjectNode>();
   private dataSource: DataSource;
+  private schema: Schema<any>;
 
-  constructor(dataSource: DataSource) {
+  constructor(dataSource: DataSource, schema: Schema<any>) {
     this.dataSource = dataSource;
+    this.schema = schema;
   }
 
   public registerQuery(query: RawQueryRequest, subscription: () => void) {
@@ -81,6 +85,46 @@ export class IncrementalQueryEngine implements QueryExecutor {
     }
   }
 
+  private async checkWhereMatch(
+    resource: string,
+    resourceId: string,
+    where: WhereClause<LiveObjectAny> | undefined,
+    objValue?: any
+  ): Promise<boolean> {
+    if (!where) {
+      return true;
+    }
+
+    // Extract includes needed from the where clause
+    const include = extractIncludeFromWhere(where, resource, this.schema);
+    const hasRelations = Object.keys(include).length > 0;
+
+    // If where clause is shallow (no relations) and objValue is provided, use it directly
+    if (!hasRelations && objValue !== undefined) {
+      return applyWhere(objValue, where);
+    }
+
+    // Query the full object with relations loaded
+    const fullObject = await this.dataSource.get({
+      resource,
+      where: { id: resourceId },
+      include: hasRelations ? include : undefined,
+    });
+
+    if (!fullObject || fullObject.length === 0) {
+      return false;
+    }
+
+    const fullObjValue = inferValue(fullObject[0]);
+
+    if (!fullObjValue) {
+      return false;
+    }
+
+    // Apply where clause to the full object with relations
+    return applyWhere(fullObjValue, where);
+  }
+
   public handleMutation(
     mutation: DefaultMutation,
     enitityValue: MaterializedLiveType<LiveObjectAny>
@@ -98,36 +142,73 @@ export class IncrementalQueryEngine implements QueryExecutor {
         return;
       }
 
-      const matchedQueries: string[] = [];
+      const queriesToCheck: Array<{
+        queryNode: QueryNode;
+        hash: string;
+        hasWhere: boolean;
+      }> = [];
 
       for (const queryNode of Array.from(this.queryNodes.values())) {
         if (queryNode.resource !== mutation.resource) continue;
-
-        if (!queryNode.where) {
-          matchedQueries.push(queryNode.hash);
-          continue;
-        }
-
-        // TODO handle deep where clauses
-        if (applyWhere(objValue, queryNode.where)) {
-          queryNode.matchingObjectNodes.add(mutation.resourceId);
-          matchedQueries.push(queryNode.hash);
-        }
+        queriesToCheck.push({
+          queryNode,
+          hash: queryNode.hash,
+          hasWhere: !!queryNode.where,
+        });
       }
 
-      this.objectNodes.set(mutation.resourceId, {
-        id: mutation.resourceId,
-        type: mutation.type,
-        matchedQueries: new Set(matchedQueries),
-      });
+      // Handle async where clause checks internally
+      if (queriesToCheck.length > 0) {
+        Promise.all(
+          queriesToCheck.map(async ({ queryNode, hash, hasWhere }) => {
+            if (!hasWhere) {
+              return { hash, matches: true };
+            }
 
-      for (const queryHash of matchedQueries) {
-        const queryNode = this.queryNodes.get(queryHash);
+            const matches = await this.checkWhereMatch(
+              mutation.resource,
+              mutation.resourceId,
+              queryNode.where,
+              objValue
+            );
 
-        if (!queryNode) continue; // TODO should we throw an error here?
+            return { hash, matches };
+          })
+        ).then((results) => {
+          const matchedQueries: string[] = [];
 
-        queryNode.subscriptions.forEach((subscription) => {
-          subscription();
+          for (const { hash, matches } of results) {
+            if (matches) {
+              const queryNode = this.queryNodes.get(hash);
+              if (queryNode) {
+                queryNode.matchingObjectNodes.add(mutation.resourceId);
+                matchedQueries.push(hash);
+              }
+            }
+          }
+
+          this.objectNodes.set(mutation.resourceId, {
+            id: mutation.resourceId,
+            type: mutation.type,
+            matchedQueries: new Set(matchedQueries),
+          });
+
+          for (const queryHash of matchedQueries) {
+            const queryNode = this.queryNodes.get(queryHash);
+
+            if (!queryNode) continue; // TODO should we throw an error here?
+
+            queryNode.subscriptions.forEach((subscription) => {
+              subscription();
+            });
+          }
+        });
+      } else {
+        // No queries registered for this resource, still create objectNode
+        this.objectNodes.set(mutation.resourceId, {
+          id: mutation.resourceId,
+          type: mutation.type,
+          matchedQueries: new Set(),
         });
       }
 
@@ -150,45 +231,73 @@ export class IncrementalQueryEngine implements QueryExecutor {
       }
 
       const previouslyMatchedQueries = new Set(objectNode.matchedQueries);
-      const newlyMatchedQueries: string[] = [];
-      const queriesToNotify = new Set<string>();
+      const queriesToCheck: Array<{
+        queryNode: QueryNode;
+        hash: string;
+      }> = [];
 
       for (const queryNode of Array.from(this.queryNodes.values())) {
         if (queryNode.resource !== mutation.resource) continue;
-
-        const matchesNow =
-          !queryNode.where || applyWhere(objValue, queryNode.where);
-        const matchedBefore = previouslyMatchedQueries.has(queryNode.hash);
-
-        if (matchesNow && !matchedBefore) {
-          // Query didn't match before but matches now
-          queryNode.matchingObjectNodes.add(mutation.resourceId);
-          newlyMatchedQueries.push(queryNode.hash);
-          queriesToNotify.add(queryNode.hash);
-        } else if (!matchesNow && matchedBefore) {
-          // Query matched before but doesn't match now
-          queryNode.matchingObjectNodes.delete(mutation.resourceId);
-          objectNode.matchedQueries.delete(queryNode.hash);
-          queriesToNotify.add(queryNode.hash);
-        } else if (matchesNow && matchedBefore) {
-          // Query still matches - notify subscribers about the update
-          queriesToNotify.add(queryNode.hash);
-        }
+        queriesToCheck.push({ queryNode, hash: queryNode.hash });
       }
 
-      // Update objectNode with newly matched queries
-      for (const queryHash of newlyMatchedQueries) {
-        objectNode.matchedQueries.add(queryHash);
-      }
+      // Handle async where clause checks internally
+      if (queriesToCheck.length > 0) {
+        Promise.all(
+          queriesToCheck.map(async ({ queryNode, hash }) => {
+            const matchesNow = await this.checkWhereMatch(
+              mutation.resource,
+              mutation.resourceId,
+              queryNode.where,
+              objValue
+            );
 
-      // Notify subscribers for all queries that need to be notified
-      for (const queryHash of Array.from(queriesToNotify)) {
-        const queryNode = this.queryNodes.get(queryHash);
+            return { hash, matchesNow };
+          })
+        ).then((results) => {
+          const newlyMatchedQueries: string[] = [];
+          const queriesToNotify = new Set<string>();
 
-        if (!queryNode) continue; // TODO should we throw an error here?
+          for (const { hash, matchesNow } of results) {
+            const matchedBefore = previouslyMatchedQueries.has(hash);
 
-        queryNode.subscriptions.forEach((subscription) => {
-          subscription();
+            if (matchesNow && !matchedBefore) {
+              // Query didn't match before but matches now
+              const queryNode = this.queryNodes.get(hash);
+              if (queryNode) {
+                queryNode.matchingObjectNodes.add(mutation.resourceId);
+                newlyMatchedQueries.push(hash);
+                queriesToNotify.add(hash);
+              }
+            } else if (!matchesNow && matchedBefore) {
+              // Query matched before but doesn't match now
+              const queryNode = this.queryNodes.get(hash);
+              if (queryNode) {
+                queryNode.matchingObjectNodes.delete(mutation.resourceId);
+                objectNode.matchedQueries.delete(hash);
+                queriesToNotify.add(hash);
+              }
+            } else if (matchesNow && matchedBefore) {
+              // Query still matches - notify subscribers about the update
+              queriesToNotify.add(hash);
+            }
+          }
+
+          // Update objectNode with newly matched queries
+          for (const queryHash of newlyMatchedQueries) {
+            objectNode.matchedQueries.add(queryHash);
+          }
+
+          // Notify subscribers for all queries that need to be notified
+          for (const queryHash of Array.from(queriesToNotify)) {
+            const queryNode = this.queryNodes.get(queryHash);
+
+            if (!queryNode) continue; // TODO should we throw an error here?
+
+            queryNode.subscriptions.forEach((subscription) => {
+              subscription();
+            });
+          }
         });
       }
 
@@ -197,8 +306,8 @@ export class IncrementalQueryEngine implements QueryExecutor {
   }
 
   subscribe(
-    query: RawQueryRequest,
-    callback: (value: any[]) => void
+    _query: RawQueryRequest,
+    _callback: (value: unknown[]) => void
   ): () => void {
     throw new Error("Method not implemented.");
   }

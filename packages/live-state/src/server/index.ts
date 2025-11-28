@@ -103,7 +103,7 @@ export class Server<TRouter extends AnyRouter> {
 
     this.storage.init(this.schema, this.logger, this);
     this.contextProvider = opts.contextProvider;
-    this.queryEngine = new IncrementalQueryEngine(this.storage);
+    this.queryEngine = new IncrementalQueryEngine(this.storage, this.schema);
   }
 
   public static create<TRouter extends AnyRouter>(opts: {
