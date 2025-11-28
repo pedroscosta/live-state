@@ -1,4 +1,5 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: any's are actually used correctly */
+import { IncrementalQueryEngine } from "../core/incremental-query-engine";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -14,7 +15,7 @@ import {
   type Logger,
   LogLevel,
 } from "../utils";
-import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
+import type { AnyRouter, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import { Batcher } from "./storage/batcher";
 
@@ -74,8 +75,9 @@ export class Server<TRouter extends AnyRouter> {
 
   contextProvider?: ContextProvider;
 
-  /** @deprecated */
-  private mutationSubscriptions: Set<MutationHandler> = new Set();
+  /** @internal */
+  readonly queryEngine: IncrementalQueryEngine;
+
   private collectionSubscriptions: Map<
     string,
     Map<string, CollectionSubscription>
@@ -101,6 +103,7 @@ export class Server<TRouter extends AnyRouter> {
 
     this.storage.init(this.schema, this.logger, this);
     this.contextProvider = opts.contextProvider;
+    this.queryEngine = new IncrementalQueryEngine(this.storage);
   }
 
   public static create<TRouter extends AnyRouter>(opts: {
@@ -114,7 +117,10 @@ export class Server<TRouter extends AnyRouter> {
     return new Server<TRouter>(opts);
   }
 
-  public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
+  public handleQuery(opts: {
+    req: QueryRequest;
+    subscription?: () => void;
+  }): Promise<QueryResult<any>> {
     const batcher = new Batcher(this.storage);
 
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
@@ -123,6 +129,9 @@ export class Server<TRouter extends AnyRouter> {
         collectionName: req.resource,
         included: Object.keys(req.include ?? {}),
       });
+
+      const unsubscribeFunctions: (() => void)[] = [];
+
       const sharedContext = {
         headers: req.headers,
         cookies: req.cookies,
@@ -175,16 +184,28 @@ export class Server<TRouter extends AnyRouter> {
           const includedBy = prevStepKeys[j];
           promises.push(
             (async () => {
+              const query: QueryRequest = {
+                type: "QUERY",
+                ...step,
+                ...sharedContext,
+                where: step.where,
+                relationalWhere: where,
+              };
+
+              if (opts.subscription) {
+                unsubscribeFunctions.push(
+                  this.queryEngine.registerQuery(query, opts.subscription)
+                );
+              }
+
               const result = await route.handleQuery({
-                req: {
-                  type: "QUERY",
-                  ...step,
-                  ...sharedContext,
-                  where: step.where,
-                  relationalWhere: where,
-                },
+                req: query,
                 batcher,
               });
+
+              if (opts.subscription) {
+                this.queryEngine.loadQueryResults(query, result.data);
+              }
 
               return {
                 includedBy,
@@ -264,6 +285,11 @@ export class Server<TRouter extends AnyRouter> {
 
       const acc: QueryResult<any> = {
         data: [],
+        unsubscribe: () => {
+          unsubscribeFunctions.forEach((unsubscribe) => {
+            unsubscribe();
+          });
+        },
       };
 
       const flattenedKeys = Object.keys(flattenedResults);
@@ -332,33 +358,6 @@ export class Server<TRouter extends AnyRouter> {
       }
     )(opts.req);
 
-    if (
-      result &&
-      opts.req.type === "MUTATE" &&
-      result.acceptedValues &&
-      (opts.req.procedure === "INSERT" || opts.req.procedure === "UPDATE") &&
-      opts.req.resourceId
-    ) {
-      const mutationResult = result as MutationResult<any>;
-      const acceptedValues = mutationResult.acceptedValues ?? {};
-      const req = opts.req as MutationRequest;
-      const resourceId = req.resourceId;
-
-      if (Object.keys(acceptedValues).length && resourceId) {
-        // TODO refactor this to be called by the storage instead of the server
-        this.mutationSubscriptions.forEach((handler) => {
-          handler({
-            id: opts.req.context.messageId,
-            type: "MUTATE",
-            resource: req.resource,
-            payload: acceptedValues,
-            resourceId,
-            procedure: req.procedure as "INSERT" | "UPDATE",
-          });
-        });
-      }
-    }
-
     return result;
   }
 
@@ -372,7 +371,7 @@ export class Server<TRouter extends AnyRouter> {
     return this;
   }
 
-  /** @internal */
+  /** @internal @deprecated */
   public subscribeToMutations(
     query: RawQueryRequest,
     handler: MutationHandler,
@@ -420,6 +419,8 @@ export class Server<TRouter extends AnyRouter> {
 
   /** @internal */
   public notifySubscribers(mutation: DefaultMutation, entityData: any) {
+    this.queryEngine.handleMutation(mutation, entityData);
+    // TODO remove this once the query engine is used for subscriptions
     const resource = mutation.resource;
     const resourceSubscriptions = this.collectionSubscriptions.get(resource);
     if (!resourceSubscriptions) return;

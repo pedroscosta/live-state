@@ -353,7 +353,7 @@ describe("Server", () => {
       }),
       batcher: expect.any(Batcher),
     });
-    expect(result).toEqual({ data: [] });
+    expect(result).toEqual({ data: [], unsubscribe: expect.any(Function) });
   });
 
   test("should throw error for invalid resource", async () => {

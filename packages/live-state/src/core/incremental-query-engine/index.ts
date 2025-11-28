@@ -1,14 +1,15 @@
+import type { DataSource, QueryExecutor } from "../../client/query";
 import {
   inferValue,
   type LiveObjectAny,
   type MaterializedLiveType,
-  type Schema,
 } from "../../schema";
 import { applyWhere, hash } from "../../utils";
 import type {
   DefaultMutation,
   RawQueryRequest,
 } from "../schemas/core-protocol";
+import type { Awaitable } from "../utils";
 
 interface QueryNode extends RawQueryRequest {
   hash: string;
@@ -22,13 +23,13 @@ interface ObjectNode {
   matchedQueries: Set<string>;
 }
 
-export class IncrementalQueryEngine {
+export class IncrementalQueryEngine implements QueryExecutor {
   private queryNodes = new Map<string, QueryNode>();
   private objectNodes = new Map<string, ObjectNode>();
-  private schema: Schema<any>;
+  private dataSource: DataSource;
 
-  constructor(schema: Schema<any>) {
-    this.schema = schema;
+  constructor(dataSource: DataSource) {
+    this.dataSource = dataSource;
   }
 
   public registerQuery(query: RawQueryRequest, subscription: () => void) {
@@ -80,16 +81,17 @@ export class IncrementalQueryEngine {
     }
   }
 
-  public handleMutation(mutation: DefaultMutation) {
+  public handleMutation(
+    mutation: DefaultMutation,
+    enitityValue: MaterializedLiveType<LiveObjectAny>
+  ) {
     if (mutation.procedure === "INSERT") {
       if (this.objectNodes.has(mutation.resourceId)) {
         // TODO should we throw an error here?
         return;
       }
 
-      const objValue = inferValue({
-        value: mutation.payload,
-      } as MaterializedLiveType<LiveObjectAny>);
+      const objValue = inferValue(enitityValue);
 
       if (!objValue) {
         // TODO should we throw an error here?
@@ -140,9 +142,7 @@ export class IncrementalQueryEngine {
         return;
       }
 
-      const objValue = inferValue({
-        value: mutation.payload,
-      } as MaterializedLiveType<LiveObjectAny>);
+      const objValue = inferValue(enitityValue);
 
       if (!objValue) {
         // TODO should we throw an error here?
@@ -194,5 +194,16 @@ export class IncrementalQueryEngine {
 
       return;
     }
+  }
+
+  subscribe(
+    query: RawQueryRequest,
+    callback: (value: any[]) => void
+  ): () => void {
+    throw new Error("Method not implemented.");
+  }
+
+  get(query: RawQueryRequest): Awaitable<any[]> {
+    return this.dataSource.get(query);
   }
 }
