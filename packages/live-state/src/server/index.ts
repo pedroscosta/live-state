@@ -158,9 +158,13 @@ export class Server<TRouter extends AnyRouter> {
         if (prevStepResults) {
           for (let j = 0; j < prevStepResults.length; j++) {
             const result = prevStepResults[j];
-            const keys = Object.keys(result?.result?.data ?? {});
-            for (let k = 0; k < keys.length; k++) {
-              prevStepKeys.push(keys[k]);
+            const dataArray = result?.result?.data ?? [];
+            for (let k = 0; k < dataArray.length; k++) {
+              const item = dataArray[k];
+              const id = item?.value?.id?.value as string | undefined;
+              if (id) {
+                prevStepKeys.push(id);
+              }
             }
           }
         }
@@ -223,10 +227,13 @@ export class Server<TRouter extends AnyRouter> {
 
         for (let j = 0; j < results.length; j++) {
           const result = results[j];
-          const dataEntries = result.result.data;
+          const dataArray = result.result.data;
 
-          for (const id in dataEntries) {
-            const data = dataEntries[id];
+          for (let k = 0; k < dataArray.length; k++) {
+            const data = dataArray[k];
+            const id = data?.value?.id?.value as string | undefined;
+            if (!id) continue;
+
             const key = `${stepPath}.${id}`;
 
             let parentKeys: string[] = [];
@@ -236,8 +243,8 @@ export class Server<TRouter extends AnyRouter> {
 
             const existing = entriesMap.get(key);
             if (existing) {
-              for (let k = 0; k < parentKeys.length; k++) {
-                existing.includedBy.add(parentKeys[k]);
+              for (let l = 0; l < parentKeys.length; l++) {
+                existing.includedBy.add(parentKeys[l]);
               }
             } else {
               entriesMap.set(key, {
@@ -256,7 +263,7 @@ export class Server<TRouter extends AnyRouter> {
       const flattenedResults = Object.fromEntries(entriesMap);
 
       const acc: QueryResult<any> = {
-        data: {},
+        data: [],
       };
 
       const flattenedKeys = Object.keys(flattenedResults);
@@ -266,7 +273,7 @@ export class Server<TRouter extends AnyRouter> {
         const path = result.path;
 
         if (path === "query") {
-          acc.data[id.replace("query.", "")] = result.data;
+          acc.data.push(result.data);
         }
 
         if (result.included.length) {
@@ -544,15 +551,18 @@ function getQuerySteps(
                 ? (id) => ({ id })
                 : (id) => ({ [relation.foreignColumn]: id }),
             referenceGetter: (prevResults) =>
-              prevResults[stepId].flatMap((result) =>
-                result.result.data
-                  ? relation.type === "one"
-                    ? Object.values(result.result.data).map(
-                        (v) => v.value?.[relation.relationalColumn]?.value
-                      )
-                    : Object.keys(result.result.data)
-                  : []
-              ),
+              prevResults[stepId].flatMap((result) => {
+                const dataArray = result.result.data ?? [];
+                if (relation.type === "one") {
+                  return dataArray
+                    .map((v) => v.value?.[relation.relationalColumn]?.value)
+                    .filter((v): v is string => v !== undefined);
+                } else {
+                  return dataArray
+                    .map((v) => v.value?.id?.value as string | undefined)
+                    .filter((v): v is string => v !== undefined);
+                }
+              }),
             stepId: `${stepId}.${relationName}`,
             prevStepId: stepId,
             isMany: relation.type === "many",

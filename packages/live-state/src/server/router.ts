@@ -52,7 +52,7 @@ export const router = <
 export type AnyRouter = Router<any>;
 
 export type QueryResult<TShape extends LiveObjectAny> = {
-  data: Record<string, MaterializedLiveType<TShape>>;
+  data: MaterializedLiveType<TShape>[];
 };
 
 export type MutationResult<TShape extends LiveObjectAny> = {

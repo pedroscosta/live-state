@@ -1,6 +1,8 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
 
+import type { DataSource } from "../../client/query";
 import type { RawQueryRequest } from "../../core/schemas/core-protocol";
+import type { Awaitable } from "../../core/utils";
 import {
   type IncludeClause,
   type InferInsert,
@@ -15,7 +17,7 @@ import {
 import type { Logger, Simplify } from "../../utils";
 import type { Server } from "..";
 
-export abstract class Storage {
+export abstract class Storage implements DataSource {
   /** @internal */
   public abstract init(
     opts: Schema<any>,
@@ -39,17 +41,17 @@ export abstract class Storage {
   ): Promise<InferLiveObject<T> | undefined>;
 
   /** @internal */
-  public abstract rawFind<T extends LiveObjectAny>(
-    query: RawQueryRequest
-  ): Promise<Record<string, MaterializedLiveType<T>>>;
+  public abstract get(query: RawQueryRequest): Awaitable<any[]>;
 
   public abstract find<T extends LiveObjectAny>(
     resource: T,
     options?: {
       where?: WhereClause<T>;
       include?: IncludeClause<T>;
+      limit?: number;
+      sort?: { key: string; direction: "asc" | "desc" }[];
     }
-  ): Promise<Record<string, InferLiveObject<T>>>;
+  ): Promise<InferLiveObject<T>[]>;
 
   /** @internal */
   public abstract rawInsert<T extends LiveObjectAny>(

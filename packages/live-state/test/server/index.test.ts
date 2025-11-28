@@ -28,7 +28,7 @@ describe("Server", () => {
     mockRouter = {
       routes: {
         users: {
-          handleQuery: vi.fn().mockResolvedValue({ data: {} }),
+          handleQuery: vi.fn().mockResolvedValue({ data: [] }),
           handleMutation: vi.fn().mockResolvedValue({ data: {} }),
         },
       },
@@ -353,7 +353,7 @@ describe("Server", () => {
       }),
       batcher: expect.any(Batcher),
     });
-    expect(result).toEqual({ data: {} });
+    expect(result).toEqual({ data: [] });
   });
 
   test("should throw error for invalid resource", async () => {

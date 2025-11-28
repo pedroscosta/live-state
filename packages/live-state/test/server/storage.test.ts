@@ -33,11 +33,11 @@ describe("Storage", () => {
       async findOne() {
         return undefined;
       }
-      async rawFind() {
-        return {};
+      async get() {
+        return [];
       }
       async find() {
-        return {};
+        return [];
       }
       async rawInsert() {
         return {} as any;
@@ -53,7 +53,7 @@ describe("Storage", () => {
     expect(typeof storage.init).toBe("function");
     expect(typeof storage.rawFindById).toBe("function");
     expect(typeof storage.findOne).toBe("function");
-    expect(typeof storage.rawFind).toBe("function");
+    expect(typeof storage.get).toBe("function");
     expect(typeof storage.find).toBe("function");
     expect(typeof storage.rawInsert).toBe("function");
     expect(typeof storage.rawUpdate).toBe("function");
@@ -79,11 +79,11 @@ describe("Storage", () => {
       async findOne() {
         return undefined;
       }
-      async rawFind() {
-        return {};
+      async get() {
+        return [];
       }
       async find() {
-        return {};
+        return [];
       }
       rawInsert = mockRawInsert;
       async rawUpdate() {
@@ -201,11 +201,11 @@ describe("Storage", () => {
       async findOne() {
         return undefined;
       }
-      async rawFind() {
-        return {};
+      async get() {
+        return [];
       }
       async find() {
-        return {};
+        return [];
       }
       rawInsert = mockRawInsert;
       async rawUpdate() {
@@ -640,7 +640,7 @@ describe("SQLStorage", () => {
     expect(result).toBeUndefined();
   });
 
-  test("should handle rawFind", async () => {
+  test("should handle get", async () => {
     // Initialize schema first
     const mockSchema: Schema<any> = {
       users: {
@@ -680,11 +680,11 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue(mockRawResult);
 
-    const result = await storage.rawFind({ resource: "users" });
+    const result = await storage.get({ resource: "users" });
 
     expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
-    expect(result).toEqual({
-      user1: {
+    expect(result).toEqual([
+      {
         value: {
           id: {
             value: "user1",
@@ -695,7 +695,7 @@ describe("SQLStorage", () => {
           },
         },
       },
-      user2: {
+      {
         value: {
           id: {
             value: "user2",
@@ -706,10 +706,10 @@ describe("SQLStorage", () => {
           },
         },
       },
-    });
+    ]);
   });
 
-  test("should return empty object when rawFind finds no results", async () => {
+  test("should return empty array when get finds no results", async () => {
     // Initialize schema first
     const mockSchema: Schema<any> = {
       users: {
@@ -730,9 +730,9 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue([]);
 
-    const result = await storage.rawFind({ resource: "users" });
+    const result = await storage.get({ resource: "users" });
 
-    expect(result).toEqual({});
+    expect(result).toEqual([]);
   });
 
   test("should handle find", async () => {
@@ -773,9 +773,7 @@ describe("SQLStorage", () => {
 
     const result = await storage.find(mockResource);
 
-    expect(result).toEqual({
-      user1: { id: "user1", name: "John" },
-    });
+    expect(result).toEqual([{ id: "user1", name: "John" }]);
   });
 
   test("should handle rawInsert", async () => {
@@ -1074,12 +1072,12 @@ describe("SQLStorage", () => {
     ).rejects.toThrow("Schema not initialized");
   });
 
-  test("should throw error when schema not initialized for rawFind", async () => {
+  test("should throw error when schema not initialized for get", async () => {
     const storageWithoutSchema = new SQLStorage(mockPool);
 
-    await expect(storageWithoutSchema.rawFind("users")).rejects.toThrow(
-      "Schema not initialized"
-    );
+    await expect(
+      storageWithoutSchema.get({ resource: "users" })
+    ).rejects.toThrow("Schema not initialized");
   });
 
   test("should throw error when schema not initialized for transaction", async () => {
@@ -1090,7 +1088,7 @@ describe("SQLStorage", () => {
     ).rejects.toThrow("Schema not initialized");
   });
 
-  test("should handle rawFind with where clause", async () => {
+  test("should handle get with where clause", async () => {
     // Initialize schema first
     const mockSchema: Schema<any> = {
       users: {
@@ -1125,14 +1123,14 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue(mockRawResult);
 
-    const result = await storage.rawFind({
+    const result = await storage.get({
       resource: "users",
       where: { name: "John" },
     });
 
     expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
-    expect(result).toEqual({
-      user1: {
+    expect(result).toEqual([
+      {
         value: {
           id: {
             value: "user1",
@@ -1143,10 +1141,10 @@ describe("SQLStorage", () => {
           },
         },
       },
-    });
+    ]);
   });
 
-  test("should handle rawFind with include clause", async () => {
+  test("should handle get with include clause", async () => {
     // Initialize schema first
     const mockSchema: Schema<any> = {
       users: {
@@ -1187,14 +1185,14 @@ describe("SQLStorage", () => {
 
     mockDb.execute.mockResolvedValue(mockRawResult);
 
-    const result = await storage.rawFind({
+    const result = await storage.get({
       resource: "users",
       include: { posts: true },
     });
 
     expect(mockDb.selectFrom).toHaveBeenCalledWith("users");
-    expect(result).toEqual({
-      user1: {
+    expect(result).toEqual([
+      {
         value: {
           id: {
             value: "user1",
@@ -1205,7 +1203,7 @@ describe("SQLStorage", () => {
           },
         },
       },
-    });
+    ]);
   });
 
   test("should handle rawFindById with include clause", async () => {
@@ -1358,9 +1356,7 @@ describe("SQLStorage", () => {
       include: { posts: true },
     });
 
-    expect(result).toEqual({
-      user1: { id: "user1", name: "John" },
-    });
+    expect(result).toEqual([{ id: "user1", name: "John" }]);
   });
 
   test("should handle convertToMaterializedLiveType with Date objects", () => {

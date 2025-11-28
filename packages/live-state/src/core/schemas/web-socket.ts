@@ -79,5 +79,5 @@ export type ServerMessage = z.infer<typeof serverMessageSchema>;
 
 export const syncReplyDataSchema = z.object({
   resource: z.string(),
-  data: z.record(z.string(), queryPayloadSchema),
+  data: z.array(queryPayloadSchema),
 });

@@ -47,7 +47,7 @@ describe("Route", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -110,8 +110,11 @@ describe("Route", () => {
       context: {},
     };
 
-    const mockData = { user1: { value: { name: "John" } } };
-    (mockStorage.rawFind as Mock).mockResolvedValue(mockData);
+    const mockData = [
+      { value: { id: { value: "user1" }, name: { value: "John" } } },
+    ];
+
+    (mockStorage.get as Mock).mockResolvedValue(mockData);
 
     const batcher = new Batcher(mockStorage);
     const result = await route.handleQuery({
@@ -119,7 +122,7 @@ describe("Route", () => {
       batcher,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: {},
@@ -149,7 +152,7 @@ describe("Route", () => {
       batcher,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: { name: "John" },
@@ -482,7 +485,7 @@ describe("Route Authorization", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -529,7 +532,7 @@ describe("Route Authorization", () => {
     });
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: { userId: "123" },
@@ -557,7 +560,7 @@ describe("Route Authorization", () => {
       batcher,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: { $and: [{ active: true }, { userId: "123" }] },
@@ -584,7 +587,7 @@ describe("Route Authorization", () => {
       batcher,
     });
 
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: { active: true },
@@ -637,7 +640,7 @@ describe("Route Authorization", () => {
     });
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: { active: true },
@@ -665,7 +668,7 @@ describe("Route Authorization", () => {
     });
 
     expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: { userId: "123" },
@@ -701,7 +704,7 @@ describe("Route Authorization", () => {
         role: "admin",
       },
     });
-    expect(mockStorage.rawFind).toHaveBeenCalledWith(
+    expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
         where: {
@@ -722,7 +725,7 @@ describe("Route UPDATE Authorization", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -1317,7 +1320,7 @@ describe("Route INSERT Authorization", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -1619,7 +1622,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -1903,7 +1906,7 @@ describe("Route Error Handling", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -2067,7 +2070,7 @@ describe("Route Error Handling", () => {
     });
 
     expect(modifyingMiddleware).toHaveBeenCalled();
-    expect(mockStorage.rawFind).toHaveBeenCalled();
+    expect(mockStorage.get).toHaveBeenCalled();
   });
 });
 
@@ -2078,7 +2081,7 @@ describe("Route Custom Mutations Advanced", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -2284,7 +2287,7 @@ describe("Route Authorization Error Handling", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -2502,7 +2505,7 @@ describe("Route Complex Authorization Scenarios", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
@@ -2697,7 +2700,7 @@ describe("Route Complex Authorization Scenarios", () => {
         permissions: ["read", "write"],
       },
     });
-    expect(mockStorage.rawFind).toHaveBeenCalledWith({
+    expect(mockStorage.get).toHaveBeenCalledWith({
       resource: "users",
       where: {
         $and: [
@@ -2725,7 +2728,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
 
   beforeEach(() => {
     mockStorage = {
-      rawFind: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
       rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
       rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
