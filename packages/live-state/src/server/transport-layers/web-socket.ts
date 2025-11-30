@@ -12,6 +12,7 @@ import {
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
 import type { LiveObjectAny, MaterializedLiveType } from "../../schema";
+import { hash } from "../../utils";
 import type { AnyRouter, Server } from "../";
 
 export const webSocketAdapter = (server: Server<AnyRouter>) => {
@@ -25,7 +26,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     };
 
     const clientId = generateId();
-    const subscriptions: Set<() => void> = new Set();
+    const subscriptions: Map<string, () => void> = new Map();
 
     const requestContext: {
       headers: Record<string, any>;
@@ -58,69 +59,63 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           JSON.parse(message.toString())
         );
 
-        if (parsedMessage.type === "SUBSCRIBE") {
-          const context = (await initialContext) ?? {};
-          const resource = parsedMessage.resource;
-          const route = server.router.routes[resource] as
-            | { authorization?: { read?: (opts: { ctx: any }) => any } }
-            | undefined;
-
-          let authorizationWhere: any;
-          if (route?.authorization?.read) {
-            const authorizationClause = route.authorization.read({
-              ctx: context,
-            });
-            authorizationWhere =
-              typeof authorizationClause === "object"
-                ? authorizationClause
-                : undefined;
-          }
-
-          subscriptions.add(
-            server.subscribeToMutations(
-              parsedMessage,
-              (m) => {
-                if (
-                  !m.resourceId ||
-                  !m.payload ||
-                  !Object.keys(m.payload).length
-                )
-                  return;
-
-                connections[clientId]?.send(JSON.stringify(m));
-              },
-              authorizationWhere
-            )
-          );
-
-          // TODO send bootstrap
-        } else if (parsedMessage.type === "QUERY") {
-          const { resource } = parsedMessage;
+        if (
+          parsedMessage.type === "SUBSCRIBE" ||
+          parsedMessage.type === "QUERY"
+        ) {
+          const { type, id, ...query } = parsedMessage;
+          const isSubscribe = type === "SUBSCRIBE";
 
           const result = await server.handleQuery({
             req: {
               ...requestContext,
+              ...query,
               type: "QUERY",
-              resource: resource,
               context: (await initialContext) ?? {},
               queryParams: parsedQs,
             },
+            subscription: isSubscribe
+              ? (m) => {
+                  console.log("m", JSON.stringify(m, null, 2));
+                  if (
+                    !m.resourceId ||
+                    !m.payload ||
+                    !Object.keys(m.payload).length
+                  )
+                    return;
+
+                  connections[clientId]?.send(JSON.stringify(m));
+                }
+              : undefined,
           });
 
           if (!result || !result.data) {
             throw new Error("Invalid resource");
           }
 
+          if (isSubscribe && result.unsubscribe) {
+            subscriptions.set(hash(query), result.unsubscribe);
+          }
+
           reply({
-            id: parsedMessage.id,
+            id: id,
             type: "REPLY",
             data: {
-              resource,
+              resource: query.resource,
               data: (result.data ?? []).map(
                 (v: MaterializedLiveType<LiveObjectAny>) => v.value
               ),
             },
           });
+        } else if (parsedMessage.type === "UNSUBSCRIBE") {
+          const { type: _type, id: _id, ...query } = parsedMessage;
+
+          const unsubscribe = subscriptions.get(hash(query));
+
+          if (unsubscribe) {
+            unsubscribe();
+            subscriptions.delete(hash(query));
+          }
         } else if (parsedMessage.type === "MUTATE") {
           const { resource } = parsedMessage;
           logger.debug("Received mutation from client:", parsedMessage);
@@ -171,7 +166,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
     ws.on("close", () => {
       logger.info("Connection closed", clientId);
       delete connections[clientId];
-      for (const unsubscribe of Array.from(subscriptions)) {
+      for (const unsubscribe of Array.from(subscriptions.values())) {
         unsubscribe();
       }
     });

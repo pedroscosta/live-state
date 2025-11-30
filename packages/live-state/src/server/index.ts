@@ -119,7 +119,7 @@ export class Server<TRouter extends AnyRouter> {
 
   public handleQuery(opts: {
     req: QueryRequest;
-    subscription?: () => void;
+    subscription?: (mutation: DefaultMutation) => void;
   }): Promise<QueryResult<any>> {
     const batcher = new Batcher(this.storage);
 

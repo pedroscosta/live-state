@@ -29,6 +29,7 @@ import { generateId } from "../../src/core/utils";
 import { createClient } from "../../src/client";
 import { createClient as createFetchClient } from "../../src/client/fetch";
 import type { Server as HttpServer } from "http";
+import { LogLevel } from "../../src/utils";
 
 /**
  * Test schema
@@ -114,6 +115,7 @@ describe("End-to-End Query Tests", () => {
       router: testRouter,
       storage,
       schema: testSchema,
+      logLevel: LogLevel.DEBUG,
     });
 
     // Wait for storage to initialize
@@ -984,9 +986,10 @@ describe("End-to-End Query Tests", () => {
           autoConnect: true,
           autoReconnect: false,
         },
+        logLevel: LogLevel.DEBUG,
       });
 
-      client1.client.subscribe();
+      await client1.client.load(client1.store.query.users.buildQueryRequest());
       await waitForConnection(client1);
 
       // Create second client with userId2
@@ -998,9 +1001,10 @@ describe("End-to-End Query Tests", () => {
           autoConnect: true,
           autoReconnect: false,
         },
+        logLevel: LogLevel.DEBUG,
       });
 
-      client2.client.subscribe();
+      await client2.client.load(client2.store.query.users.buildQueryRequest());
       await waitForConnection(client2);
     });
 
@@ -1621,8 +1625,8 @@ describe("End-to-End Query Tests", () => {
       });
 
       // Update the author name - this should trigger the subscription
-      await storage.update(testSchema.posts, postId1, {
-        title: "Post 1 Updated",
+      await storage.update(testSchema.posts, userId1, {
+        name: "John Updated",
       });
 
       await new Promise((resolve) => setTimeout(resolve, 100));

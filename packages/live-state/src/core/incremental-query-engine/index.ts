@@ -16,7 +16,7 @@ import type { Awaitable } from "../utils";
 interface QueryNode extends RawQueryRequest {
   hash: string;
   matchingObjectNodes: Set<string>;
-  subscriptions: Set<() => void>;
+  subscriptions: Set<(mutation: DefaultMutation) => void>;
 }
 
 interface ObjectNode {
@@ -36,7 +36,10 @@ export class IncrementalQueryEngine implements QueryExecutor {
     this.schema = schema;
   }
 
-  public registerQuery(query: RawQueryRequest, subscription: () => void) {
+  public registerQuery(
+    query: RawQueryRequest,
+    subscription: (mutation: DefaultMutation) => void
+  ) {
     const queryHash = hash(query);
 
     const queryNode: QueryNode = this.queryNodes.get(queryHash) ?? {
@@ -199,7 +202,7 @@ export class IncrementalQueryEngine implements QueryExecutor {
             if (!queryNode) continue; // TODO should we throw an error here?
 
             queryNode.subscriptions.forEach((subscription) => {
-              subscription();
+              subscription(mutation);
             });
           }
         });
@@ -295,7 +298,7 @@ export class IncrementalQueryEngine implements QueryExecutor {
             if (!queryNode) continue; // TODO should we throw an error here?
 
             queryNode.subscriptions.forEach((subscription) => {
-              subscription();
+              subscription(mutation);
             });
           }
         });

@@ -97,54 +97,6 @@ export class QueryBuilder<
     );
   }
 
-  get(): ConditionalPromise<
-    InferQueryResult<TCollection, TInclude, TSingle>,
-    TShouldAwait
-  > {
-    const promiseOrResult = this._client.get({
-      resource: this._collection.name,
-      where: this._where,
-      include: this._include,
-      limit: this._limit,
-      sort: this._sort,
-    });
-
-    if (this._shouldAwait) {
-      return Promise.resolve(promiseOrResult).then((result) =>
-        this._single ? result[0] : result
-      ) as ConditionalPromise<
-        InferQueryResult<TCollection, TInclude, TSingle>,
-        TShouldAwait
-      >;
-    }
-
-    return this._single
-      ? (promiseOrResult as any[])[0]
-      : (promiseOrResult as any[] as unknown as ConditionalPromise<
-          InferQueryResult<TCollection, TInclude, TSingle>,
-          TShouldAwait
-        >);
-  }
-
-  subscribe(
-    callback: (value: InferQueryResult<TCollection, TInclude, TSingle>) => void
-  ): () => void {
-    return this._client.subscribe(
-      {
-        resource: this._collection.name,
-        where: this._where,
-        include: this._include,
-        limit: this._limit,
-        sort: this._sort,
-      },
-      (v) => {
-        if (this._single) return callback(v[0]);
-
-        callback(v as InferQueryResult<TCollection, TInclude, TSingle>);
-      }
-    );
-  }
-
   limit(limit: number) {
     return new QueryBuilder(
       this._collection,
@@ -197,6 +149,50 @@ export class QueryBuilder<
       limit: this._limit,
       sort: this._sort,
     } satisfies RawQueryRequest;
+  }
+
+  /** @internal */
+  buildQueryRequest(): RawQueryRequest {
+    return {
+      resource: this._collection.name,
+      where: this._where,
+      include: this._include,
+      limit: this._limit,
+      sort: this._sort,
+    };
+  }
+
+  get(): ConditionalPromise<
+    InferQueryResult<TCollection, TInclude, TSingle>,
+    TShouldAwait
+  > {
+    const promiseOrResult = this._client.get(this.buildQueryRequest());
+
+    if (this._shouldAwait) {
+      return Promise.resolve(promiseOrResult).then((result) =>
+        this._single ? result[0] : result
+      ) as ConditionalPromise<
+        InferQueryResult<TCollection, TInclude, TSingle>,
+        TShouldAwait
+      >;
+    }
+
+    return this._single
+      ? (promiseOrResult as any[])[0]
+      : (promiseOrResult as any[] as unknown as ConditionalPromise<
+          InferQueryResult<TCollection, TInclude, TSingle>,
+          TShouldAwait
+        >);
+  }
+
+  subscribe(
+    callback: (value: InferQueryResult<TCollection, TInclude, TSingle>) => void
+  ): () => void {
+    return this._client.subscribe(this.buildQueryRequest(), (v) => {
+      if (this._single) return callback(v[0]);
+
+      callback(v as InferQueryResult<TCollection, TInclude, TSingle>);
+    });
   }
 
   /** @internal */
