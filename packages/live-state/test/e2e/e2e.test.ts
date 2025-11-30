@@ -6,6 +6,7 @@
 import {
   afterAll,
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -82,6 +83,17 @@ describe("End-to-End Query Tests", () => {
   let wsClient: ReturnType<typeof createClient<typeof testRouter>>;
   let fetchClient: ReturnType<typeof createFetchClient<typeof testRouter>>;
 
+  // Create a single shared pool for all tests to prevent connection leaks
+  beforeAll(async () => {
+    pool = new Pool({
+      connectionString:
+        "postgresql://admin:admin@localhost:5432/live_state_test",
+      max: 10, // Limit pool size
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
+  });
+
   const waitForConnection = (client: ReturnType<typeof createClient>) => {
     return new Promise<void>((resolve) => {
       if (client.client.ws.connected()) {
@@ -101,13 +113,7 @@ describe("End-to-End Query Tests", () => {
   };
 
   beforeEach(async () => {
-    // Create PostgreSQL connection pool
-    pool = new Pool({
-      connectionString:
-        "postgresql://admin:admin@localhost:5432/live_state_test",
-    });
-
-    // Create SQL storage
+    // Create SQL storage using the shared pool
     storage = new SQLStorage(pool);
 
     // Create server
@@ -186,18 +192,22 @@ describe("End-to-End Query Tests", () => {
     }
 
     // Clean up all tables after each test
-    try {
-      await pool.query(
-        "TRUNCATE TABLE users, users_meta, posts, posts_meta RESTART IDENTITY CASCADE"
-      );
-    } catch (error) {
-      // Ignore errors during cleanup
+    if (pool) {
+      try {
+        await pool.query(
+          "TRUNCATE TABLE users, users_meta, posts, posts_meta RESTART IDENTITY CASCADE"
+        );
+      } catch (error) {
+        // Ignore errors during cleanup
+      }
     }
   });
 
   afterAll(async () => {
-    // Close the pool after all tests
-    await pool.end();
+    // Close the shared pool after all tests
+    if (pool) {
+      await pool.end();
+    }
   });
 
   describe("Websocket Client Tests", () => {
@@ -1625,8 +1635,8 @@ describe("End-to-End Query Tests", () => {
       });
 
       // Update the author name - this should trigger the subscription
-      await storage.update(testSchema.posts, userId1, {
-        name: "John Updated",
+      await storage.update(testSchema.posts, postId1, {
+        title: "Post 1 Updated",
       });
 
       await new Promise((resolve) => setTimeout(resolve, 100));

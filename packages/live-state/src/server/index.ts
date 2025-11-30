@@ -192,19 +192,15 @@ export class Server<TRouter extends AnyRouter> {
                 relationalWhere: where,
               };
 
-              if (opts.subscription) {
-                unsubscribeFunctions.push(
-                  this.queryEngine.registerQuery(query, opts.subscription)
-                );
-              }
-
               const result = await route.handleQuery({
                 req: query,
                 batcher,
+                queryEngine: this.queryEngine,
+                subscription: opts.subscription,
               });
 
-              if (opts.subscription) {
-                this.queryEngine.loadQueryResults(query, result.data);
+              if (result.unsubscribe) {
+                unsubscribeFunctions.push(result.unsubscribe);
               }
 
               return {
