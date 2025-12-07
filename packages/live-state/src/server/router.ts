@@ -158,12 +158,14 @@ export class Route<
     queryEngine,
     subscription,
     parentQueryHash,
+    parentRelationName,
   }: {
     req: QueryRequest;
     batcher: Batcher;
     queryEngine?: IncrementalQueryEngine;
     subscription?: (mutation: any) => void;
     parentQueryHash?: string;
+    parentRelationName?: string;
   }): Promise<QueryResult<TResourceSchema>> => {
     return await this.wrapInMiddlewares(async (req: QueryRequest) => {
       const authorizationClause = this.authorization?.read?.({
@@ -199,6 +201,7 @@ export class Route<
           query: rawQuery,
           subscription,
           parentQueryHash,
+          parentRelationName,
         });
       }
 

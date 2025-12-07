@@ -12,14 +12,15 @@ import type {
   RawQueryRequest,
 } from "../schemas/core-protocol";
 import type { Awaitable } from "../utils";
+import { generateId } from "../utils";
 
 interface QueryNode extends RawQueryRequest {
   hash: string;
   matchingObjectNodes: Set<string>;
   subscriptions: Set<(mutation: DefaultMutation) => void>;
   parentQueries: Set<string>; // Hashes of parent query nodes
-  childQueries: Set<string>; // Hashes of child query nodes
-  // relationPath?: string; // Path from parent (e.g., "posts", "posts.author")
+  parentRelationName?: string; // Relation name this child query is tracking (if it's a child query)
+  childQueriesByRelation: Map<string, Set<string>>; // Map of relation name -> Set of child query hashes
 }
 
 interface ObjectNode {
@@ -47,10 +48,12 @@ export class IncrementalQueryEngine implements QueryExecutor {
     query,
     subscription,
     parentQueryHash,
+    parentRelationName,
   }: {
     query: RawQueryRequest;
     subscription: (mutation: DefaultMutation) => void;
     parentQueryHash?: string;
+    parentRelationName?: string;
   }) {
     const queryHash = hash(query);
 
@@ -60,7 +63,7 @@ export class IncrementalQueryEngine implements QueryExecutor {
       matchingObjectNodes: new Set(),
       subscriptions: new Set(),
       parentQueries: new Set(),
-      childQueries: new Set(),
+      childQueriesByRelation: new Map(),
     };
 
     queryNode.subscriptions.add(subscription);
@@ -69,9 +72,21 @@ export class IncrementalQueryEngine implements QueryExecutor {
 
     if (parentQueryHash) {
       queryNode.parentQueries.add(parentQueryHash);
+      if (parentRelationName !== undefined) {
+        queryNode.parentRelationName = parentRelationName;
+      }
       const parentQueryNode = this.queryNodes.get(parentQueryHash);
-      if (parentQueryNode) {
-        parentQueryNode.childQueries.add(queryHash);
+      if (parentQueryNode && parentRelationName) {
+        let childQueriesForRelation =
+          parentQueryNode.childQueriesByRelation.get(parentRelationName);
+        if (!childQueriesForRelation) {
+          childQueriesForRelation = new Set();
+          parentQueryNode.childQueriesByRelation.set(
+            parentRelationName,
+            childQueriesForRelation
+          );
+        }
+        childQueriesForRelation.add(queryHash);
       }
     }
 
@@ -84,15 +99,31 @@ export class IncrementalQueryEngine implements QueryExecutor {
 
       for (const parentQueryHash of Array.from(queryNode.parentQueries)) {
         const parentQueryNode = this.queryNodes.get(parentQueryHash);
-        if (parentQueryNode) {
-          parentQueryNode.childQueries.delete(queryHash);
+        if (parentQueryNode && queryNode.parentRelationName) {
+          const childQueriesForRelation =
+            parentQueryNode.childQueriesByRelation.get(
+              queryNode.parentRelationName
+            );
+          if (childQueriesForRelation) {
+            childQueriesForRelation.delete(queryHash);
+            if (childQueriesForRelation.size === 0) {
+              parentQueryNode.childQueriesByRelation.delete(
+                queryNode.parentRelationName
+              );
+            }
+          }
         }
       }
 
-      for (const childQueryHash of Array.from(queryNode.childQueries)) {
-        const childQueryNode = this.queryNodes.get(childQueryHash);
-        if (childQueryNode) {
-          childQueryNode.parentQueries.delete(queryHash);
+      // Clean up parent references from all child queries
+      for (const [_relationName, childQueriesSet] of Array.from(
+        queryNode.childQueriesByRelation.entries()
+      )) {
+        for (const childQueryHash of Array.from(childQueriesSet)) {
+          const childQueryNode = this.queryNodes.get(childQueryHash);
+          if (childQueryNode) {
+            childQueryNode.parentQueries.delete(queryHash);
+          }
         }
       }
     };
@@ -354,6 +385,166 @@ export class IncrementalQueryEngine implements QueryExecutor {
     }
   }
 
+  /**
+   * Updates child queries when a relation changes
+   * Removes old tracked objects and adds new ones, fetching data and notifying subscribers
+   */
+  private async updateChildQueriesForRelationChange(
+    objectId: string,
+    relationName: string,
+    oldValue: string | undefined,
+    newValue: string | undefined
+  ): Promise<void> {
+    const objectNode = this.objectNodes.get(objectId);
+    if (!objectNode) return;
+
+    // Find all queries that match this object
+    const matchingQueryHashes = Array.from(objectNode.matchedQueries);
+
+    for (const queryHash of matchingQueryHashes) {
+      const queryNode = this.queryNodes.get(queryHash);
+      if (!queryNode) continue;
+
+      // Check if this query has child queries tracking the changed relation
+      const childQueriesForRelation =
+        queryNode.childQueriesByRelation.get(relationName);
+      if (!childQueriesForRelation || childQueriesForRelation.size === 0) {
+        continue;
+      }
+
+      // Process each child query
+      for (const childQueryHash of Array.from(childQueriesForRelation)) {
+        const childQueryNode = this.queryNodes.get(childQueryHash);
+        if (!childQueryNode) continue;
+
+        // Remove old related object from child query's tracked objects
+        if (oldValue) {
+          childQueryNode.matchingObjectNodes.delete(oldValue);
+          const oldRelatedObjectNode = this.objectNodes.get(oldValue);
+          if (oldRelatedObjectNode) {
+            oldRelatedObjectNode.matchedQueries.delete(childQueryHash);
+          }
+        }
+
+        // Add new related object to child query's tracked objects
+        if (newValue) {
+          // Fetch the new object data
+          const newObjectData = await this.dataSource.get({
+            resource: childQueryNode.resource,
+            where: { id: newValue },
+            include: childQueryNode.include,
+          });
+
+          if (newObjectData && newObjectData.length > 0) {
+            // Convert MaterializedLiveType to plain object if needed
+            const materializedObject = newObjectData[0];
+            const plainObject =
+              inferValue(materializedObject) ?? materializedObject;
+            const newObjectId = plainObject.id;
+
+            // Add to matching objects
+            childQueryNode.matchingObjectNodes.add(newObjectId);
+
+            // Update object node
+            let newRelatedObjectNode = this.objectNodes.get(newObjectId);
+            if (!newRelatedObjectNode) {
+              newRelatedObjectNode = {
+                id: newObjectId,
+                type: plainObject.type || childQueryNode.resource,
+                matchedQueries: new Set(),
+                relatedObjects: new Map(),
+                relatedFromObjects: new Map(),
+              };
+              this.objectNodes.set(newObjectId, newRelatedObjectNode);
+            }
+            newRelatedObjectNode.matchedQueries.add(childQueryHash);
+
+            // Extract and track relationships from the new object
+            const relationChanges = this.extractRelationsFromResult(
+              childQueryNode.resource,
+              plainObject,
+              newRelatedObjectNode
+            );
+            if (relationChanges.size > 0) {
+              this.updateRelationshipTracking(
+                newObjectId,
+                childQueryNode.resource,
+                relationChanges
+              );
+            }
+
+            // Create INSERT mutation for the new object
+            // Use the materialized object for payload creation to preserve _meta
+            const insertMutation: DefaultMutation = {
+              id: generateId(),
+              type: "MUTATE",
+              resource: childQueryNode.resource,
+              resourceId: newObjectId,
+              procedure: "INSERT",
+              payload: this.createMutationPayloadFromObject(materializedObject),
+            };
+
+            // Notify subscribers of the child query
+            childQueryNode.subscriptions.forEach((subscription) => {
+              subscription(insertMutation);
+            });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Creates a mutation payload from an object
+   * Handles both MaterializedLiveType objects and plain objects
+   */
+  private createMutationPayloadFromObject(
+    obj: any
+  ): Record<string, { value: any; _meta?: { timestamp?: string | null } }> {
+    const payload: Record<
+      string,
+      { value: any; _meta?: { timestamp?: string | null } }
+    > = {};
+
+    // Check if obj is a MaterializedLiveType (has value property)
+    const objValue =
+      obj && typeof obj === "object" && "value" in obj ? obj.value : obj;
+
+    for (const [key, value] of Object.entries(objValue)) {
+      // Check if value is a MaterializedLiveType (has value and _meta)
+      if (value && typeof value === "object" && "value" in value) {
+        // It's a MaterializedLiveType - extract value and meta
+        const metaValue = value as {
+          value: any;
+          _meta?: { timestamp?: string | null };
+        };
+        payload[key] = {
+          value: metaValue.value,
+          _meta: metaValue._meta?.timestamp
+            ? { timestamp: metaValue._meta.timestamp }
+            : undefined,
+        };
+      } else if (value && typeof value === "object" && "id" in value) {
+        // Handle nested objects (relations) - extract just the ID if it's a relation
+        const relationValue = value as {
+          id: any;
+          _meta?: { timestamp?: string | null };
+        };
+        payload[key] = {
+          value: relationValue.id,
+          _meta: relationValue._meta,
+        };
+      } else {
+        // Plain value
+        payload[key] = {
+          value: value,
+        };
+      }
+    }
+
+    return payload;
+  }
+
   public handleMutation(
     mutation: DefaultMutation,
     enitityValue: MaterializedLiveType<LiveObjectAny>
@@ -588,6 +779,27 @@ export class IncrementalQueryEngine implements QueryExecutor {
               mutation.resource,
               relationChanges
             );
+
+            // Update child queries for each relation change
+            for (const [relationName, { oldValue, newValue }] of Array.from(
+              relationChanges.entries()
+            )) {
+              // Only process if there's an actual change (old !== new)
+              if (oldValue !== newValue) {
+                this.updateChildQueriesForRelationChange(
+                  mutation.resourceId,
+                  relationName,
+                  oldValue,
+                  newValue
+                ).catch((error) => {
+                  // Log error but don't throw - we don't want to break the mutation flow
+                  console.error(
+                    `Error updating child queries for relation ${relationName}:`,
+                    error
+                  );
+                });
+              }
+            }
           }
 
           // Notify subscribers for all queries that need to be notified
@@ -609,6 +821,27 @@ export class IncrementalQueryEngine implements QueryExecutor {
             mutation.resource,
             relationChanges
           );
+
+          // Update child queries for each relation change
+          for (const [relationName, { oldValue, newValue }] of Array.from(
+            relationChanges.entries()
+          )) {
+            // Only process if there's an actual change (old !== new)
+            if (oldValue !== newValue) {
+              this.updateChildQueriesForRelationChange(
+                mutation.resourceId,
+                relationName,
+                oldValue,
+                newValue
+              ).catch((error) => {
+                // Log error but don't throw - we don't want to break the mutation flow
+                console.error(
+                  `Error updating child queries for relation ${relationName}:`,
+                  error
+                );
+              });
+            }
+          }
         }
       }
 

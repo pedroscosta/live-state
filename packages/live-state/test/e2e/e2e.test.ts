@@ -1646,5 +1646,665 @@ describe("End-to-End Query Tests", () => {
 
       result.unsubscribe?.();
     });
+
+    test("should receive updates when field from included object changes", async () => {
+      const userId = generateId();
+      const postId = generateId();
+
+      // Insert user and post before subscribing
+      await storage.insert(testSchema.users, {
+        id: userId,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.posts, {
+        id: postId,
+        title: "Test Post",
+        content: "Test Content",
+        authorId: userId,
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      // Create query with include: posts with author
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+          },
+        },
+        subscription: () => {
+          receivedUpdates.push({});
+        },
+      });
+
+      // Wait a bit for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the author's name (field from included object)
+      await storage.update(testSchema.users, userId, {
+        name: "John Updated",
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Should receive update notification because the included author changed
+      expect(receivedUpdates.length).toBeGreaterThanOrEqual(1);
+
+      result.unsubscribe?.();
+    });
+
+    test("should receive updates when included value starts to match query", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId = generateId();
+
+      // Insert users with different names
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert post with author that doesn't match the query initially
+      await storage.insert(testSchema.posts, {
+        id: postId,
+        title: "Test Post",
+        content: "Test Content",
+        authorId: userId2, // Author is Jane, doesn't match where: { author: { name: "John Doe" } }
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      // Create query with deep where clause: posts where author name is "John Doe"
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: postId,
+          },
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates.push(mut);
+        },
+      });
+
+      // Check initial result - should have post with Jane as author
+      expect(result.data).toBeDefined();
+      expect(result.data.length).toBe(1);
+      const initialPost = result.data[0].value as any;
+      expect(initialPost.id.value).toBe(postId);
+      expect(initialPost.author.value).toBeDefined();
+      expect(initialPost.author.value.id.value).toBe(userId2); // Should be Jane initially
+      expect(initialPost.author.value.name.value).toBe("Jane Doe");
+
+      // Wait a bit for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the author's name to match the query (Jane -> John)
+      await storage.update(testSchema.posts, postId, {
+        authorId: userId1, // Now matches the where clause
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Should receive two updates:
+      // 1. UPDATE mutation for the post (authorId changed)
+      // 2. INSERT mutation for the new author (John)
+      expect(receivedUpdates.length).toBe(2);
+
+      // Find the UPDATE mutation for the post
+      const postUpdate = receivedUpdates.find(
+        (mut) =>
+          mut.resource === "posts" &&
+          mut.resourceId === postId &&
+          mut.procedure === "UPDATE"
+      );
+      expect(postUpdate).toBeDefined();
+
+      // Find the INSERT mutation for the new author
+      const authorInsert = receivedUpdates.find(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.resourceId === userId1 &&
+          mut.procedure === "INSERT"
+      );
+      expect(authorInsert).toBeDefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("should update multiple child queries when relation changes", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId1 = generateId();
+      const postId2 = generateId();
+
+      // Insert users
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert posts with same author
+      await storage.insert(testSchema.posts, {
+        id: postId1,
+        title: "Post 1",
+        content: "Content 1",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      await storage.insert(testSchema.posts, {
+        id: postId2,
+        title: "Post 2",
+        content: "Content 2",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates1: any[] = [];
+      const receivedUpdates2: any[] = [];
+
+      // Create two queries with include: author
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: postId1,
+          },
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates1.push(mut);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: postId2,
+          },
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates2.push(mut);
+        },
+      });
+
+      // Wait for subscriptions to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Change author of first post
+      await storage.update(testSchema.posts, postId1, {
+        authorId: userId2,
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // First query should receive UPDATE for post and INSERT for new author
+      const post1Update = receivedUpdates1.find(
+        (mut) =>
+          mut.resource === "posts" &&
+          mut.resourceId === postId1 &&
+          mut.procedure === "UPDATE"
+      );
+      expect(post1Update).toBeDefined();
+
+      const author2Insert = receivedUpdates1.find(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.resourceId === userId2 &&
+          mut.procedure === "INSERT"
+      );
+      expect(author2Insert).toBeDefined();
+
+      // Second query should not receive updates (post2 author didn't change)
+      const post2Updates = receivedUpdates2.filter(
+        (mut) => mut.resource === "posts" && mut.resourceId === postId2
+      );
+      expect(post2Updates.length).toBe(0);
+
+      result1.unsubscribe?.();
+      result2.unsubscribe?.();
+    });
+
+    test("should remove old author from child query tracking when relation changes", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId = generateId();
+
+      // Insert users
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert post with John as author
+      await storage.insert(testSchema.posts, {
+        id: postId,
+        title: "Test Post",
+        content: "Test Content",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      // Create query with include: author
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: postId,
+          },
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates.push(mut);
+        },
+      });
+
+      // Wait for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Change author from John to Jane
+      await storage.update(testSchema.posts, postId, {
+        authorId: userId2,
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Should receive UPDATE for post and INSERT for Jane
+      const postUpdate = receivedUpdates.find(
+        (mut) =>
+          mut.resource === "posts" &&
+          mut.resourceId === postId &&
+          mut.procedure === "UPDATE"
+      );
+      expect(postUpdate).toBeDefined();
+
+      const janeInsert = receivedUpdates.find(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.resourceId === userId2 &&
+          mut.procedure === "INSERT"
+      );
+      expect(janeInsert).toBeDefined();
+
+      // John should not appear in any INSERT mutations (he was removed)
+      const johnInserts = receivedUpdates.filter(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.resourceId === userId1 &&
+          mut.procedure === "INSERT"
+      );
+      expect(johnInserts.length).toBe(0);
+
+      result.unsubscribe?.();
+    });
+
+    test("should handle multiple posts changing to same new author", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId1 = generateId();
+      const postId2 = generateId();
+      const postId3 = generateId();
+
+      // Insert users
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert multiple posts with different authors
+      await storage.insert(testSchema.posts, {
+        id: postId1,
+        title: "Post 1",
+        content: "Content 1",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      await storage.insert(testSchema.posts, {
+        id: postId2,
+        title: "Post 2",
+        content: "Content 2",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      await storage.insert(testSchema.posts, {
+        id: postId3,
+        title: "Post 3",
+        content: "Content 3",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      // Create query for all posts with author
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates.push(mut);
+        },
+      });
+
+      // Wait for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Change all posts to Jane
+      await storage.update(testSchema.posts, postId1, {
+        authorId: userId2,
+      });
+      await storage.update(testSchema.posts, postId2, {
+        authorId: userId2,
+      });
+      await storage.update(testSchema.posts, postId3, {
+        authorId: userId2,
+      });
+
+      // Wait for mutations to propagate
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Should receive 3 UPDATE mutations for posts
+      const postUpdates = receivedUpdates.filter(
+        (mut) =>
+          mut.resource === "posts" &&
+          mut.procedure === "UPDATE" &&
+          [postId1, postId2, postId3].includes(mut.resourceId)
+      );
+      expect(postUpdates.length).toBe(3);
+
+      // Should receive INSERT mutations for Jane (may be multiple if each post triggers it)
+      const janeInserts = receivedUpdates.filter(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.resourceId === userId2 &&
+          mut.procedure === "INSERT"
+      );
+      expect(janeInserts.length).toBeGreaterThanOrEqual(1);
+
+      result.unsubscribe?.();
+    });
+
+    test("should handle relation change when child query has no matching objects initially", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const postId = generateId();
+
+      // Insert users
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      // Insert post without author initially (if null is allowed) or with different author
+      await storage.insert(testSchema.posts, {
+        id: postId,
+        title: "Test Post",
+        content: "Test Content",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      // Create query with include: author
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: postId,
+          },
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates.push(mut);
+        },
+      });
+
+      // Wait for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Change author to Jane
+      await storage.update(testSchema.posts, postId, {
+        authorId: userId2,
+      });
+
+      // Wait for mutation to propagate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Should receive UPDATE for post
+      const postUpdate = receivedUpdates.find(
+        (mut) =>
+          mut.resource === "posts" &&
+          mut.resourceId === postId &&
+          mut.procedure === "UPDATE"
+      );
+      expect(postUpdate).toBeDefined();
+
+      // Should receive INSERT for Jane
+      const janeInsert = receivedUpdates.find(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.resourceId === userId2 &&
+          mut.procedure === "INSERT"
+      );
+      expect(janeInsert).toBeDefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("should handle rapid relation changes correctly", async () => {
+      const userId1 = generateId();
+      const userId2 = generateId();
+      const userId3 = generateId();
+      const postId = generateId();
+
+      // Insert users
+      await storage.insert(testSchema.users, {
+        id: userId1,
+        name: "John Doe",
+        email: "john@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId2,
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+
+      await storage.insert(testSchema.users, {
+        id: userId3,
+        name: "Bob Smith",
+        email: "bob@example.com",
+      });
+
+      // Insert post
+      await storage.insert(testSchema.posts, {
+        id: postId,
+        title: "Test Post",
+        content: "Test Content",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      // Wait for initial sync
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const receivedUpdates: any[] = [];
+
+      // Create query with include: author
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            id: postId,
+          },
+          include: {
+            author: true,
+          },
+        },
+        subscription: (mut) => {
+          receivedUpdates.push(mut);
+        },
+      });
+
+      // Wait for subscription to be established
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Rapidly change authors
+      await storage.update(testSchema.posts, postId, {
+        authorId: userId2,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      await storage.update(testSchema.posts, postId, {
+        authorId: userId3,
+      });
+
+      // Wait for mutations to propagate
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Should receive UPDATE mutations for post
+      const postUpdates = receivedUpdates.filter(
+        (mut) =>
+          mut.resource === "posts" &&
+          mut.resourceId === postId &&
+          mut.procedure === "UPDATE"
+      );
+      expect(postUpdates.length).toBeGreaterThanOrEqual(2);
+
+      // Should receive INSERT mutations for new authors
+      const authorInserts = receivedUpdates.filter(
+        (mut) =>
+          mut.resource === "users" &&
+          mut.procedure === "INSERT" &&
+          [userId2, userId3].includes(mut.resourceId)
+      );
+      expect(authorInserts.length).toBeGreaterThanOrEqual(1);
+      result.unsubscribe?.();
+    });
   });
 });

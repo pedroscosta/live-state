@@ -184,6 +184,12 @@ export class Server<TRouter extends AnyRouter> {
           ? stepQueryHashes[step.prevStepId]
           : undefined;
 
+        // Extract relation name from stepId if it's a child query
+        // stepId format is "${parentStepId}.${relationName}" for child queries
+        const parentRelationName = step.prevStepId
+          ? step.stepId.split(".").pop()
+          : undefined;
+
         const promises = [];
         for (let j = 0; j < wheres.length; j++) {
           const where = wheres[j];
@@ -204,6 +210,7 @@ export class Server<TRouter extends AnyRouter> {
                 queryEngine: this.queryEngine,
                 subscription: opts.subscription,
                 parentQueryHash,
+                parentRelationName,
               });
 
               if (result.unsubscribe) {
