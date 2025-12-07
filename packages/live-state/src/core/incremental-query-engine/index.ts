@@ -17,12 +17,19 @@ interface QueryNode extends RawQueryRequest {
   hash: string;
   matchingObjectNodes: Set<string>;
   subscriptions: Set<(mutation: DefaultMutation) => void>;
+  parentQueries: Set<string>; // Hashes of parent query nodes
+  childQueries: Set<string>; // Hashes of child query nodes
+  // relationPath?: string; // Path from parent (e.g., "posts", "posts.author")
 }
 
 interface ObjectNode {
   id: string;
   type: string;
   matchedQueries: Set<string>;
+  // Tracks "one" relations: relationName -> relatedObjectId
+  relatedObjects: Map<string, string>;
+  // Tracks reverse relations: relationName -> Set of objectIds that have this relation pointing to this object
+  relatedFromObjects: Map<string, Set<string>>;
 }
 
 export class IncrementalQueryEngine implements QueryExecutor {
@@ -36,10 +43,15 @@ export class IncrementalQueryEngine implements QueryExecutor {
     this.schema = schema;
   }
 
-  public registerQuery(
-    query: RawQueryRequest,
-    subscription: (mutation: DefaultMutation) => void
-  ) {
+  public registerQuery({
+    query,
+    subscription,
+    parentQueryHash,
+  }: {
+    query: RawQueryRequest;
+    subscription: (mutation: DefaultMutation) => void;
+    parentQueryHash?: string;
+  }) {
     const queryHash = hash(query);
 
     const queryNode: QueryNode = this.queryNodes.get(queryHash) ?? {
@@ -47,17 +59,41 @@ export class IncrementalQueryEngine implements QueryExecutor {
       hash: queryHash,
       matchingObjectNodes: new Set(),
       subscriptions: new Set(),
+      parentQueries: new Set(),
+      childQueries: new Set(),
     };
 
     queryNode.subscriptions.add(subscription);
 
     this.queryNodes.set(queryHash, queryNode);
 
+    if (parentQueryHash) {
+      queryNode.parentQueries.add(parentQueryHash);
+      const parentQueryNode = this.queryNodes.get(parentQueryHash);
+      if (parentQueryNode) {
+        parentQueryNode.childQueries.add(queryHash);
+      }
+    }
+
     return () => {
       queryNode.subscriptions.delete(subscription);
 
       if (queryNode.subscriptions.size === 0) {
         this.queryNodes.delete(queryHash);
+      }
+
+      for (const parentQueryHash of Array.from(queryNode.parentQueries)) {
+        const parentQueryNode = this.queryNodes.get(parentQueryHash);
+        if (parentQueryNode) {
+          parentQueryNode.childQueries.delete(queryHash);
+        }
+      }
+
+      for (const childQueryHash of Array.from(queryNode.childQueries)) {
+        const childQueryNode = this.queryNodes.get(childQueryHash);
+        if (childQueryNode) {
+          childQueryNode.parentQueries.delete(queryHash);
+        }
       }
     };
   }
@@ -78,6 +114,8 @@ export class IncrementalQueryEngine implements QueryExecutor {
         id,
         type: result.type,
         matchedQueries: new Set(),
+        relatedObjects: new Map(),
+        relatedFromObjects: new Map(),
       };
 
       objectNode.matchedQueries.add(queryHash);
@@ -85,6 +123,16 @@ export class IncrementalQueryEngine implements QueryExecutor {
       this.objectNodes.set(id, objectNode);
 
       queryNode.matchingObjectNodes.add(id);
+
+      // Extract and track relationships from the result
+      const relationChanges = this.extractRelationsFromResult(
+        query.resource,
+        result,
+        objectNode
+      );
+      if (relationChanges.size > 0) {
+        this.updateRelationshipTracking(id, query.resource, relationChanges);
+      }
     }
   }
 
@@ -126,6 +174,184 @@ export class IncrementalQueryEngine implements QueryExecutor {
 
     // Apply where clause to the full object with relations
     return applyWhere(fullObjValue, where);
+  }
+
+  /**
+   * Extracts relationships from a result object
+   * Returns: Map<relationName, { oldValue?: string, newValue?: string }>
+   */
+  private extractRelationsFromResult(
+    resource: string,
+    result: any,
+    objectNode: ObjectNode | undefined
+  ): Map<string, { oldValue?: string; newValue?: string }> {
+    const changes = new Map<string, { oldValue?: string; newValue?: string }>();
+    const resourceSchema = this.schema[resource];
+
+    if (!resourceSchema?.relations) {
+      return changes;
+    }
+
+    // Map relationalColumn names to relation names for "one" relations
+    const relationalColumnToRelation = new Map<string, string>();
+    for (const [relationName, relation] of Object.entries(
+      resourceSchema.relations
+    )) {
+      if (relation.type === "one" && relation.relationalColumn) {
+        relationalColumnToRelation.set(
+          relation.relationalColumn as string,
+          relationName
+        );
+      }
+    }
+
+    // Get all relational columns to check
+    const relationalColumns = Array.from(relationalColumnToRelation.keys());
+
+    // Extract relations from result object
+    for (const fieldName of relationalColumns) {
+      const relationName = relationalColumnToRelation.get(fieldName);
+      if (!relationName) continue;
+
+      // Get value from result object
+      const newValue = result[fieldName];
+
+      // Get old value from existing objectNode's relatedObjects map
+      const oldValue = objectNode?.relatedObjects.get(relationName);
+
+      if (oldValue !== newValue) {
+        changes.set(relationName, {
+          oldValue: oldValue,
+          newValue: newValue,
+        });
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * Extracts relationship changes from a mutation payload
+   * Returns: Map<relationName, { oldValue?: string, newValue?: string }>
+   */
+  private extractRelationshipChanges(
+    resource: string,
+    mutation: DefaultMutation,
+    objectNode: ObjectNode | undefined,
+    objValue?: any
+  ): Map<string, { oldValue?: string; newValue?: string }> {
+    const changes = new Map<string, { oldValue?: string; newValue?: string }>();
+    const resourceSchema = this.schema[resource];
+
+    if (!resourceSchema?.relations) {
+      return changes;
+    }
+
+    // Map relationalColumn names to relation names for "one" relations
+    const relationalColumnToRelation = new Map<string, string>();
+    for (const [relationName, relation] of Object.entries(
+      resourceSchema.relations
+    )) {
+      if (relation.type === "one" && relation.relationalColumn) {
+        relationalColumnToRelation.set(
+          relation.relationalColumn as string,
+          relationName
+        );
+      }
+    }
+
+    // Get all relational columns to check
+    const relationalColumns = Array.from(relationalColumnToRelation.keys());
+
+    // Check mutation payload for relationship changes
+    for (const fieldName of relationalColumns) {
+      const relationName = relationalColumnToRelation.get(fieldName);
+      if (!relationName) continue;
+
+      // Get new value from payload (if present) or objValue (as fallback)
+      const payloadValue = mutation.payload[fieldName]?.value;
+      const objValueField = objValue?.[fieldName];
+      const newValue =
+        payloadValue !== undefined ? payloadValue : objValueField;
+
+      // Get old value from existing objectNode's relatedObjects map
+      const oldValue = objectNode?.relatedObjects.get(relationName);
+
+      if (oldValue !== newValue) {
+        changes.set(relationName, {
+          oldValue: oldValue,
+          newValue: newValue,
+        });
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * Updates relationship tracking for an object
+   */
+  private updateRelationshipTracking(
+    objectId: string,
+    resource: string,
+    relationChanges: Map<string, { oldValue?: string; newValue?: string }>
+  ): void {
+    const objectNode = this.objectNodes.get(objectId);
+    if (!objectNode) return;
+
+    const resourceSchema = this.schema[resource];
+    if (!resourceSchema?.relations) return;
+
+    for (const [relationName, { oldValue, newValue }] of Array.from(
+      relationChanges.entries()
+    )) {
+      const relation = resourceSchema.relations[relationName];
+      if (!relation || relation.type !== "one") continue;
+
+      // Remove old relationship
+      if (oldValue) {
+        objectNode.relatedObjects.delete(relationName);
+
+        // Update reverse tracking: remove this object from old related object's relatedFromObjects
+        const oldRelatedObject = this.objectNodes.get(oldValue);
+        if (oldRelatedObject) {
+          const reverseSet =
+            oldRelatedObject.relatedFromObjects.get(relationName);
+          if (reverseSet) {
+            reverseSet.delete(objectId);
+            if (reverseSet.size === 0) {
+              oldRelatedObject.relatedFromObjects.delete(relationName);
+            }
+          }
+        }
+      }
+
+      // Add new relationship
+      if (newValue) {
+        objectNode.relatedObjects.set(relationName, newValue);
+
+        // Update reverse tracking: add this object to new related object's relatedFromObjects
+        let newRelatedObject = this.objectNodes.get(newValue);
+        if (!newRelatedObject) {
+          // Create object node if it doesn't exist yet
+          newRelatedObject = {
+            id: newValue,
+            type: relation.entity.name,
+            matchedQueries: new Set(),
+            relatedObjects: new Map(),
+            relatedFromObjects: new Map(),
+          };
+          this.objectNodes.set(newValue, newRelatedObject);
+        }
+
+        let reverseSet = newRelatedObject.relatedFromObjects.get(relationName);
+        if (!reverseSet) {
+          reverseSet = new Set();
+          newRelatedObject.relatedFromObjects.set(relationName, reverseSet);
+        }
+        reverseSet.add(objectId);
+      }
+    }
   }
 
   public handleMutation(
@@ -190,11 +416,29 @@ export class IncrementalQueryEngine implements QueryExecutor {
             }
           }
 
-          this.objectNodes.set(mutation.resourceId, {
+          const newObjectNode: ObjectNode = {
             id: mutation.resourceId,
             type: mutation.type,
             matchedQueries: new Set(matchedQueries),
-          });
+            relatedObjects: new Map(),
+            relatedFromObjects: new Map(),
+          };
+
+          // Set objectNode first so updateRelationshipTracking can find it
+          this.objectNodes.set(mutation.resourceId, newObjectNode);
+
+          // Extract and track relationships from the new object
+          const relationChanges = this.extractRelationshipChanges(
+            mutation.resource,
+            mutation,
+            undefined, // No existing objectNode for INSERT
+            objValue
+          );
+          this.updateRelationshipTracking(
+            mutation.resourceId,
+            mutation.resource,
+            relationChanges
+          );
 
           for (const queryHash of matchedQueries) {
             const queryNode = this.queryNodes.get(queryHash);
@@ -208,11 +452,29 @@ export class IncrementalQueryEngine implements QueryExecutor {
         });
       } else {
         // No queries registered for this resource, still create objectNode
-        this.objectNodes.set(mutation.resourceId, {
+        const newObjectNode: ObjectNode = {
           id: mutation.resourceId,
           type: mutation.type,
           matchedQueries: new Set(),
-        });
+          relatedObjects: new Map(),
+          relatedFromObjects: new Map(),
+        };
+
+        // Set objectNode first so updateRelationshipTracking can find it
+        this.objectNodes.set(mutation.resourceId, newObjectNode);
+
+        // Extract and track relationships from the new object
+        const relationChanges = this.extractRelationshipChanges(
+          mutation.resource,
+          mutation,
+          undefined, // No existing objectNode for INSERT
+          objValue
+        );
+        this.updateRelationshipTracking(
+          mutation.resourceId,
+          mutation.resource,
+          relationChanges
+        );
       }
 
       return;
@@ -231,6 +493,34 @@ export class IncrementalQueryEngine implements QueryExecutor {
       if (!objValue) {
         // TODO should we throw an error here?
         return;
+      }
+
+      // Extract relationship changes before processing
+      const relationChanges = this.extractRelationshipChanges(
+        mutation.resource,
+        mutation,
+        objectNode,
+        objValue
+      );
+
+      // Track affected objects (this object and related objects)
+      const affectedObjectIds = new Set<string>([mutation.resourceId]);
+
+      // Add old and new related objects to affected set
+      for (const { oldValue, newValue } of Array.from(
+        relationChanges.values()
+      )) {
+        if (oldValue) affectedObjectIds.add(oldValue);
+        if (newValue) affectedObjectIds.add(newValue);
+      }
+
+      // Also check objects that have relations pointing to this object
+      for (const relatedFromSet of Array.from(
+        objectNode.relatedFromObjects.values()
+      )) {
+        for (const relatedFromId of Array.from(relatedFromSet)) {
+          affectedObjectIds.add(relatedFromId);
+        }
       }
 
       const previouslyMatchedQueries = new Set(objectNode.matchedQueries);
@@ -291,6 +581,15 @@ export class IncrementalQueryEngine implements QueryExecutor {
             objectNode.matchedQueries.add(queryHash);
           }
 
+          // Update relationship tracking
+          if (relationChanges.size > 0) {
+            this.updateRelationshipTracking(
+              mutation.resourceId,
+              mutation.resource,
+              relationChanges
+            );
+          }
+
           // Notify subscribers for all queries that need to be notified
           for (const queryHash of Array.from(queriesToNotify)) {
             const queryNode = this.queryNodes.get(queryHash);
@@ -302,6 +601,15 @@ export class IncrementalQueryEngine implements QueryExecutor {
             });
           }
         });
+      } else {
+        // No queries to check, but still update relationship tracking
+        if (relationChanges.size > 0) {
+          this.updateRelationshipTracking(
+            mutation.resourceId,
+            mutation.resource,
+            relationChanges
+          );
+        }
       }
 
       return;

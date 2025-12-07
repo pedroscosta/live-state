@@ -140,6 +140,7 @@ export class Server<TRouter extends AnyRouter> {
       };
 
       const stepResults: Record<string, QueryStepResult[]> = {};
+      const stepQueryHashes: Record<string, string | undefined> = {};
 
       for (let i = 0; i < queryPlan.length; i++) {
         const step = queryPlan[i];
@@ -152,6 +153,7 @@ export class Server<TRouter extends AnyRouter> {
         }
 
         let wheres: (WhereClause<any> | undefined)[];
+
         if (step.getWhere && step.referenceGetter) {
           const referenceIds = step.referenceGetter(stepResults);
           wheres = [];
@@ -178,6 +180,10 @@ export class Server<TRouter extends AnyRouter> {
           }
         }
 
+        const parentQueryHash = step.prevStepId
+          ? stepQueryHashes[step.prevStepId]
+          : undefined;
+
         const promises = [];
         for (let j = 0; j < wheres.length; j++) {
           const where = wheres[j];
@@ -197,6 +203,7 @@ export class Server<TRouter extends AnyRouter> {
                 batcher,
                 queryEngine: this.queryEngine,
                 subscription: opts.subscription,
+                parentQueryHash,
               });
 
               if (result.unsubscribe) {
@@ -218,6 +225,14 @@ export class Server<TRouter extends AnyRouter> {
           const settled = stepSettledResults[j];
           if (settled.status === "fulfilled") {
             results.push(settled.value);
+            // Store the queryHash from the first successful result for this step
+            // All queries in the same step should have the same queryHash
+            if (
+              !stepQueryHashes[step.stepId] &&
+              settled.value.result.queryHash
+            ) {
+              stepQueryHashes[step.stepId] = settled.value.result.queryHash;
+            }
           }
         }
 

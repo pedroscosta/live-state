@@ -17,7 +17,12 @@ import {
   type Schema,
   type WhereClause,
 } from "../schema";
-import { applyWhere, extractIncludeFromWhere, type Simplify } from "../utils";
+import {
+  applyWhere,
+  extractIncludeFromWhere,
+  hash,
+  type Simplify,
+} from "../utils";
 import type {
   BaseRequest,
   Middleware,
@@ -55,6 +60,7 @@ export type AnyRouter = Router<any>;
 
 export type QueryResult<TShape extends LiveObjectAny> = {
   data: MaterializedLiveType<TShape>[];
+  queryHash?: string;
   unsubscribe?: () => void;
 };
 
@@ -151,11 +157,13 @@ export class Route<
     batcher,
     queryEngine,
     subscription,
+    parentQueryHash,
   }: {
     req: QueryRequest;
     batcher: Batcher;
     queryEngine?: IncrementalQueryEngine;
     subscription?: (mutation: any) => void;
+    parentQueryHash?: string;
   }): Promise<QueryResult<TResourceSchema>> => {
     return await this.wrapInMiddlewares(async (req: QueryRequest) => {
       const authorizationClause = this.authorization?.read?.({
@@ -173,20 +181,25 @@ export class Route<
           : undefined
       );
 
-      const unsubscribeFunctions: (() => void)[] = [];
+      const rawQuery: RawQueryRequest = {
+        resource: req.resource,
+        where: mergedWhere,
+        include: req.include,
+        lastSyncedAt: req.lastSyncedAt,
+        limit: req.limit,
+        sort: req.sort,
+      };
+
+      const queryHash = hash(rawQuery);
+
+      let unsubscribeFunction: (() => void) | undefined;
 
       if (queryEngine && subscription) {
-        const rawQuery: RawQueryRequest = {
-          resource: req.resource,
-          where: mergedWhere,
-          include: req.include,
-          lastSyncedAt: req.lastSyncedAt,
-          limit: req.limit,
-          sort: req.sort,
-        };
-        unsubscribeFunctions.push(
-          queryEngine.registerQuery(rawQuery, subscription)
-        );
+        unsubscribeFunction = queryEngine.registerQuery({
+          query: rawQuery,
+          subscription,
+          parentQueryHash,
+        });
       }
 
       const data = await batcher.rawFind<TResourceSchema>({
@@ -212,14 +225,8 @@ export class Route<
 
       return {
         data,
-        unsubscribe:
-          unsubscribeFunctions.length > 0
-            ? () => {
-                unsubscribeFunctions.forEach((unsubscribe) => {
-                  unsubscribe();
-                });
-              }
-            : undefined,
+        unsubscribe: unsubscribeFunction,
+        queryHash,
       };
     })(req);
   };
