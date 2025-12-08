@@ -1,10 +1,10 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: any's are actually used correctly */
-import { IncrementalQueryEngine } from "../core/incremental-query-engine";
+import { QueryEngine } from "../core/query-engine";
 import type {
   DefaultMutation,
   RawQueryRequest,
 } from "../core/schemas/core-protocol";
-import type { Awaitable } from "../core/utils";
+import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
 import type { LiveObjectAny, Schema, WhereClause } from "../schema";
 import { inferValue } from "../schema";
@@ -59,7 +59,7 @@ interface CollectionSubscription {
   authorizationWhere?: WhereClause<any>;
 }
 
-export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
+export type NextFunction<O, R = Request> = (req: R) => PromiseOrSync<O>;
 
 export type Middleware<T = any> = (opts: {
   req: Request;
@@ -76,7 +76,7 @@ export class Server<TRouter extends AnyRouter> {
   contextProvider?: ContextProvider;
 
   /** @internal */
-  readonly queryEngine: IncrementalQueryEngine;
+  readonly queryEngine: QueryEngine;
 
   private collectionSubscriptions: Map<
     string,
@@ -103,7 +103,30 @@ export class Server<TRouter extends AnyRouter> {
 
     this.storage.init(this.schema, this.logger, this);
     this.contextProvider = opts.contextProvider;
-    this.queryEngine = new IncrementalQueryEngine(this.storage, this.schema);
+
+    this.queryEngine = new QueryEngine({
+      router: {
+        get: async (query: RawQueryRequest) => {
+          const result = await this.handleQuery({
+            req: {
+              ...query,
+              type: "QUERY",
+              headers: {},
+              cookies: {},
+              queryParams: {},
+              context: {},
+            },
+          });
+
+          return result.data;
+        },
+        incrementQueryStep: () => {
+          throw new Error("Method not implemented.");
+        },
+      },
+      storage: this.storage,
+      schema: this.schema,
+    });
   }
 
   public static create<TRouter extends AnyRouter>(opts: {
@@ -120,7 +143,18 @@ export class Server<TRouter extends AnyRouter> {
   public handleQuery(opts: {
     req: QueryRequest;
     subscription?: (mutation: DefaultMutation) => void;
+    testNewEngine?: boolean;
   }): Promise<QueryResult<any>> {
+    if (opts.testNewEngine) {
+      return new Promise((resolve) => {
+        this.queryEngine.get(opts.req).then((data) => {
+          resolve({
+            data,
+          });
+        });
+      });
+    }
+
     const batcher = new Batcher(this.storage);
 
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
@@ -180,10 +214,6 @@ export class Server<TRouter extends AnyRouter> {
           }
         }
 
-        const parentQueryHash = step.prevStepId
-          ? stepQueryHashes[step.prevStepId]
-          : undefined;
-
         // Extract relation name from stepId if it's a child query
         // stepId format is "${parentStepId}.${relationName}" for child queries
         const parentRelationName = step.prevStepId
@@ -207,15 +237,7 @@ export class Server<TRouter extends AnyRouter> {
               const result = await route.handleQuery({
                 req: query,
                 batcher,
-                queryEngine: this.queryEngine,
-                subscription: opts.subscription,
-                parentQueryHash,
-                parentRelationName,
               });
-
-              if (result.unsubscribe) {
-                unsubscribeFunctions.push(result.unsubscribe);
-              }
 
               return {
                 includedBy,
@@ -232,14 +254,6 @@ export class Server<TRouter extends AnyRouter> {
           const settled = stepSettledResults[j];
           if (settled.status === "fulfilled") {
             results.push(settled.value);
-            // Store the queryHash from the first successful result for this step
-            // All queries in the same step should have the same queryHash
-            if (
-              !stepQueryHashes[step.stepId] &&
-              settled.value.result.queryHash
-            ) {
-              stepQueryHashes[step.stepId] = settled.value.result.queryHash;
-            }
           }
         }
 
@@ -303,11 +317,6 @@ export class Server<TRouter extends AnyRouter> {
 
       const acc: QueryResult<any> = {
         data: [],
-        unsubscribe: () => {
-          unsubscribeFunctions.forEach((unsubscribe) => {
-            unsubscribe();
-          });
-        },
       };
 
       const flattenedKeys = Object.keys(flattenedResults);
@@ -437,7 +446,7 @@ export class Server<TRouter extends AnyRouter> {
 
   /** @internal */
   public notifySubscribers(mutation: DefaultMutation, entityData: any) {
-    this.queryEngine.handleMutation(mutation, entityData);
+    // this.queryEngine.handleMutation(mutation, entityData);
     // TODO remove this once the query engine is used for subscriptions
     const resource = mutation.resource;
     const resourceSubscriptions = this.collectionSubscriptions.get(resource);

@@ -11,7 +11,7 @@ import type {
   DefaultMutation,
   RawQueryRequest,
 } from "../schemas/core-protocol";
-import type { Awaitable } from "../utils";
+import type { PromiseOrSync } from "../utils";
 import { generateId } from "../utils";
 
 interface QueryNode extends RawQueryRequest {
@@ -856,7 +856,7 @@ export class IncrementalQueryEngine implements QueryExecutor {
     throw new Error("Method not implemented.");
   }
 
-  get(query: RawQueryRequest): Awaitable<any[]> {
+  get(query: RawQueryRequest): PromiseOrSync<any[]> {
     return this.dataSource.get(query);
   }
 }

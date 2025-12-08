@@ -4,7 +4,6 @@
 import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
-import type { IncrementalQueryEngine } from "../core/incremental-query-engine";
 import type { RawQueryRequest } from "../core/schemas/core-protocol";
 import { mergeWhereClauses } from "../core/utils";
 import {
@@ -60,8 +59,6 @@ export type AnyRouter = Router<any>;
 
 export type QueryResult<TShape extends LiveObjectAny> = {
   data: MaterializedLiveType<TShape>[];
-  queryHash?: string;
-  unsubscribe?: () => void;
 };
 
 export type MutationResult<TShape extends LiveObjectAny> = {
@@ -155,17 +152,9 @@ export class Route<
   public handleQuery = async ({
     req,
     batcher,
-    queryEngine,
-    subscription,
-    parentQueryHash,
-    parentRelationName,
   }: {
     req: QueryRequest;
     batcher: Batcher;
-    queryEngine?: IncrementalQueryEngine;
-    subscription?: (mutation: any) => void;
-    parentQueryHash?: string;
-    parentRelationName?: string;
   }): Promise<QueryResult<TResourceSchema>> => {
     return await this.wrapInMiddlewares(async (req: QueryRequest) => {
       const authorizationClause = this.authorization?.read?.({
@@ -196,15 +185,6 @@ export class Route<
 
       let unsubscribeFunction: (() => void) | undefined;
 
-      if (queryEngine && subscription) {
-        unsubscribeFunction = queryEngine.registerQuery({
-          query: rawQuery,
-          subscription,
-          parentQueryHash,
-          parentRelationName,
-        });
-      }
-
       const data = await batcher.rawFind<TResourceSchema>({
         resource: req.resource,
         commonWhere: mergedWhere,
@@ -213,18 +193,6 @@ export class Route<
         limit: req.limit,
         sort: req.sort,
       });
-
-      if (queryEngine && subscription) {
-        const rawQuery: RawQueryRequest = {
-          resource: req.resource,
-          where: mergedWhere,
-          include: req.include,
-          lastSyncedAt: req.lastSyncedAt,
-          limit: req.limit,
-          sort: req.sort,
-        };
-        queryEngine.loadQueryResults(rawQuery, data);
-      }
 
       return {
         data,

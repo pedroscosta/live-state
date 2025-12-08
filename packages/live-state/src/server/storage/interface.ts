@@ -2,7 +2,7 @@
 
 import type { DataSource } from "../../client/query";
 import type { RawQueryRequest } from "../../core/schemas/core-protocol";
-import type { Awaitable } from "../../core/utils";
+import type { PromiseOrSync } from "../../core/utils";
 import {
   type IncludeClause,
   type InferInsert,
@@ -41,7 +41,7 @@ export abstract class Storage implements DataSource {
   ): Promise<InferLiveObject<T> | undefined>;
 
   /** @internal */
-  public abstract get(query: RawQueryRequest): Awaitable<any[]>;
+  public abstract get(query: RawQueryRequest): PromiseOrSync<any[]>;
 
   public abstract find<T extends LiveObjectAny>(
     resource: T,
