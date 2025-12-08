@@ -1,6 +1,8 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: no need to be more specific */
 
 import type { Schema } from "../../schema";
+import type { Storage } from "../../server";
+import { Batcher } from "../../server/storage/batcher";
 import { hash } from "../../utils";
 import type {
   DefaultMutation,
@@ -46,13 +48,26 @@ export class QueryEngine {
     this.schema = opts.schema;
   }
 
-  get(query: RawQueryRequest): PromiseLike<any[]> {
-    const queryPlan = this.breakdownQuery({ query });
-    return this.resolveQuery(queryPlan);
+  get(
+    query: RawQueryRequest,
+    extra?: { context?: any; batcher?: Batcher }
+  ): PromiseLike<any[]> {
+    const queryPlan = this.breakdownQuery({
+      query,
+      context: extra?.context ?? {},
+    });
+    return this.resolveQuery(queryPlan, {
+      context: extra?.context ?? {},
+      batcher: extra?.batcher ?? new Batcher(this.storage as Storage),
+    });
   }
 
-  subscribe(query: RawQueryRequest, callback: MutationHandler): () => void {
-    const queryPlan = this.breakdownQuery({ query });
+  subscribe(
+    query: RawQueryRequest,
+    callback: MutationHandler,
+    context: any = {}
+  ): () => void {
+    const queryPlan = this.breakdownQuery({ query, context });
 
     const stepHashes: Record<string, string> = {};
 
@@ -110,18 +125,23 @@ export class QueryEngine {
   breakdownQuery({
     query,
     stepPath = [],
+    context = {},
   }: {
     query: RawQueryRequest;
     stepPath?: string[];
+    context?: any;
   }): QueryStep[] {
     const { include } = query;
 
-    const queryPlan: QueryStep[] = [
+    const newStep = this.router.incrementQueryStep(
       {
         query,
         stepPath: [...stepPath],
       },
-    ];
+      context
+    );
+
+    const queryPlan: QueryStep[] = [newStep];
 
     if (
       include &&
@@ -149,6 +169,7 @@ export class QueryEngine {
             {
               query: { resource: otherResourceName, include },
               stepPath: [...stepPath, relationName],
+              context,
             }
           );
         })
@@ -158,7 +179,10 @@ export class QueryEngine {
     return queryPlan;
   }
 
-  resolveQuery(plan: QueryStep[]): PromiseLike<any[]> {
+  resolveQuery(
+    plan: QueryStep[],
+    extra?: { context?: any; batcher?: Batcher }
+  ): PromiseLike<any[]> {
     console.log(
       "[QueryEngine] Resolving query",
       plan.map((step) => step.stepPath.join(".")).join(" -> ")
@@ -166,16 +190,30 @@ export class QueryEngine {
 
     const stepResults: Record<string, any[]> = {};
 
-    let chain: PromiseLike<void> = this.resolveStep(plan[0]).then((results) => {
-      stepResults[plan[0].stepPath.join(".")] = results;
-    });
+    let chain: PromiseLike<void> = this.resolveStep(plan[0], extra).then(
+      (results) => {
+        console.log(
+          "[QueryEngine] Resolved step",
+          plan[0].stepPath.join("."),
+          "with results",
+          JSON.stringify(results, null, 2)
+        );
+        stepResults[plan[0].stepPath.join(".")] = results;
+      }
+    );
 
     for (let i = 1; i < plan.length; i++) {
       const step = plan[i];
 
       chain = chain
-        .then(() => this.resolveStep(step))
+        .then(() => this.resolveStep(step, extra))
         .then((results) => {
+          console.log(
+            "[QueryEngine] Resolved step",
+            step.stepPath.join("."),
+            "with results",
+            JSON.stringify(results, null, 2)
+          );
           stepResults[step.stepPath.join(".")] = results;
         });
     }
@@ -192,7 +230,10 @@ export class QueryEngine {
     return chain as unknown as PromiseLike<any[]>;
   }
 
-  resolveStep(step: QueryStep): PromiseLike<any[]> {
+  resolveStep(
+    step: QueryStep,
+    extra?: { context?: any; batcher?: Batcher }
+  ): PromiseLike<any[]> {
     console.log(
       "[QueryEngine] Resolving step",
       step.stepPath.join("."),
@@ -202,6 +243,6 @@ export class QueryEngine {
 
     const { query } = step;
 
-    return toPromiseLike(this.router.get(query));
+    return toPromiseLike(this.router.get(query, extra));
   }
 }

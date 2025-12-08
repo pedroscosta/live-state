@@ -1,5 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: any's are actually used correctly */
 import { QueryEngine } from "../core/query-engine";
+import type { QueryStep as CoreQueryStep } from "../core/query-engine/types";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -106,22 +107,76 @@ export class Server<TRouter extends AnyRouter> {
 
     this.queryEngine = new QueryEngine({
       router: {
-        get: async (query: RawQueryRequest) => {
-          const result = await this.handleQuery({
-            req: {
-              ...query,
-              type: "QUERY",
-              headers: {},
-              cookies: {},
-              queryParams: {},
-              context: {},
-            },
+        get: async (
+          query: RawQueryRequest,
+          extra?: { context?: any; batcher?: Batcher }
+        ) => {
+          const {
+            headers,
+            cookies,
+            queryParams,
+            context: ctx,
+          } = extra?.context ?? {};
+
+          if (!extra?.batcher) {
+            throw new Error("Batcher is required");
+          }
+
+          const req: QueryRequest = {
+            ...query,
+            type: "QUERY",
+            headers,
+            cookies,
+            queryParams,
+            context: ctx,
+          };
+
+          const result = await (
+            this.router.routes[query.resource] as
+              | Route<any, any, any>
+              | undefined
+          )?.handleQuery({
+            req,
+            batcher: extra.batcher,
           });
 
-          return result.data;
+          return result?.data ?? [];
         },
-        incrementQueryStep: () => {
-          throw new Error("Method not implemented.");
+        incrementQueryStep: (step: CoreQueryStep, context: any = {}) => {
+          const authorizationClause = (
+            this.router.routes[step.query.resource] as
+              | Route<any, any, any>
+              | undefined
+          )?.getAuthorizationClause({
+            ...step.query,
+            type: "QUERY",
+            headers: context.headers,
+            cookies: context.cookies,
+            queryParams: context.queryParams,
+            context: context.context,
+          });
+
+          if (
+            typeof authorizationClause === "boolean" &&
+            !authorizationClause
+          ) {
+            throw new Error("Not authorized");
+          }
+
+          const mergedWhere = mergeWhereClauses(
+            step.query.where,
+            typeof authorizationClause === "object"
+              ? authorizationClause
+              : undefined
+          );
+
+          return {
+            ...step,
+            query: {
+              ...step.query,
+              where: mergedWhere,
+            },
+          } satisfies CoreQueryStep;
         },
       },
       storage: this.storage,
@@ -146,12 +201,23 @@ export class Server<TRouter extends AnyRouter> {
     testNewEngine?: boolean;
   }): Promise<QueryResult<any>> {
     if (opts.testNewEngine) {
+      const { headers, cookies, queryParams, context, ...rawQuery } = opts.req;
+
       return new Promise((resolve) => {
-        this.queryEngine.get(opts.req).then((data) => {
-          resolve({
-            data,
+        this.queryEngine
+          .get(rawQuery, {
+            context: {
+              headers,
+              cookies,
+              queryParams,
+              context,
+            },
+          })
+          .then((data) => {
+            resolve({
+              data,
+            });
           });
-        });
       });
     }
 

@@ -5,7 +5,6 @@ import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
 import type { RawQueryRequest } from "../core/schemas/core-protocol";
-import { mergeWhereClauses } from "../core/utils";
 import {
   type InferLiveObjectWithRelationalIds,
   inferValue,
@@ -157,24 +156,24 @@ export class Route<
     batcher: Batcher;
   }): Promise<QueryResult<TResourceSchema>> => {
     return await this.wrapInMiddlewares(async (req: QueryRequest) => {
-      const authorizationClause = this.authorization?.read?.({
-        ctx: req.context,
-      });
+      // const authorizationClause = this.authorization?.read?.({
+      //   ctx: req.context,
+      // });
 
-      if (typeof authorizationClause === "boolean" && !authorizationClause) {
-        throw new Error("Not authorized");
-      }
+      // if (typeof authorizationClause === "boolean" && !authorizationClause) {
+      //   throw new Error("Not authorized");
+      // }
 
-      const mergedWhere = mergeWhereClauses(
-        req.where,
-        typeof authorizationClause === "object"
-          ? authorizationClause
-          : undefined
-      );
+      // const mergedWhere = mergeWhereClauses(
+      //   req.where,
+      //   typeof authorizationClause === "object"
+      //     ? authorizationClause
+      //     : undefined
+      // );
 
       const rawQuery: RawQueryRequest = {
         resource: req.resource,
-        where: mergedWhere,
+        where: req.where,
         include: req.include,
         lastSyncedAt: req.lastSyncedAt,
         limit: req.limit,
@@ -187,7 +186,7 @@ export class Route<
 
       const data = await batcher.rawFind<TResourceSchema>({
         resource: req.resource,
-        commonWhere: mergedWhere,
+        commonWhere: req.where,
         uniqueWhere: req.relationalWhere,
         include: req.include,
         limit: req.limit,
@@ -238,6 +237,14 @@ export class Route<
       }
     })(req);
   };
+
+  public getAuthorizationClause(
+    req: QueryRequest
+  ): WhereClause<TResourceSchema> | undefined | boolean {
+    return this.authorization?.read?.({
+      ctx: req.context,
+    });
+  }
 
   private handleSet = async ({
     req,

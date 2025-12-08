@@ -92,10 +92,24 @@ const publicRoute = routeFactory();
 const deepRouter = router({
   schema: deepSchema,
   routes: {
-    orgs: publicRoute.collectionRoute(deepSchema.orgs),
-    users: publicRoute.collectionRoute(deepSchema.users),
-    posts: publicRoute.collectionRoute(deepSchema.posts),
-    comments: publicRoute.collectionRoute(deepSchema.comments),
+    orgs: publicRoute.collectionRoute(deepSchema.orgs, {
+      read: ({ ctx }) => {
+        if (ctx.org) {
+          return { name: ctx.org };
+        }
+
+        return false;
+      },
+    }),
+    users: publicRoute.collectionRoute(deepSchema.users, {
+      read: () => true,
+    }),
+    posts: publicRoute.collectionRoute(deepSchema.posts, {
+      read: () => true,
+    }),
+    comments: publicRoute.collectionRoute(deepSchema.comments, {
+      read: () => true,
+    }),
   },
 });
 
@@ -139,8 +153,8 @@ describe("Deep Relational Query Tests", () => {
       // Ignore errors if tables don't exist yet (first run)
     }
 
-    // Insert test data
-    const orgId = generateId();
+    // Insert test data for first org (Acme Corp)
+    const orgId1 = generateId();
     const userId1 = generateId();
     const userId2 = generateId();
     const postId1 = generateId();
@@ -150,22 +164,22 @@ describe("Deep Relational Query Tests", () => {
     const commentId3 = generateId();
 
     await storage.insert(deepSchema.orgs, {
-      id: orgId,
-      name: "Acme Corp",
+      id: orgId1,
+      name: "acme",
     });
 
     await storage.insert(deepSchema.users, {
       id: userId1,
       name: "John Doe",
       email: "john@acme.com",
-      orgId: orgId,
+      orgId: orgId1,
     });
 
     await storage.insert(deepSchema.users, {
       id: userId2,
       name: "Jane Smith",
       email: "jane@acme.com",
-      orgId: orgId,
+      orgId: orgId1,
     });
 
     await storage.insert(deepSchema.posts, {
@@ -204,6 +218,72 @@ describe("Deep Relational Query Tests", () => {
       postId: postId2,
       authorId: userId1,
     });
+
+    // Insert test data for second org (Tech Inc)
+    const orgId2 = generateId();
+    const userId3 = generateId();
+    const userId4 = generateId();
+    const postId3 = generateId();
+    const postId4 = generateId();
+    const commentId4 = generateId();
+    const commentId5 = generateId();
+    const commentId6 = generateId();
+
+    await storage.insert(deepSchema.orgs, {
+      id: orgId2,
+      name: "tech",
+    });
+
+    await storage.insert(deepSchema.users, {
+      id: userId3,
+      name: "Alice Johnson",
+      email: "alice@techinc.com",
+      orgId: orgId2,
+    });
+
+    await storage.insert(deepSchema.users, {
+      id: userId4,
+      name: "Bob Williams",
+      email: "bob@techinc.com",
+      orgId: orgId2,
+    });
+
+    await storage.insert(deepSchema.posts, {
+      id: postId3,
+      title: "Tech Innovation",
+      content: "Exploring new technologies",
+      authorId: userId3,
+      likes: 15,
+    });
+
+    await storage.insert(deepSchema.posts, {
+      id: postId4,
+      title: "Future of Development",
+      content: "Thoughts on software development",
+      authorId: userId4,
+      likes: 8,
+    });
+
+    await storage.insert(deepSchema.comments, {
+      id: commentId4,
+      content: "Excellent insights!",
+      postId: postId3,
+      authorId: userId4,
+    });
+
+    await storage.insert(deepSchema.comments, {
+      id: commentId5,
+      content: "Very informative",
+      postId: postId3,
+      authorId: userId3,
+    });
+
+    await storage.insert(deepSchema.comments, {
+      id: commentId6,
+      content: "Looking forward to more",
+      postId: postId4,
+      authorId: userId3,
+    });
   });
 
   afterEach(async () => {
@@ -230,11 +310,13 @@ describe("Deep Relational Query Tests", () => {
     const result = await testServer.handleQuery({
       req: {
         type: "QUERY",
-        resource: "posts",
+        resource: "orgs",
         headers: {},
         cookies: {},
         queryParams: {},
-        context: {},
+        context: {
+          org: "acme",
+        },
         // include: {
         //   author: {
         //     org: true,

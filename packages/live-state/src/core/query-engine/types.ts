@@ -1,8 +1,12 @@
+import type { Batcher } from "../../server/storage/batcher";
 import type { RawQueryRequest } from "../schemas/core-protocol";
 import type { PromiseOrSync } from "../utils";
 
 export interface DataSource {
-  get(query: RawQueryRequest): PromiseOrSync<any[]>;
+  get(
+    query: RawQueryRequest,
+    extra?: { context?: any; batcher?: Batcher }
+  ): PromiseOrSync<any[]>;
 }
 
 export interface QueryStep {
