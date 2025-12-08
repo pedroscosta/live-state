@@ -203,6 +203,12 @@ export class Server<TRouter extends AnyRouter> {
     if (opts.testNewEngine) {
       const { headers, cookies, queryParams, context, ...rawQuery } = opts.req;
 
+      const unsubscribe = opts.subscription
+        ? this.queryEngine.subscribe(rawQuery, (mutation) => {
+            opts.subscription?.(mutation);
+          })
+        : undefined;
+
       return new Promise((resolve) => {
         this.queryEngine
           .get(rawQuery, {
@@ -216,6 +222,7 @@ export class Server<TRouter extends AnyRouter> {
           .then((data) => {
             resolve({
               data,
+              unsubscribe,
             });
           });
       });
@@ -512,7 +519,7 @@ export class Server<TRouter extends AnyRouter> {
 
   /** @internal */
   public notifySubscribers(mutation: DefaultMutation, entityData: any) {
-    // this.queryEngine.handleMutation(mutation, entityData);
+    this.queryEngine.handleMutation(mutation, entityData);
     // TODO remove this once the query engine is used for subscriptions
     const resource = mutation.resource;
     const resourceSubscriptions = this.collectionSubscriptions.get(resource);

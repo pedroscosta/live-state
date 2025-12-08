@@ -58,6 +58,7 @@ export type AnyRouter = Router<any>;
 
 export type QueryResult<TShape extends LiveObjectAny> = {
   data: MaterializedLiveType<TShape>[];
+  unsubscribe?: () => void;
 };
 
 export type MutationResult<TShape extends LiveObjectAny> = {

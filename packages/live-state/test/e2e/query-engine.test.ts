@@ -10,6 +10,7 @@ import {
   afterEach,
   describe,
   test,
+  expect,
 } from "vitest";
 import { Pool } from "pg";
 import {
@@ -332,5 +333,509 @@ describe("Deep Relational Query Tests", () => {
 
     // No assertions - just for debugging
     console.log("Query result:", JSON.stringify(result, null, 2));
+  });
+
+  describe("handle insert mutations", () => {
+    test("subscribes to a simple query and receives notification when matching value is inserted", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to all posts
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns existing posts
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBeGreaterThan(0);
+
+      // Get a user ID to use as authorId for the new post
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const userId = existingUsers[0].value.id.value;
+
+      // Insert a new post that matches the query
+      const newPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: "New Post",
+        content: "This is a new post",
+        authorId: userId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(newPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with simple where clause and receives notification for matching insert", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with likes > 10
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns posts with likes > 10
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+
+      // Get a user ID
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const userId = existingUsers[0].value.id.value;
+
+      // Insert a post that matches (likes = 15)
+      const matchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: matchingPostId,
+        title: "High Likes Post",
+        content: "This post has many likes",
+        authorId: userId,
+        likes: 15,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+
+      // Insert a post that doesn't match (likes = 5)
+      const nonMatchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: nonMatchingPostId,
+        title: "Low Likes Post",
+        content: "This post has few likes",
+        authorId: userId,
+        likes: 5,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was NOT called again
+      expect(subscriptionCallbacks.length).toBe(1);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with deep where clause (author relation) and receives notification for matching insert", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a specific user to filter by
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const targetUserId = existingUsers[0].value.id.value;
+      const targetUserName = existingUsers[0].value.name.value;
+
+      // Subscribe to posts where author name matches
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            author: {
+              name: targetUserName,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns posts by the target author
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+
+      // Insert a post by the matching author
+      const matchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: matchingPostId,
+        title: "Post by Target Author",
+        content: "This post is by the target author",
+        authorId: targetUserId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with deep where clause (author.org relation) and receives notification for matching insert", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a specific org to filter by
+      const existingOrgs = await storage.get({
+        resource: "orgs",
+        limit: 1,
+      });
+      expect(existingOrgs.length).toBeGreaterThan(0);
+      const targetOrgId = existingOrgs[0].value.id.value;
+      const targetOrgName = existingOrgs[0].value.name.value;
+
+      // Get a user from that org
+      const orgUsers = await storage.get({
+        resource: "users",
+        where: { orgId: targetOrgId },
+        limit: 1,
+      });
+      expect(orgUsers.length).toBeGreaterThan(0);
+      const userId = orgUsers[0].value.id.value;
+
+      // Subscribe to posts where author's org name matches
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            author: {
+              org: {
+                name: targetOrgName,
+              },
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns posts by authors from the target org
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+
+      // Insert a post by an author from the matching org
+      const matchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: matchingPostId,
+        title: "Post by Author from Target Org",
+        content: "This post is by an author from the target org",
+        authorId: userId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with combined where clause (field + relation) and receives notification for matching insert", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a specific user
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const targetUserId = existingUsers[0].value.id.value;
+      const targetUserName = existingUsers[0].value.name.value;
+
+      // Subscribe to posts with likes > 5 AND author name matches
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 5 },
+            author: {
+              name: targetUserName,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns matching posts
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+
+      // Insert a post that matches both conditions
+      const matchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: matchingPostId,
+        title: "Matching Post",
+        content: "This post matches both conditions",
+        authorId: targetUserId,
+        likes: 10,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+
+      // Insert a post that only matches one condition (likes > 5 but wrong author)
+      const partialMatchPostId = generateId();
+      // Get a different user
+      const otherUsers = await storage.get({
+        resource: "users",
+        where: { id: { $not: { $eq: targetUserId } } },
+        limit: 1,
+      });
+      if (otherUsers.length > 0) {
+        const otherUserId = otherUsers[0].value.id.value;
+        await storage.insert(deepSchema.posts, {
+          id: partialMatchPostId,
+          title: "Partial Match Post",
+          content: "This post only matches likes condition",
+          authorId: otherUserId,
+          likes: 10,
+        });
+
+        // Wait for async operations to complete
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Verify the subscription callback was NOT called again
+        expect(subscriptionCallbacks.length).toBe(1);
+      }
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with $and operator and receives notification for matching insert", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a specific user
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const targetUserId = existingUsers[0].value.id.value;
+      const targetUserName = existingUsers[0].value.name.value;
+
+      // Subscribe to posts with $and operator
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            $and: [
+              {
+                likes: { $gte: 5 },
+              },
+              {
+                author: {
+                  name: targetUserName,
+                },
+              },
+            ],
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns matching posts
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+
+      // Insert a post that matches all $and conditions
+      const matchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: matchingPostId,
+        title: "And Condition Post",
+        content: "This post matches all $and conditions",
+        authorId: targetUserId,
+        likes: 8,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with $in operator and receives notification for matching insert", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with specific titles
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            title: { $in: ["First Post", "Second Post", "New Matching Post"] },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns posts with matching titles
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+
+      // Get a user ID
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const userId = existingUsers[0].value.id.value;
+
+      // Insert a post with a matching title
+      const matchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: matchingPostId,
+        title: "New Matching Post",
+        content: "This post has a matching title",
+        authorId: userId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+
+      // Insert a post with a non-matching title
+      const nonMatchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: nonMatchingPostId,
+        title: "Non Matching Post",
+        content: "This post doesn't match",
+        authorId: userId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was NOT called again
+      expect(subscriptionCallbacks.length).toBe(1);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
   });
 });

@@ -1,9 +1,15 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: no need to be more specific */
 
-import type { Schema } from "../../schema";
+import {
+  inferValue,
+  type LiveObjectAny,
+  type MaterializedLiveType,
+  type Schema,
+  type WhereClause,
+} from "../../schema";
 import type { Storage } from "../../server";
 import { Batcher } from "../../server/storage/batcher";
-import { hash } from "../../utils";
+import { applyWhere, extractIncludeFromWhere, hash } from "../../utils";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -56,6 +62,7 @@ export class QueryEngine {
       query,
       context: extra?.context ?? {},
     });
+
     return this.resolveQuery(queryPlan, {
       context: extra?.context ?? {},
       batcher: extra?.batcher ?? new Batcher(this.storage as Storage),
@@ -243,6 +250,160 @@ export class QueryEngine {
 
     const { query } = step;
 
-    return toPromiseLike(this.router.get(query, extra));
+    return toPromiseLike(this.router.get(query, extra)).then((results) => {
+      this.loadStepResults(step, results);
+      return results;
+    });
+  }
+
+  loadStepResults(step: QueryStep, results: any[]): void {
+    console.log(
+      "[QueryEngine] Loading step results",
+      step.stepPath.join("."),
+      "with results",
+      JSON.stringify(results, null, 2)
+    );
+
+    const stepHash = hash(step);
+
+    const queryNode = this.queryNodes.get(stepHash);
+
+    if (!queryNode) return;
+
+    for (const rawResult of results) {
+      const result = inferValue(rawResult);
+      const id = result.id;
+
+      if (this.objectNodes.has(id)) continue;
+
+      const objectNode: ObjectNode = {
+        id,
+        type: result.type,
+        matchedQueries: new Set([stepHash]),
+        referencesObjects: new Map(),
+        referencedByObjects: new Map(),
+      };
+
+      this.objectNodes.set(id, objectNode);
+
+      queryNode.trackedObjects.add(id);
+    }
+  }
+
+  public handleMutation(
+    mutation: DefaultMutation,
+    enitityValue: MaterializedLiveType<LiveObjectAny>
+  ) {
+    if (mutation.procedure === "INSERT") {
+      if (this.objectNodes.has(mutation.resourceId)) return;
+
+      const objValue = inferValue(enitityValue);
+
+      if (!objValue) return;
+
+      const queriesToCheck: Array<{
+        queryNode: QueryNode;
+        hash: string;
+        hasWhere: boolean;
+      }> = [];
+
+      for (const queryNode of Array.from(this.queryNodes.values())) {
+        if (queryNode.queryStep.query.resource !== mutation.resource) continue;
+        queriesToCheck.push({
+          queryNode,
+          hash: queryNode.hash,
+          hasWhere: !!queryNode.queryStep.query.where,
+        });
+      }
+
+      if (queriesToCheck.length === 0) return;
+
+      Promise.all(
+        queriesToCheck.map(async ({ queryNode, hash, hasWhere }) => {
+          if (!hasWhere) {
+            return { hash, matches: true };
+          }
+
+          const matches = await this.checkWhereMatch(
+            mutation.resource,
+            mutation.resourceId,
+            queryNode.queryStep.query.where,
+            objValue
+          );
+
+          return { hash, matches };
+        })
+      ).then((results) => {
+        const matchedQueries: string[] = [];
+
+        for (const { hash, matches } of results) {
+          if (matches) {
+            const queryNode = this.queryNodes.get(hash);
+            if (queryNode) {
+              queryNode.trackedObjects.add(mutation.resourceId);
+              matchedQueries.push(hash);
+            }
+          }
+        }
+
+        const newObjectNode: ObjectNode = {
+          id: mutation.resourceId,
+          type: mutation.type,
+          matchedQueries: new Set(matchedQueries),
+          referencesObjects: new Map(),
+          referencedByObjects: new Map(),
+        };
+
+        this.objectNodes.set(mutation.resourceId, newObjectNode);
+
+        for (const queryHash of matchedQueries) {
+          const queryNode = this.queryNodes.get(queryHash);
+
+          if (!queryNode) continue; // TODO should we throw an error here?
+
+          queryNode.subscriptions.forEach((subscription) => {
+            subscription(mutation);
+          });
+        }
+      });
+
+      return;
+    }
+  }
+
+  async checkWhereMatch(
+    resource: string,
+    resourceId: string,
+    where: WhereClause<LiveObjectAny> | undefined,
+    objValue?: any
+  ): Promise<boolean> {
+    if (!where) {
+      return true;
+    }
+
+    const include = extractIncludeFromWhere(where, resource, this.schema);
+    const hasRelations = Object.keys(include).length > 0;
+
+    if (!hasRelations && objValue !== undefined) {
+      return applyWhere(objValue, where);
+    }
+
+    const fullObject = await this.storage.get({
+      resource,
+      where: { id: resourceId },
+      include: hasRelations ? include : undefined,
+    });
+
+    if (!fullObject || fullObject.length === 0) {
+      return false;
+    }
+
+    const fullObjValue = inferValue(fullObject[0]);
+
+    if (!fullObjValue) {
+      return false;
+    }
+
+    return applyWhere(fullObjValue, where);
   }
 }
