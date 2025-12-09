@@ -292,12 +292,12 @@ export class QueryEngine {
 
   public handleMutation(
     mutation: DefaultMutation,
-    enitityValue: MaterializedLiveType<LiveObjectAny>
+    entityValue: MaterializedLiveType<LiveObjectAny>
   ) {
     if (mutation.procedure === "INSERT") {
       if (this.objectNodes.has(mutation.resourceId)) return;
 
-      const objValue = inferValue(enitityValue);
+      const objValue = inferValue(entityValue);
 
       if (!objValue) return;
 
@@ -363,6 +363,145 @@ export class QueryEngine {
 
           queryNode.subscriptions.forEach((subscription) => {
             subscription(mutation);
+          });
+        }
+      });
+
+      return;
+    }
+    if (mutation.procedure === "UPDATE") {
+      const objValue = inferValue(entityValue);
+
+      if (!objValue) return;
+
+      const existingObjectNode = this.objectNodes.get(mutation.resourceId);
+
+      const queriesToCheck: Array<{
+        queryNode: QueryNode;
+        hash: string;
+        hasWhere: boolean;
+        wasPreviouslyMatched: boolean;
+      }> = [];
+
+      for (const queryNode of Array.from(this.queryNodes.values())) {
+        if (queryNode.queryStep.query.resource !== mutation.resource) continue;
+        queriesToCheck.push({
+          queryNode,
+          hash: queryNode.hash,
+          hasWhere: !!queryNode.queryStep.query.where,
+          wasPreviouslyMatched:
+            existingObjectNode?.matchedQueries.has(queryNode.hash) ?? false,
+        });
+      }
+
+      if (queriesToCheck.length === 0) return;
+
+      Promise.all(
+        queriesToCheck.map(
+          async ({ queryNode, hash, hasWhere, wasPreviouslyMatched }) => {
+            if (!hasWhere) {
+              return { hash, matches: true, wasPreviouslyMatched };
+            }
+
+            const matches = await this.checkWhereMatch(
+              mutation.resource,
+              mutation.resourceId,
+              queryNode.queryStep.query.where,
+              objValue
+            );
+
+            return { hash, matches, wasPreviouslyMatched };
+          }
+        )
+      ).then((results) => {
+        const newlyMatchedQueries: string[] = [];
+        const noLongerMatchedQueries: string[] = [];
+        const stillMatchedQueries: string[] = [];
+
+        for (const { hash, matches, wasPreviouslyMatched } of results) {
+          if (matches && !wasPreviouslyMatched) {
+            newlyMatchedQueries.push(hash);
+          } else if (!matches && wasPreviouslyMatched) {
+            noLongerMatchedQueries.push(hash);
+          } else if (matches && wasPreviouslyMatched) {
+            stillMatchedQueries.push(hash);
+          }
+        }
+
+        for (const queryHash of newlyMatchedQueries) {
+          const queryNode = this.queryNodes.get(queryHash);
+          if (queryNode) {
+            queryNode.trackedObjects.add(mutation.resourceId);
+          }
+        }
+
+        for (const queryHash of noLongerMatchedQueries) {
+          const queryNode = this.queryNodes.get(queryHash);
+          if (queryNode) {
+            queryNode.trackedObjects.delete(mutation.resourceId);
+          }
+        }
+
+        if (existingObjectNode) {
+          for (const queryHash of newlyMatchedQueries) {
+            existingObjectNode.matchedQueries.add(queryHash);
+          }
+          for (const queryHash of noLongerMatchedQueries) {
+            existingObjectNode.matchedQueries.delete(queryHash);
+          }
+        } else {
+          const allMatchedQueries = [
+            ...newlyMatchedQueries,
+            ...stillMatchedQueries,
+          ];
+          const newObjectNode: ObjectNode = {
+            id: mutation.resourceId,
+            type: mutation.type,
+            matchedQueries: new Set(allMatchedQueries),
+            referencesObjects: new Map(),
+            referencedByObjects: new Map(),
+          };
+          this.objectNodes.set(mutation.resourceId, newObjectNode);
+        }
+
+        for (const queryHash of [
+          ...noLongerMatchedQueries,
+          ...stillMatchedQueries,
+        ]) {
+          const queryNode = this.queryNodes.get(queryHash);
+
+          if (!queryNode) continue;
+
+          queryNode.subscriptions.forEach((subscription) => {
+            subscription(mutation);
+          });
+        }
+
+        if (newlyMatchedQueries.length > 0) {
+          // TODO add optimization to only fetch if the value is not just entityValue
+          this.get({
+            resource: mutation.resource,
+            where: { id: mutation.resourceId },
+          }).then((results: any[]) => {
+            if (!results || results.length === 0) return;
+
+            const insertMutation: DefaultMutation = {
+              procedure: "INSERT",
+              resource: mutation.resource,
+              resourceId: mutation.resourceId,
+              type: mutation.type,
+              payload: results[0]?.value,
+            };
+
+            for (const queryHash of newlyMatchedQueries) {
+              const queryNode = this.queryNodes.get(queryHash);
+
+              if (!queryNode) continue;
+
+              queryNode.subscriptions.forEach((subscription) => {
+                subscription(insertMutation);
+              });
+            }
           });
         }
       });

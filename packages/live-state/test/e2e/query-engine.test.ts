@@ -838,4 +838,550 @@ describe("Deep Relational Query Tests", () => {
       }
     });
   });
+
+  describe("handle update mutations", () => {
+    test("subscribes to a query and receives UPDATE notification when matching object is updated", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get an existing post
+      const existingPosts = await storage.get({
+        resource: "posts",
+        limit: 1,
+      });
+      expect(existingPosts.length).toBeGreaterThan(0);
+      const postId = existingPosts[0].value.id.value;
+
+      // Subscribe to all posts
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns existing posts
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBeGreaterThan(0);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the post
+      await storage.update(deepSchema.posts, postId, {
+        title: "Updated Title",
+        likes: 20,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called with UPDATE mutation
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with where clause and receives UPDATE when object continues to match", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a post with likes > 10
+      const existingPosts = await storage.get({
+        resource: "posts",
+        where: { likes: { $gt: 10 } },
+        limit: 1,
+      });
+      expect(existingPosts.length).toBeGreaterThan(0);
+      const postId = existingPosts[0].value.id.value;
+
+      // Subscribe to posts with likes > 10
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the post but keep likes > 10 (still matches)
+      await storage.update(deepSchema.posts, postId, {
+        title: "Still Matching Post",
+        likes: 15,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called with UPDATE
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with where clause and receives INSERT when object starts matching", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a post with likes <= 10
+      const existingPosts = await storage.get({
+        resource: "posts",
+        where: { likes: { $lte: 10 } },
+        limit: 1,
+      });
+      expect(existingPosts.length).toBeGreaterThan(0);
+      const postId = existingPosts[0].value.id.value;
+      const initialLikes = existingPosts[0].value.likes.value;
+
+      // Subscribe to posts with likes > 10
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify the post is not in the initial results
+      const initialResults = result.data.filter((p: any) => p.id === postId);
+      expect(initialResults.length).toBe(0);
+
+      // Update the post to have likes > 10 (now matches)
+      await storage.update(deepSchema.posts, postId, {
+        likes: 15,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called with INSERT (newly matched)
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(15);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with where clause and receives UPDATE when object stops matching", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a post with likes > 10
+      const existingPosts = await storage.get({
+        resource: "posts",
+        where: { likes: { $gt: 10 } },
+        limit: 1,
+      });
+      expect(existingPosts.length).toBeGreaterThan(0);
+      const postId = existingPosts[0].value.id.value;
+
+      // Subscribe to posts with likes > 10
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify the post is in the initial results
+      const initialResults = result.data.filter(
+        (p: any) => p.value.id.value === postId
+      );
+      expect(initialResults.length).toBe(1);
+
+      // Update the post to have likes <= 10 (no longer matches)
+      await storage.update(deepSchema.posts, postId, {
+        likes: 5,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called with UPDATE
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with where clause and handles object changing from matching to not matching to matching again", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a post with likes > 10
+      const existingPosts = await storage.get({
+        resource: "posts",
+        where: { likes: { $gt: 10 } },
+        limit: 1,
+      });
+      expect(existingPosts.length).toBeGreaterThan(0);
+      const postId = existingPosts[0].value.id.value;
+
+      // Subscribe to posts with likes > 10
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update 1: Change to not match (should receive UPDATE)
+      await storage.update(deepSchema.posts, postId, {
+        likes: 5,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify first update
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+
+      // Update 2: Change back to match (should receive INSERT with full data)
+      await storage.update(deepSchema.posts, postId, {
+        likes: 15,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify second update
+      expect(subscriptionCallbacks.length).toBe(2);
+      expect(subscriptionCallbacks[1].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[1].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[1].mutation.payload).toBeDefined();
+      expect(subscriptionCallbacks[1].mutation.payload.likes.value).toBe(15);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with deep where clause and receives UPDATE when object continues to match", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get a specific user
+      const existingUsers = await storage.get({
+        resource: "users",
+        limit: 1,
+      });
+      expect(existingUsers.length).toBeGreaterThan(0);
+      const targetUserId = existingUsers[0].value.id.value;
+      const targetUserName = existingUsers[0].value.name.value;
+
+      // Get a post by this user
+      const userPosts = await storage.get({
+        resource: "posts",
+        where: { authorId: targetUserId },
+        limit: 1,
+      });
+      expect(userPosts.length).toBeGreaterThan(0);
+      const postId = userPosts[0].value.id.value;
+
+      // Subscribe to posts where author name matches
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            author: {
+              name: targetUserName,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the post (author name unchanged, still matches)
+      await storage.update(deepSchema.posts, postId, {
+        title: "Updated Post Title",
+        likes: 25,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called with UPDATE
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes with deep where clause and receives INSERT when object starts matching after author change", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get two different users
+      const allUsers = await storage.get({
+        resource: "users",
+        limit: 2,
+      });
+      expect(allUsers.length).toBeGreaterThanOrEqual(2);
+      const targetUserId = allUsers[0].value.id.value;
+      const targetUserName = allUsers[0].value.name.value;
+      const otherUserId = allUsers[1].value.id.value;
+
+      // Get a post by the other user (not matching)
+      const otherUserPosts = await storage.get({
+        resource: "posts",
+        where: { authorId: otherUserId },
+        limit: 1,
+      });
+      expect(otherUserPosts.length).toBeGreaterThan(0);
+      const postId = otherUserPosts[0].value.id.value;
+
+      // Subscribe to posts where author name matches target user
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            author: {
+              name: targetUserName,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify the post is not in the initial results
+      const initialResults = result.data.filter((p: any) => p.id === postId);
+      expect(initialResults.length).toBe(0);
+
+      // Update the post to change author to target user (now matches)
+      await storage.update(deepSchema.posts, postId, {
+        authorId: targetUserId,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was called with INSERT (newly matched)
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to multiple queries and receives correct mutations for each", async () => {
+      const query1Callbacks: Array<{ mutation: any }> = [];
+      const query2Callbacks: Array<{ mutation: any }> = [];
+
+      // Get a post with likes > 10
+      const existingPosts = await storage.get({
+        resource: "posts",
+        where: { likes: { $gt: 10 } },
+        limit: 1,
+      });
+      expect(existingPosts.length).toBeGreaterThan(0);
+      const postId = existingPosts[0].value.id.value;
+
+      // Subscribe to posts with likes > 10
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          query1Callbacks.push({ mutation });
+        },
+      });
+
+      // Subscribe to posts with likes > 20
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 20 },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          query2Callbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscriptions to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update post to likes = 15 (matches query1, still matches query2 if it was matching)
+      await storage.update(deepSchema.posts, postId, {
+        likes: 15,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Query1 should receive UPDATE (continues to match)
+      expect(query1Callbacks.length).toBe(1);
+      expect(query1Callbacks[0].mutation.procedure).toBe("UPDATE");
+
+      // Query2 should receive UPDATE if it was matching, or nothing if it wasn't
+      // (depends on initial likes value)
+
+      // Now update to likes = 25 (matches both)
+      await storage.update(deepSchema.posts, postId, {
+        likes: 25,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Query1 should receive another UPDATE (continues to match)
+      expect(query1Callbacks.length).toBe(2);
+      expect(query1Callbacks[1].mutation.procedure).toBe("UPDATE");
+
+      // Query2 should receive INSERT if it wasn't matching before, or UPDATE if it was
+      expect(query2Callbacks.length).toBeGreaterThan(0);
+      const lastQuery2Mutation = query2Callbacks[query2Callbacks.length - 1];
+      expect(
+        lastQuery2Mutation.mutation.procedure === "INSERT" ||
+          lastQuery2Mutation.mutation.procedure === "UPDATE"
+      ).toBe(true);
+
+      // Clean up subscriptions
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+    });
+  });
 });
