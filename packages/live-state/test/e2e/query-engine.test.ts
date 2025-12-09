@@ -318,20 +318,40 @@ describe("Deep Relational Query Tests", () => {
         context: {
           org: "acme",
         },
-        // include: {
-        //   author: {
-        //     org: true,
-        //     comments: true,
-        //   },
-        //   comments: {
-        //     author: true,
-        //   },
-        // },
+        include: {
+          users: {
+            posts: {
+              comments: true,
+            },
+          },
+        },
       },
       testNewEngine: true,
     });
 
-    // No assertions - just for debugging
+    // Verify we got the org data
+    expect(result.data).toBeDefined();
+    expect(result.data.length).toBe(1);
+
+    // Verify users are included
+    const org = result.data[0];
+    expect(org.value.users).toBeDefined();
+    expect(org.value.users.value).toBeDefined();
+    expect(Array.isArray(org.value.users.value)).toBe(true);
+    expect(org.value.users.value.length).toBe(2); // John and Jane
+
+    // Verify posts are included for each user
+    for (const user of org.value.users.value) {
+      expect(user.value.posts).toBeDefined();
+      expect(Array.isArray(user.value.posts.value)).toBe(true);
+
+      // Verify comments are included for each post
+      for (const post of user.value.posts.value) {
+        expect(post.value.comments).toBeDefined();
+        expect(Array.isArray(post.value.comments.value)).toBe(true);
+      }
+    }
+
     console.log("Query result:", JSON.stringify(result, null, 2));
   });
 

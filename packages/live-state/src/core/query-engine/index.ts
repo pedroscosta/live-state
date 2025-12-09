@@ -54,6 +54,178 @@ export class QueryEngine {
     this.schema = opts.schema;
   }
 
+  private getRelationalColumns(
+    resourceName: string
+  ): Map<string, { relationName: string; targetResource: string }> {
+    const result = new Map<
+      string,
+      { relationName: string; targetResource: string }
+    >();
+    const resourceSchema = this.schema[resourceName];
+
+    if (!resourceSchema?.relations) return result;
+
+    for (const [relationName, relation] of Object.entries(
+      resourceSchema.relations
+    )) {
+      // "one" relations have relationalColumn on the source entity
+      if (relation.type === "one" && relation.relationalColumn) {
+        result.set(String(relation.relationalColumn), {
+          relationName,
+          targetResource: relation.entity.name,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  private ensureObjectNode(
+    id: string,
+    type: string,
+    matchedQuery?: string
+  ): ObjectNode {
+    let objectNode = this.objectNodes.get(id);
+
+    if (!objectNode) {
+      objectNode = {
+        id,
+        type,
+        matchedQueries: new Set(matchedQuery ? [matchedQuery] : []),
+        referencesObjects: new Map(),
+        referencedByObjects: new Map(),
+      };
+      this.objectNodes.set(id, objectNode);
+    } else if (matchedQuery) {
+      objectNode.matchedQueries.add(matchedQuery);
+    }
+
+    return objectNode;
+  }
+
+  private storeRelation(
+    sourceId: string,
+    targetId: string,
+    relationName: string,
+    inverseRelationName?: string
+  ): void {
+    const sourceNode = this.objectNodes.get(sourceId);
+    const targetNode = this.objectNodes.get(targetId);
+
+    if (sourceNode) {
+      sourceNode.referencesObjects.set(relationName, targetId);
+    }
+
+    if (targetNode && inverseRelationName) {
+      let referencedBy =
+        targetNode.referencedByObjects.get(inverseRelationName);
+      if (!referencedBy) {
+        referencedBy = new Set();
+        targetNode.referencedByObjects.set(inverseRelationName, referencedBy);
+      }
+      referencedBy.add(sourceId);
+    }
+  }
+
+  private removeRelation(
+    sourceId: string,
+    targetId: string,
+    relationName: string,
+    inverseRelationName?: string
+  ): void {
+    const sourceNode = this.objectNodes.get(sourceId);
+    const targetNode = this.objectNodes.get(targetId);
+
+    if (sourceNode) {
+      sourceNode.referencesObjects.delete(relationName);
+    }
+
+    if (targetNode && inverseRelationName) {
+      const referencedBy =
+        targetNode.referencedByObjects.get(inverseRelationName);
+      if (referencedBy) {
+        referencedBy.delete(sourceId);
+        if (referencedBy.size === 0) {
+          targetNode.referencedByObjects.delete(inverseRelationName);
+        }
+      }
+    }
+  }
+
+  private getInverseRelationName(
+    sourceResource: string,
+    targetResource: string,
+    _relationName: string
+  ): string | undefined {
+    const targetSchema = this.schema[targetResource];
+    if (!targetSchema?.relations) return undefined;
+
+    for (const [inverseName, relation] of Object.entries(
+      targetSchema.relations
+    )) {
+      if (relation.entity.name === sourceResource) {
+        // For "many" relations on the target, the inverse of a "one" relation
+        if (relation.type === "many") {
+          return inverseName;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  private updateRelationsFromMutation(
+    resourceName: string,
+    resourceId: string,
+    objValue: any,
+    payload?: Record<string, any>
+  ): void {
+    const relationalColumns = this.getRelationalColumns(resourceName);
+    const objectNode = this.objectNodes.get(resourceId);
+
+    if (!objectNode) return;
+
+    for (const [columnName, { relationName, targetResource }] of Array.from(
+      relationalColumns
+    )) {
+      const wasUpdated = payload && columnName in payload;
+
+      if (!wasUpdated) continue;
+
+      const inverseRelationName = this.getInverseRelationName(
+        resourceName,
+        targetResource,
+        relationName
+      );
+
+      const previousTargetId = objectNode.referencesObjects.get(relationName);
+
+      const newTargetId = objValue[columnName];
+
+      if (previousTargetId === newTargetId) continue;
+
+      if (previousTargetId) {
+        this.removeRelation(
+          resourceId,
+          previousTargetId,
+          relationName,
+          inverseRelationName
+        );
+      }
+
+      if (newTargetId) {
+        this.ensureObjectNode(newTargetId, targetResource);
+
+        this.storeRelation(
+          resourceId,
+          newTargetId,
+          relationName,
+          inverseRelationName
+        );
+      }
+    }
+  }
+
   get(
     query: RawQueryRequest,
     extra?: { context?: any; batcher?: Batcher }
@@ -129,21 +301,78 @@ export class QueryEngine {
     };
   }
 
-  breakdownQuery({
-    query,
-    stepPath = [],
-    context = {},
-  }: {
-    query: RawQueryRequest;
-    stepPath?: string[];
-    context?: any;
-  }): QueryStep[] {
+  breakdownQuery(
+    queryOrOpts:
+      | RawQueryRequest
+      | {
+          query: RawQueryRequest;
+          stepPath?: string[];
+          context?: any;
+          parentResource?: string;
+        },
+    legacyStepPath?: string[]
+  ): QueryStep[] {
+    // Support both old (query, stepPath?) and new ({ query, stepPath, context, parentResource }) signatures
+    const {
+      query,
+      stepPath = [],
+      context = {},
+      parentResource,
+    } = "resource" in queryOrOpts
+      ? {
+          query: queryOrOpts,
+          stepPath: legacyStepPath ?? [],
+          context: {},
+          parentResource: undefined,
+        }
+      : queryOrOpts;
+
     const { include } = query;
+
+    const isRootQuery = stepPath.length === 0;
+    const relationName = stepPath.at(-1);
+
+    // For child queries, we need to set up getWhere and referenceGetter based on the relation
+    let getWhere: QueryStep["getWhere"];
+    let referenceGetter: QueryStep["referenceGetter"];
+    let isMany: boolean | undefined;
+
+    if (!isRootQuery && parentResource && relationName) {
+      const parentSchema = this.schema[parentResource];
+      const relation = parentSchema?.relations?.[relationName];
+
+      if (relation) {
+        isMany = relation.type === "many";
+
+        if (relation.type === "one") {
+          // For "one" relations, we query by ID (the related entity's ID)
+          getWhere = (id: string) => ({ id });
+          referenceGetter = (parentData: any[]) =>
+            parentData
+              .map((item) => item.value?.[relation.relationalColumn]?.value)
+              .filter((v): v is string => v !== undefined);
+        } else {
+          // For "many" relations, we query by foreign column
+          getWhere = (id: string) => ({ [relation.foreignColumn]: id });
+          referenceGetter = (parentData: any[]) =>
+            parentData
+              .map((item) => item.value?.id?.value as string | undefined)
+              .filter((v): v is string => v !== undefined);
+        }
+      }
+    }
+
+    // Strip include from the query since it's been processed into child steps
+    const { include: _include, ...queryWithoutInclude } = query;
 
     const newStep = this.router.incrementQueryStep(
       {
-        query,
+        query: queryWithoutInclude,
         stepPath: [...stepPath],
+        getWhere,
+        referenceGetter,
+        isMany,
+        relationName,
       },
       context
     );
@@ -161,24 +390,26 @@ export class QueryEngine {
         throw new Error(`Resource ${query.resource} not found`);
 
       queryPlan.push(
-        ...Object.entries(include).flatMap(([relationName, include]) => {
-          const relation = resourceSchema.relations[relationName];
+        ...Object.entries(include).flatMap(([relName, nestedInclude]) => {
+          const relation = resourceSchema.relations[relName];
 
           if (!relation)
             throw new Error(
-              `Relation ${relationName} not found for resource ${query.resource}`
+              `Relation ${relName} not found for resource ${query.resource}`
             );
 
           const otherResourceName = relation.entity.name;
 
-          return this.breakdownQuery(
-            // TODO pass nested queries down to the next step
-            {
-              query: { resource: otherResourceName, include },
-              stepPath: [...stepPath, relationName],
-              context,
-            }
-          );
+          return this.breakdownQuery({
+            query: {
+              resource: otherResourceName,
+              include:
+                typeof nestedInclude === "object" ? nestedInclude : undefined,
+            },
+            stepPath: [...stepPath, relName],
+            context,
+            parentResource: query.resource,
+          });
         })
       );
     }
@@ -195,46 +426,189 @@ export class QueryEngine {
       plan.map((step) => step.stepPath.join(".")).join(" -> ")
     );
 
-    const stepResults: Record<string, any[]> = {};
+    // Map: stepPath -> array of { includedBy?: string, data: any[] }
+    const stepResults: Record<string, { includedBy?: string; data: any[] }[]> =
+      {};
 
     let chain: PromiseLike<void> = this.resolveStep(plan[0], extra).then(
       (results) => {
         console.log(
           "[QueryEngine] Resolved step",
           plan[0].stepPath.join("."),
-          "with results",
-          JSON.stringify(results, null, 2)
+          "with results count:",
+          results.length
         );
-        stepResults[plan[0].stepPath.join(".")] = results;
+        stepResults[plan[0].stepPath.join(".")] = [{ data: results }];
       }
     );
 
     for (let i = 1; i < plan.length; i++) {
       const step = plan[i];
+      const parentStepPath = step.stepPath.slice(0, -1).join(".");
 
-      chain = chain
-        .then(() => this.resolveStep(step, extra))
-        .then((results) => {
+      chain = chain.then(async () => {
+        const parentResults = stepResults[parentStepPath];
+        if (!parentResults) {
+          stepResults[step.stepPath.join(".")] = [];
+          return;
+        }
+
+        // Collect all parent data
+        const allParentData = parentResults.flatMap((r) => r.data);
+
+        // If we have a referenceGetter, use it to get IDs and getWhere to build queries
+        if (step.referenceGetter && step.getWhere) {
+          const referenceIds = step.referenceGetter(allParentData);
+
+          if (referenceIds.length === 0) {
+            stepResults[step.stepPath.join(".")] = [];
+            return;
+          }
+
+          // Execute a query for each parent ID to maintain the mapping
+          const results: { includedBy?: string; data: any[] }[] = [];
+
+          for (const parentId of referenceIds) {
+            const whereClause = step.getWhere(parentId);
+            const stepWithWhere: QueryStep = {
+              ...step,
+              query: {
+                ...step.query,
+                where: whereClause,
+              },
+            };
+
+            const data = await this.resolveStep(stepWithWhere, extra);
+            results.push({ includedBy: parentId, data });
+          }
+
           console.log(
             "[QueryEngine] Resolved step",
             step.stepPath.join("."),
-            "with results",
-            JSON.stringify(results, null, 2)
+            "with results count:",
+            results.reduce((acc, r) => acc + r.data.length, 0)
           );
           stepResults[step.stepPath.join(".")] = results;
-        });
+        } else {
+          // No relation info, just resolve normally
+          const data = await this.resolveStep(step, extra);
+          stepResults[step.stepPath.join(".")] = [{ data }];
+        }
+      });
     }
 
     chain = chain.then((() => {
-      console.log(
-        "[QueryEngine] Assembling results",
-        JSON.stringify(stepResults, null, 2)
-      );
-
-      return stepResults[""];
+      console.log("[QueryEngine] Assembling results");
+      return this.assembleResults(plan, stepResults);
     }) as () => void);
 
     return chain as unknown as PromiseLike<any[]>;
+  }
+
+  private assembleResults(
+    plan: QueryStep[],
+    stepResults: Record<string, { includedBy?: string; data: any[] }[]>
+  ): any[] {
+    // Build a map of all entities by their full path + id
+    const entriesMap = new Map<
+      string,
+      {
+        data: any;
+        includedBy: Set<string>;
+        path: string;
+        isMany: boolean;
+        relationName?: string;
+        resourceName: string;
+        includedRelations: string[];
+      }
+    >();
+
+    // Process each step in order
+    for (const step of plan) {
+      const stepPath = step.stepPath.join(".");
+      const results = stepResults[stepPath] ?? [];
+      const resourceSchema = this.schema[step.query.resource];
+      const includedRelations = Object.keys(step.query.include ?? {});
+
+      for (const resultGroup of results) {
+        for (const data of resultGroup.data) {
+          const id = data?.value?.id?.value as string | undefined;
+          if (!id) continue;
+
+          const key = stepPath ? `${stepPath}.${id}` : id;
+
+          // For child queries, find parent key
+          let parentKeys: string[] = [];
+          if (step.stepPath.length > 0 && resultGroup.includedBy) {
+            const parentStepPath = step.stepPath.slice(0, -1).join(".");
+            parentKeys = [
+              parentStepPath
+                ? `${parentStepPath}.${resultGroup.includedBy}`
+                : resultGroup.includedBy,
+            ];
+          }
+
+          const existing = entriesMap.get(key);
+          if (existing) {
+            for (const parentKey of parentKeys) {
+              existing.includedBy.add(parentKey);
+            }
+          } else {
+            entriesMap.set(key, {
+              data,
+              includedBy: new Set(parentKeys),
+              path: step.stepPath.at(-1) ?? "",
+              isMany: step.isMany ?? false,
+              relationName: step.relationName,
+              resourceName: step.query.resource,
+              includedRelations,
+            });
+          }
+        }
+      }
+    }
+
+    // Assemble: iterate in reverse to attach children to parents
+    const entriesArray = Array.from(entriesMap.entries());
+    const resultData: any[] = [];
+
+    for (let i = entriesArray.length - 1; i >= 0; i--) {
+      const [key, entry] = entriesArray[i];
+      const resourceSchema = this.schema[entry.resourceName];
+
+      // Initialize included relations if they don't exist
+      for (const includedRelation of entry.includedRelations) {
+        const relationType =
+          resourceSchema?.relations?.[includedRelation]?.type;
+        if (!entry.data.value[includedRelation]) {
+          entry.data.value[includedRelation] =
+            relationType === "many" ? { value: [] } : { value: null };
+        }
+      }
+
+      // Root level items (no path)
+      if (entry.path === "") {
+        resultData.push(entry.data);
+        continue;
+      }
+
+      // Attach to parent(s)
+      for (const parentKey of Array.from(entry.includedBy)) {
+        const parent = entriesMap.get(parentKey);
+        if (!parent) continue;
+
+        const relationName = entry.relationName ?? entry.path;
+
+        if (entry.isMany) {
+          parent.data.value[relationName] ??= { value: [] };
+          parent.data.value[relationName].value.push(entry.data);
+        } else {
+          parent.data.value[relationName] = entry.data;
+        }
+      }
+    }
+
+    return resultData;
   }
 
   resolveStep(
@@ -265,28 +639,99 @@ export class QueryEngine {
     );
 
     const stepHash = hash(step);
-
     const queryNode = this.queryNodes.get(stepHash);
+    const resourceName = step.query.resource;
 
     if (!queryNode) return;
+
+    const relationalColumns = this.getRelationalColumns(resourceName);
 
     for (const rawResult of results) {
       const result = inferValue(rawResult);
       const id = result.id;
 
-      if (this.objectNodes.has(id)) continue;
-
-      const objectNode: ObjectNode = {
-        id,
-        type: result.type,
-        matchedQueries: new Set([stepHash]),
-        referencesObjects: new Map(),
-        referencedByObjects: new Map(),
-      };
-
-      this.objectNodes.set(id, objectNode);
-
+      this.ensureObjectNode(id, resourceName, stepHash);
       queryNode.trackedObjects.add(id);
+
+      for (const [columnName, { relationName, targetResource }] of Array.from(
+        relationalColumns
+      )) {
+        const targetId = result[columnName];
+        if (targetId) {
+          this.ensureObjectNode(targetId, targetResource);
+
+          const inverseRelationName = this.getInverseRelationName(
+            resourceName,
+            targetResource,
+            relationName
+          );
+
+          this.storeRelation(id, targetId, relationName, inverseRelationName);
+        }
+      }
+
+      this.loadNestedRelations(resourceName, id, result);
+      console.log("[QueryEngine] Loaded nested relations for", id);
+    }
+  }
+
+  private loadNestedRelations(
+    resourceName: string,
+    objectId: string,
+    data: any
+  ): void {
+    const resourceSchema = this.schema[resourceName];
+    if (!resourceSchema?.relations) return;
+
+    for (const [relationName, relation] of Object.entries(
+      resourceSchema.relations
+    )) {
+      const nestedData = data[relationName];
+      if (!nestedData) continue;
+
+      const targetResource = relation.entity.name;
+      const inverseRelationName = this.getInverseRelationName(
+        resourceName,
+        targetResource,
+        relationName
+      );
+
+      if (relation.type === "one") {
+        if (nestedData && typeof nestedData === "object" && nestedData.id) {
+          this.ensureObjectNode(nestedData.id, targetResource);
+          this.storeRelation(
+            objectId,
+            nestedData.id,
+            relationName,
+            inverseRelationName
+          );
+          this.loadNestedRelations(targetResource, nestedData.id, nestedData);
+        }
+      } else if (relation.type === "many") {
+        if (Array.isArray(nestedData)) {
+          for (const item of nestedData) {
+            if (item && typeof item === "object" && item.id) {
+              this.ensureObjectNode(item.id, targetResource);
+              // For "many" relations, the relation is stored on the child pointing to parent
+              // But we also track the reverse reference
+              const reverseInverse = this.getInverseRelationName(
+                targetResource,
+                resourceName,
+                relationName
+              );
+              if (reverseInverse) {
+                this.storeRelation(
+                  item.id,
+                  objectId,
+                  reverseInverse,
+                  relationName
+                );
+              }
+              this.loadNestedRelations(targetResource, item.id, item);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -355,6 +800,29 @@ export class QueryEngine {
         };
 
         this.objectNodes.set(mutation.resourceId, newObjectNode);
+
+        const relationalColumns = this.getRelationalColumns(mutation.resource);
+        for (const [columnName, { relationName, targetResource }] of Array.from(
+          relationalColumns
+        )) {
+          const targetId = objValue[columnName];
+          if (targetId) {
+            this.ensureObjectNode(targetId, targetResource);
+
+            const inverseRelationName = this.getInverseRelationName(
+              mutation.resource,
+              targetResource,
+              relationName
+            );
+
+            this.storeRelation(
+              mutation.resourceId,
+              targetId,
+              relationName,
+              inverseRelationName
+            );
+          }
+        }
 
         for (const queryHash of matchedQueries) {
           const queryNode = this.queryNodes.get(queryHash);
@@ -464,6 +932,13 @@ export class QueryEngine {
           this.objectNodes.set(mutation.resourceId, newObjectNode);
         }
 
+        this.updateRelationsFromMutation(
+          mutation.resource,
+          mutation.resourceId,
+          objValue,
+          mutation.payload
+        );
+
         for (const queryHash of [
           ...noLongerMatchedQueries,
           ...stillMatchedQueries,
@@ -478,7 +953,6 @@ export class QueryEngine {
         }
 
         if (newlyMatchedQueries.length > 0) {
-          // TODO add optimization to only fetch if the value is not just entityValue
           this.get({
             resource: mutation.resource,
             where: { id: mutation.resourceId },
