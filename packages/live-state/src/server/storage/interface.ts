@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
 
-import type { DataSource } from "../../client/query";
+import type { DataSource } from "../../core/query-engine/types";
 import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import type { PromiseOrSync } from "../../core/utils";
 import {
