@@ -1403,5 +1403,113 @@ describe("Deep Relational Query Tests", () => {
         result2.unsubscribe();
       }
     });
+
+    test("subscribes to org > posts > comments and moves a post to the acme org", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Get the acme org
+      const acmeOrg = await storage.get({
+        resource: "orgs",
+        where: { name: "acme" },
+        limit: 1,
+      });
+      const acmeOrgId = acmeOrg[0].value.id.value;
+
+      // Get a user from acme org
+      const acmeUsers = await storage.get({
+        resource: "users",
+        where: { orgId: acmeOrgId },
+        limit: 1,
+      });
+      const acmeUserId = acmeUsers[0].value.id.value;
+
+      // Get a post from tech org (not acme)
+      const techOrg = await storage.get({
+        resource: "orgs",
+        where: { name: "tech" },
+        limit: 1,
+      });
+      const techOrgId = techOrg[0].value.id.value;
+      const techUsers = await storage.get({
+        resource: "users",
+        where: { orgId: techOrgId },
+        limit: 1,
+      });
+      const techUserId = techUsers[0].value.id.value;
+      const techUserPosts = await storage.get({
+        resource: "posts",
+        where: { authorId: techUserId },
+        limit: 1,
+      });
+      const postId = techUserPosts[0].value.id.value;
+
+      // Subscribe to orgs with nested includes: users > posts > comments
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: {
+                  author: true,
+                },
+              },
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert a new post matching the query (author from acme org)
+      const newPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: "New Post from Acme",
+        content: "This post matches the query",
+        authorId: acmeUserId,
+        likes: 0,
+      });
+
+      // Insert a new post that doesn't match the query (author from tech org)
+      const nonMatchingPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: nonMatchingPostId,
+        title: "New Post from Tech",
+        content: "This post does NOT match the query",
+        authorId: techUserId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Move the post to acme org by updating its authorId to a user from acme org
+      await storage.update(deepSchema.posts, postId, {
+        authorId: acmeUserId,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
   });
 });

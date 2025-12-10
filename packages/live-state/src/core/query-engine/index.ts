@@ -5,17 +5,17 @@ import {
   type LiveObjectAny,
   type MaterializedLiveType,
   type Schema,
-  type WhereClause,
 } from "../../schema";
 import type { Storage } from "../../server";
 import { Batcher } from "../../server/storage/batcher";
-import { applyWhere, extractIncludeFromWhere, hash } from "../../utils";
+import { applyWhere, extractIncludeFromWhere } from "../../utils";
 import type {
   DefaultMutation,
   RawQueryRequest,
 } from "../schemas/core-protocol";
-import { toPromiseLike } from "../utils";
+import { mergeWhereClauses, toPromiseLike } from "../utils";
 import type { DataRouter, DataSource, QueryStep } from "./types";
+import { hashStep } from "./utils";
 
 export type MutationHandler = (mutation: DefaultMutation) => void;
 
@@ -155,17 +155,42 @@ export class QueryEngine {
   private getInverseRelationName(
     sourceResource: string,
     targetResource: string,
-    _relationName: string
+    relationName: string
   ): string | undefined {
+    const sourceSchema = this.schema[sourceResource];
+    if (!sourceSchema?.relations) return undefined;
+
+    const sourceRelation = sourceSchema.relations[relationName];
+    if (!sourceRelation) return undefined;
+
     const targetSchema = this.schema[targetResource];
     if (!targetSchema?.relations) return undefined;
 
-    for (const [inverseName, relation] of Object.entries(
-      targetSchema.relations
-    )) {
-      if (relation.entity.name === sourceResource) {
-        // For "many" relations on the target, the inverse of a "one" relation
-        if (relation.type === "many") {
+    // For a "many" relation, find the "one" relation on target with matching relationalColumn
+    if (sourceRelation.type === "many" && sourceRelation.foreignColumn) {
+      for (const [inverseName, relation] of Object.entries(
+        targetSchema.relations
+      )) {
+        if (
+          relation.entity.name === sourceResource &&
+          relation.type === "one" &&
+          relation.relationalColumn === sourceRelation.foreignColumn
+        ) {
+          return inverseName;
+        }
+      }
+    }
+
+    // For a "one" relation, find the "many" relation on target with matching foreignColumn
+    if (sourceRelation.type === "one" && sourceRelation.relationalColumn) {
+      for (const [inverseName, relation] of Object.entries(
+        targetSchema.relations
+      )) {
+        if (
+          relation.entity.name === sourceResource &&
+          relation.type === "many" &&
+          relation.foreignColumn === sourceRelation.relationalColumn
+        ) {
           return inverseName;
         }
       }
@@ -255,7 +280,7 @@ export class QueryEngine {
     for (const step of queryPlan) {
       console.log("[QueryEngine] Subscribing to step", step.stepPath.join("."));
 
-      const stepHash = hash(step);
+      const stepHash = hashStep(step);
       const lastStepHash = stepHashes[step.stepPath.at(-2) ?? ""];
 
       const currentRelationName = step.stepPath.at(-1) ?? "";
@@ -301,31 +326,13 @@ export class QueryEngine {
     };
   }
 
-  breakdownQuery(
-    queryOrOpts:
-      | RawQueryRequest
-      | {
-          query: RawQueryRequest;
-          stepPath?: string[];
-          context?: any;
-          parentResource?: string;
-        },
-    legacyStepPath?: string[]
-  ): QueryStep[] {
-    // Support both old (query, stepPath?) and new ({ query, stepPath, context, parentResource }) signatures
-    const {
-      query,
-      stepPath = [],
-      context = {},
-      parentResource,
-    } = "resource" in queryOrOpts
-      ? {
-          query: queryOrOpts,
-          stepPath: legacyStepPath ?? [],
-          context: {},
-          parentResource: undefined,
-        }
-      : queryOrOpts;
+  breakdownQuery(queryOrOpts: {
+    query: RawQueryRequest;
+    stepPath?: string[];
+    context?: any;
+    parentResource?: string;
+  }): QueryStep[] {
+    const { query, stepPath = [], context = {}, parentResource } = queryOrOpts;
 
     const { include } = query;
 
@@ -469,16 +476,13 @@ export class QueryEngine {
           const results: { includedBy?: string; data: any[] }[] = [];
 
           for (const parentId of referenceIds) {
-            const whereClause = step.getWhere(parentId);
-            const stepWithWhere: QueryStep = {
+            const relationalWhere = step.getWhere(parentId);
+            const stepWithRelationalWhere: QueryStep = {
               ...step,
-              query: {
-                ...step.query,
-                where: whereClause,
-              },
+              relationalWhere,
             };
 
-            const data = await this.resolveStep(stepWithWhere, extra);
+            const data = await this.resolveStep(stepWithRelationalWhere, extra);
             results.push({ includedBy: parentId, data });
           }
 
@@ -619,15 +623,29 @@ export class QueryEngine {
       "[QueryEngine] Resolving step",
       step.stepPath.join("."),
       "with query",
-      JSON.stringify(step.query, null, 2)
+      JSON.stringify(step.query, null, 2),
+      "relationalWhere",
+      JSON.stringify(step.relationalWhere, null, 2)
     );
 
-    const { query } = step;
+    const { query, relationalWhere } = step;
 
-    return toPromiseLike(this.router.get(query, extra)).then((results) => {
-      this.loadStepResults(step, results);
-      return results;
-    });
+    // Combine normal where clause with relational where clause
+    const combinedWhere =
+      query.where && relationalWhere
+        ? mergeWhereClauses(query.where, relationalWhere)
+        : (relationalWhere ?? query.where);
+
+    const queryWithCombinedWhere = combinedWhere
+      ? { ...query, where: combinedWhere }
+      : query;
+
+    return toPromiseLike(this.router.get(queryWithCombinedWhere, extra)).then(
+      (results) => {
+        this.loadStepResults(step, results);
+        return results;
+      }
+    );
   }
 
   loadStepResults(step: QueryStep, results: any[]): void {
@@ -638,7 +656,7 @@ export class QueryEngine {
       JSON.stringify(results, null, 2)
     );
 
-    const stepHash = hash(step);
+    const stepHash = hashStep(step);
     const queryNode = this.queryNodes.get(stepHash);
     const resourceName = step.query.resource;
 
@@ -746,88 +764,52 @@ export class QueryEngine {
 
       if (!objValue) return;
 
-      const queriesToCheck: Array<{
-        queryNode: QueryNode;
-        hash: string;
-        hasWhere: boolean;
-      }> = [];
+      const newObjectNode: ObjectNode = {
+        id: mutation.resourceId,
+        type: mutation.resource,
+        matchedQueries: new Set(),
+        referencesObjects: new Map(),
+        referencedByObjects: new Map(),
+      };
 
-      for (const queryNode of Array.from(this.queryNodes.values())) {
-        if (queryNode.queryStep.query.resource !== mutation.resource) continue;
-        queriesToCheck.push({
-          queryNode,
-          hash: queryNode.hash,
-          hasWhere: !!queryNode.queryStep.query.where,
-        });
-      }
+      this.objectNodes.set(mutation.resourceId, newObjectNode);
 
-      if (queriesToCheck.length === 0) return;
+      const relationalColumns = this.getRelationalColumns(mutation.resource);
+      for (const [columnName, { relationName, targetResource }] of Array.from(
+        relationalColumns
+      )) {
+        const targetId = objValue[columnName];
+        if (targetId) {
+          this.ensureObjectNode(targetId, targetResource);
 
-      Promise.all(
-        queriesToCheck.map(async ({ queryNode, hash, hasWhere }) => {
-          if (!hasWhere) {
-            return { hash, matches: true };
-          }
-
-          const matches = await this.checkWhereMatch(
+          const inverseRelationName = this.getInverseRelationName(
             mutation.resource,
-            mutation.resourceId,
-            queryNode.queryStep.query.where,
-            objValue
+            targetResource,
+            relationName
           );
 
-          return { hash, matches };
-        })
-      ).then((results) => {
-        const matchedQueries: string[] = [];
-
-        for (const { hash, matches } of results) {
-          if (matches) {
-            const queryNode = this.queryNodes.get(hash);
-            if (queryNode) {
-              queryNode.trackedObjects.add(mutation.resourceId);
-              matchedQueries.push(hash);
-            }
-          }
+          this.storeRelation(
+            mutation.resourceId,
+            targetId,
+            relationName,
+            inverseRelationName
+          );
         }
+      }
 
-        const newObjectNode: ObjectNode = {
-          id: mutation.resourceId,
-          type: mutation.type,
-          matchedQueries: new Set(matchedQueries),
-          referencesObjects: new Map(),
-          referencedByObjects: new Map(),
-        };
+      const storedObjectNode = this.objectNodes.get(mutation.resourceId);
 
-        this.objectNodes.set(mutation.resourceId, newObjectNode);
-
-        const relationalColumns = this.getRelationalColumns(mutation.resource);
-        for (const [columnName, { relationName, targetResource }] of Array.from(
-          relationalColumns
-        )) {
-          const targetId = objValue[columnName];
-          if (targetId) {
-            this.ensureObjectNode(targetId, targetResource);
-
-            const inverseRelationName = this.getInverseRelationName(
-              mutation.resource,
-              targetResource,
-              relationName
-            );
-
-            this.storeRelation(
-              mutation.resourceId,
-              targetId,
-              relationName,
-              inverseRelationName
-            );
-          }
-        }
-
-        for (const queryHash of matchedQueries) {
+      this.getMatchingQueries(mutation, objValue).then((matchingQueries) => {
+        for (const queryHash of matchingQueries) {
           const queryNode = this.queryNodes.get(queryHash);
 
           if (!queryNode) continue; // TODO should we throw an error here?
+
+          queryNode.trackedObjects.add(mutation.resourceId);
+
+          if (storedObjectNode) {
+            storedObjectNode.matchedQueries.add(queryHash);
+          }
 
           queryNode.subscriptions.forEach((subscription) => {
             subscription(mutation);
@@ -842,181 +824,223 @@ export class QueryEngine {
 
       if (!objValue) return;
 
-      const existingObjectNode = this.objectNodes.get(mutation.resourceId);
+      // Step 1: Ensure object node exists and update object relations first
+      let objectNode = this.objectNodes.get(mutation.resourceId);
+      const previouslyMatchedQueries = new Set(
+        objectNode?.matchedQueries ?? []
+      );
 
-      const queriesToCheck: Array<{
-        queryNode: QueryNode;
-        hash: string;
-        hasWhere: boolean;
-        wasPreviouslyMatched: boolean;
-      }> = [];
-
-      for (const queryNode of Array.from(this.queryNodes.values())) {
-        if (queryNode.queryStep.query.resource !== mutation.resource) continue;
-        queriesToCheck.push({
-          queryNode,
-          hash: queryNode.hash,
-          hasWhere: !!queryNode.queryStep.query.where,
-          wasPreviouslyMatched:
-            existingObjectNode?.matchedQueries.has(queryNode.hash) ?? false,
-        });
+      if (!objectNode) {
+        objectNode = {
+          id: mutation.resourceId,
+          type: mutation.resource,
+          matchedQueries: new Set(),
+          referencesObjects: new Map(),
+          referencedByObjects: new Map(),
+        };
+        this.objectNodes.set(mutation.resourceId, objectNode);
       }
 
-      if (queriesToCheck.length === 0) return;
+      // Update object relations before checking query matching
+      this.updateRelationsFromMutation(
+        mutation.resource,
+        mutation.resourceId,
+        objValue,
+        mutation.payload
+      );
 
-      Promise.all(
-        queriesToCheck.map(
-          async ({ queryNode, hash, hasWhere, wasPreviouslyMatched }) => {
-            if (!hasWhere) {
-              return { hash, matches: true, wasPreviouslyMatched };
+      // Step 2: Use getMatchingQueries to determine current matching state
+      this.getMatchingQueries(mutation, objValue).then(
+        (matchingQueryHashes) => {
+          const matchingQueriesSet = new Set(matchingQueryHashes);
+
+          const newlyMatchedQueries: string[] = [];
+          const noLongerMatchedQueries: string[] = [];
+          const stillMatchedQueries: string[] = [];
+
+          // Determine newly matched queries
+          for (const queryHash of matchingQueryHashes) {
+            if (previouslyMatchedQueries.has(queryHash)) {
+              stillMatchedQueries.push(queryHash);
+            } else {
+              newlyMatchedQueries.push(queryHash);
             }
-
-            const matches = await this.checkWhereMatch(
-              mutation.resource,
-              mutation.resourceId,
-              queryNode.queryStep.query.where,
-              objValue
-            );
-
-            return { hash, matches, wasPreviouslyMatched };
           }
-        )
-      ).then((results) => {
-        const newlyMatchedQueries: string[] = [];
-        const noLongerMatchedQueries: string[] = [];
-        const stillMatchedQueries: string[] = [];
 
-        for (const { hash, matches, wasPreviouslyMatched } of results) {
-          if (matches && !wasPreviouslyMatched) {
-            newlyMatchedQueries.push(hash);
-          } else if (!matches && wasPreviouslyMatched) {
-            noLongerMatchedQueries.push(hash);
-          } else if (matches && wasPreviouslyMatched) {
-            stillMatchedQueries.push(hash);
+          // Determine no longer matched queries
+          for (const queryHash of Array.from(previouslyMatchedQueries)) {
+            if (!matchingQueriesSet.has(queryHash)) {
+              noLongerMatchedQueries.push(queryHash);
+            }
           }
-        }
 
-        for (const queryHash of newlyMatchedQueries) {
-          const queryNode = this.queryNodes.get(queryHash);
-          if (queryNode) {
-            queryNode.trackedObjects.add(mutation.resourceId);
-          }
-        }
-
-        for (const queryHash of noLongerMatchedQueries) {
-          const queryNode = this.queryNodes.get(queryHash);
-          if (queryNode) {
-            queryNode.trackedObjects.delete(mutation.resourceId);
-          }
-        }
-
-        if (existingObjectNode) {
+          // Update query node tracking
           for (const queryHash of newlyMatchedQueries) {
-            existingObjectNode.matchedQueries.add(queryHash);
-          }
-          for (const queryHash of noLongerMatchedQueries) {
-            existingObjectNode.matchedQueries.delete(queryHash);
-          }
-        } else {
-          const allMatchedQueries = [
-            ...newlyMatchedQueries,
-            ...stillMatchedQueries,
-          ];
-          const newObjectNode: ObjectNode = {
-            id: mutation.resourceId,
-            type: mutation.type,
-            matchedQueries: new Set(allMatchedQueries),
-            referencesObjects: new Map(),
-            referencedByObjects: new Map(),
-          };
-          this.objectNodes.set(mutation.resourceId, newObjectNode);
-        }
-
-        this.updateRelationsFromMutation(
-          mutation.resource,
-          mutation.resourceId,
-          objValue,
-          mutation.payload
-        );
-
-        for (const queryHash of [
-          ...noLongerMatchedQueries,
-          ...stillMatchedQueries,
-        ]) {
-          const queryNode = this.queryNodes.get(queryHash);
-
-          if (!queryNode) continue;
-
-          queryNode.subscriptions.forEach((subscription) => {
-            subscription(mutation);
-          });
-        }
-
-        if (newlyMatchedQueries.length > 0) {
-          this.get({
-            resource: mutation.resource,
-            where: { id: mutation.resourceId },
-          }).then((results: any[]) => {
-            if (!results || results.length === 0) return;
-
-            const insertMutation: DefaultMutation = {
-              procedure: "INSERT",
-              resource: mutation.resource,
-              resourceId: mutation.resourceId,
-              type: mutation.type,
-              payload: results[0]?.value,
-            };
-
-            for (const queryHash of newlyMatchedQueries) {
-              const queryNode = this.queryNodes.get(queryHash);
-
-              if (!queryNode) continue;
-
-              queryNode.subscriptions.forEach((subscription) => {
-                subscription(insertMutation);
-              });
+            const queryNode = this.queryNodes.get(queryHash);
+            if (queryNode) {
+              queryNode.trackedObjects.add(mutation.resourceId);
             }
-          });
+          }
+
+          for (const queryHash of noLongerMatchedQueries) {
+            const queryNode = this.queryNodes.get(queryHash);
+            if (queryNode) {
+              queryNode.trackedObjects.delete(mutation.resourceId);
+            }
+          }
+
+          // Update object node matched queries
+          const currentObjectNode = this.objectNodes.get(mutation.resourceId);
+          if (currentObjectNode) {
+            for (const queryHash of newlyMatchedQueries) {
+              currentObjectNode.matchedQueries.add(queryHash);
+            }
+            for (const queryHash of noLongerMatchedQueries) {
+              currentObjectNode.matchedQueries.delete(queryHash);
+            }
+          }
+
+          // Notify subscriptions for still matched and no longer matched queries
+          for (const queryHash of [
+            ...noLongerMatchedQueries,
+            ...stillMatchedQueries,
+          ]) {
+            const queryNode = this.queryNodes.get(queryHash);
+
+            if (!queryNode) continue;
+
+            queryNode.subscriptions.forEach((subscription) => {
+              subscription(mutation);
+            });
+          }
+
+          // For newly matched queries, fetch full data and send INSERT mutation
+          if (newlyMatchedQueries.length > 0) {
+            this.get({
+              resource: mutation.resource,
+              where: { id: mutation.resourceId },
+            }).then((results: any[]) => {
+              if (!results || results.length === 0) return;
+
+              const insertMutation: DefaultMutation = {
+                procedure: "INSERT",
+                resource: mutation.resource,
+                resourceId: mutation.resourceId,
+                type: "MUTATE",
+                payload: results[0]?.value,
+              };
+
+              for (const queryHash of newlyMatchedQueries) {
+                const queryNode = this.queryNodes.get(queryHash);
+
+                if (!queryNode) continue;
+
+                queryNode.subscriptions.forEach((subscription) => {
+                  subscription(insertMutation);
+                });
+              }
+            });
+          }
         }
-      });
+      );
 
       return;
     }
   }
 
-  async checkWhereMatch(
-    resource: string,
-    resourceId: string,
-    where: WhereClause<LiveObjectAny> | undefined,
-    objValue?: any
-  ): Promise<boolean> {
-    if (!where) {
-      return true;
+  getMatchingQueries(
+    mutation: DefaultMutation,
+    objValue: any
+  ): PromiseLike<string[]> {
+    const queriesToCheck: QueryNode[] = [];
+
+    // TODO map queries by resource
+    for (const queryNode of Array.from(this.queryNodes.values())) {
+      if (queryNode.queryStep.query.resource !== mutation.resource) continue;
+      queriesToCheck.push(queryNode);
     }
 
-    const include = extractIncludeFromWhere(where, resource, this.schema);
-    const hasRelations = Object.keys(include).length > 0;
+    if (queriesToCheck.length === 0) return toPromiseLike([]);
 
-    if (!hasRelations && objValue !== undefined) {
-      return applyWhere(objValue, where);
-    }
+    return Promise.all(
+      queriesToCheck.map(async (queryNode) => {
+        const where = queryNode.queryStep.query.where;
+        const resource = queryNode.queryStep.query.resource;
+        const resourceId = mutation.resourceId;
+        const objectNode = this.objectNodes.get(resourceId);
 
-    const fullObject = await this.storage.get({
-      resource,
-      where: { id: resourceId },
-      include: hasRelations ? include : undefined,
+        if (!objectNode) return { hash: queryNode.hash, matches: false };
+
+        if (queryNode.relationName) {
+          // queryNode.relationName is the relation from the parent's perspective (e.g., "posts" on User)
+          // but referencesObjects uses the relation from this object's perspective (e.g., "author" on Post)
+          // So we need to find the inverse relation name
+          const parentQuery = queryNode.parentQuery
+            ? this.queryNodes.get(queryNode.parentQuery)
+            : undefined;
+          const parentResource = parentQuery?.queryStep.query.resource;
+
+          const inverseRelationName = parentResource
+            ? this.getInverseRelationName(
+                parentResource,
+                resource,
+                queryNode.relationName
+              )
+            : undefined;
+
+          const relatedObj = inverseRelationName
+            ? objectNode.referencesObjects.get(inverseRelationName)
+            : undefined;
+          if (!relatedObj) return { hash: queryNode.hash, matches: false };
+
+          const relatedObjNode = this.objectNodes.get(relatedObj);
+          // NEXT STEP understand why this is not true (matchedQueries)
+          if (
+            !relatedObjNode ||
+            !parentQuery ||
+            !relatedObjNode.matchedQueries.has(parentQuery.hash)
+          )
+            return { hash: queryNode.hash, matches: false };
+
+          return { hash: queryNode.hash, matches: true };
+        }
+
+        if (!where) {
+          return { hash: queryNode.hash, matches: true };
+        }
+
+        const include = extractIncludeFromWhere(where, resource, this.schema);
+        const hasRelations = Object.keys(include).length > 0;
+
+        if (!hasRelations && objValue !== undefined) {
+          return { hash: queryNode.hash, matches: applyWhere(objValue, where) };
+        }
+
+        const fullObject = await this.storage.get({
+          resource,
+          where: { id: resourceId },
+          include: hasRelations ? include : undefined,
+        });
+
+        if (!fullObject || fullObject.length === 0) {
+          return { hash: queryNode.hash, matches: false };
+        }
+
+        const fullObjValue = inferValue(fullObject[0]);
+
+        if (!fullObjValue) {
+          return { hash: queryNode.hash, matches: false };
+        }
+
+        return {
+          hash: queryNode.hash,
+          matches: applyWhere(fullObjValue, where),
+        };
+      })
+    ).then((results) => {
+      return results
+        .filter((result) => result.matches)
+        .map((result) => result.hash);
     });
-
-    if (!fullObject || fullObject.length === 0) {
-      return false;
-    }
-
-    const fullObjValue = inferValue(fullObject[0]);
-
-    if (!fullObjValue) {
-      return false;
-    }
-
-    return applyWhere(fullObjValue, where);
   }
 }

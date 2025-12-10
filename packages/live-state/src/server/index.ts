@@ -203,21 +203,27 @@ export class Server<TRouter extends AnyRouter> {
     if (opts.testNewEngine) {
       const { headers, cookies, queryParams, context, ...rawQuery } = opts.req;
 
+      const ctx = {
+        headers,
+        cookies,
+        queryParams,
+        context,
+      };
+
       const unsubscribe = opts.subscription
-        ? this.queryEngine.subscribe(rawQuery, (mutation) => {
-            opts.subscription?.(mutation);
-          })
+        ? this.queryEngine.subscribe(
+            rawQuery,
+            (mutation) => {
+              opts.subscription?.(mutation);
+            },
+            ctx
+          )
         : undefined;
 
       return new Promise((resolve) => {
         this.queryEngine
           .get(rawQuery, {
-            context: {
-              headers,
-              cookies,
-              queryParams,
-              context,
-            },
+            context: ctx,
           })
           .then((data) => {
             resolve({

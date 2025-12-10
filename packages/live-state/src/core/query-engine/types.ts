@@ -26,6 +26,8 @@ export interface QueryStep {
   isMany?: boolean;
   /** The relation name in parent's schema */
   relationName?: string;
+  /** Where clause derived from the parent step (relational filtering) */
+  relationalWhere?: WhereClause<any>;
 }
 
 export interface DataRouter<Context> extends DataSource {
