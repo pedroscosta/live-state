@@ -119,6 +119,24 @@ describe("Deep Relational Query Tests", () => {
   let testServer: ReturnType<typeof server>;
   let pool: Pool;
 
+  // Store test data IDs for assertions
+  let orgId1: string;
+  let orgId2: string;
+  let userId1: string;
+  let userId2: string;
+  let userId3: string;
+  let userId4: string;
+  let postId1: string;
+  let postId2: string;
+  let postId3: string;
+  let postId4: string;
+  let commentId1: string;
+  let commentId2: string;
+  let commentId3: string;
+  let commentId4: string;
+  let commentId5: string;
+  let commentId6: string;
+
   beforeAll(async () => {
     pool = new Pool({
       connectionString:
@@ -155,14 +173,14 @@ describe("Deep Relational Query Tests", () => {
     }
 
     // Insert test data for first org (Acme Corp)
-    const orgId1 = generateId();
-    const userId1 = generateId();
-    const userId2 = generateId();
-    const postId1 = generateId();
-    const postId2 = generateId();
-    const commentId1 = generateId();
-    const commentId2 = generateId();
-    const commentId3 = generateId();
+    orgId1 = generateId();
+    userId1 = generateId();
+    userId2 = generateId();
+    postId1 = generateId();
+    postId2 = generateId();
+    commentId1 = generateId();
+    commentId2 = generateId();
+    commentId3 = generateId();
 
     await storage.insert(deepSchema.orgs, {
       id: orgId1,
@@ -221,14 +239,14 @@ describe("Deep Relational Query Tests", () => {
     });
 
     // Insert test data for second org (Tech Inc)
-    const orgId2 = generateId();
-    const userId3 = generateId();
-    const userId4 = generateId();
-    const postId3 = generateId();
-    const postId4 = generateId();
-    const commentId4 = generateId();
-    const commentId5 = generateId();
-    const commentId6 = generateId();
+    orgId2 = generateId();
+    userId3 = generateId();
+    userId4 = generateId();
+    postId3 = generateId();
+    postId4 = generateId();
+    commentId4 = generateId();
+    commentId5 = generateId();
+    commentId6 = generateId();
 
     await storage.insert(deepSchema.orgs, {
       id: orgId2,
@@ -307,52 +325,54 @@ describe("Deep Relational Query Tests", () => {
     }
   });
 
-  test("debug deep relational query with nested includes", async () => {
-    const result = await testServer.handleQuery({
-      req: {
-        type: "QUERY",
-        resource: "orgs",
-        headers: {},
-        cookies: {},
-        queryParams: {},
-        context: {
-          org: "acme",
-        },
-        include: {
-          users: {
-            posts: {
-              comments: true,
+  describe("debug tests", () => {
+    test("debug deep relational query with nested includes", async () => {
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
             },
           },
         },
-      },
-      testNewEngine: true,
-    });
+        testNewEngine: true,
+      });
 
-    // Verify we got the org data
-    expect(result.data).toBeDefined();
-    expect(result.data.length).toBe(1);
+      // Verify we got the org data
+      expect(result.data).toBeDefined();
+      expect(result.data.length).toBe(1);
 
-    // Verify users are included
-    const org = result.data[0];
-    expect(org.value.users).toBeDefined();
-    expect(org.value.users.value).toBeDefined();
-    expect(Array.isArray(org.value.users.value)).toBe(true);
-    expect(org.value.users.value.length).toBe(2); // John and Jane
+      // Verify users are included
+      const org = result.data[0];
+      expect(org.value.users).toBeDefined();
+      expect(org.value.users.value).toBeDefined();
+      expect(Array.isArray(org.value.users.value)).toBe(true);
+      expect(org.value.users.value.length).toBe(2); // John and Jane
 
-    // Verify posts are included for each user
-    for (const user of org.value.users.value) {
-      expect(user.value.posts).toBeDefined();
-      expect(Array.isArray(user.value.posts.value)).toBe(true);
+      // Verify posts are included for each user
+      for (const user of org.value.users.value) {
+        expect(user.value.posts).toBeDefined();
+        expect(Array.isArray(user.value.posts.value)).toBe(true);
 
-      // Verify comments are included for each post
-      for (const post of user.value.posts.value) {
-        expect(post.value.comments).toBeDefined();
-        expect(Array.isArray(post.value.comments.value)).toBe(true);
+        // Verify comments are included for each post
+        for (const post of user.value.posts.value) {
+          expect(post.value.comments).toBeDefined();
+          expect(Array.isArray(post.value.comments.value)).toBe(true);
+        }
       }
-    }
 
-    console.log("Query result:", JSON.stringify(result, null, 2));
+      console.log("Query result:", JSON.stringify(result, null, 2));
+    });
   });
 
   describe("handle insert mutations", () => {
@@ -377,25 +397,36 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns existing posts
+      // Verify initial query returns exactly 4 existing posts (from setup)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
-      expect(result.data.length).toBeGreaterThan(0);
+      expect(result.data.length).toBe(4);
+
+      // Verify all posts have required fields
+      result.data.forEach((post: any) => {
+        expect(post.value.id).toBeDefined();
+        expect(post.value.title).toBeDefined();
+        expect(post.value.content).toBeDefined();
+        expect(post.value.authorId).toBeDefined();
+        expect(post.value.likes).toBeDefined();
+      });
 
       // Get a user ID to use as authorId for the new post
       const existingUsers = await storage.get({
         resource: "users",
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const userId = existingUsers[0].value.id.value;
 
       // Insert a new post that matches the query
       const newPostId = generateId();
+      const newPostTitle = "New Post";
+      const newPostContent = "This is a new post";
       await storage.insert(deepSchema.posts, {
         id: newPostId,
-        title: "New Post",
-        content: "This is a new post",
+        title: newPostTitle,
+        content: newPostContent,
         authorId: userId,
         likes: 0,
       });
@@ -403,12 +434,20 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
-      expect(subscriptionCallbacks[0].mutation).toBeDefined();
-      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
-      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(newPostId);
-      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+
+      // Verify mutation details
+      const mutation = subscriptionCallbacks[0].mutation;
+      expect(mutation).toBeDefined();
+      expect(mutation.resource).toBe("posts");
+      expect(mutation.resourceId).toBe(newPostId);
+      expect(mutation.procedure).toBe("INSERT");
+      expect(mutation.payload).toBeDefined();
+      expect(mutation.payload.title.value).toBe(newPostTitle);
+      expect(mutation.payload.content.value).toBe(newPostContent);
+      expect(mutation.payload.authorId.value).toBe(userId);
+      expect(mutation.payload.likes.value).toBe(0);
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -440,23 +479,27 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns posts with likes > 10
+      // Verify initial query returns exactly 1 post with likes > 10 (postId3 with 15 likes)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.id.value).toBe(postId3);
+      expect(result.data[0].value.likes.value).toBe(15);
 
       // Get a user ID
       const existingUsers = await storage.get({
         resource: "users",
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const userId = existingUsers[0].value.id.value;
 
       // Insert a post that matches (likes = 15)
       const matchingPostId = generateId();
+      const matchingPostTitle = "High Likes Post";
       await storage.insert(deepSchema.posts, {
         id: matchingPostId,
-        title: "High Likes Post",
+        title: matchingPostTitle,
         content: "This post has many likes",
         authorId: userId,
         likes: 15,
@@ -465,9 +508,14 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(15);
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        matchingPostTitle
+      );
 
       // Insert a post that doesn't match (likes = 5)
       const nonMatchingPostId = generateId();
@@ -499,11 +547,13 @@ describe("Deep Relational Query Tests", () => {
       // Get a specific user to filter by
       const existingUsers = await storage.get({
         resource: "users",
+        where: { id: userId1 },
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const targetUserId = existingUsers[0].value.id.value;
       const targetUserName = existingUsers[0].value.name.value;
+      expect(targetUserName).toBe("John Doe");
 
       // Subscribe to posts where author name matches
       const result = await testServer.handleQuery({
@@ -526,15 +576,18 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns posts by the target author
+      // Verify initial query returns exactly 1 post by John Doe (postId1)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.id.value).toBe(postId1);
 
       // Insert a post by the matching author
       const matchingPostId = generateId();
+      const matchingPostTitle = "Post by Target Author";
       await storage.insert(deepSchema.posts, {
         id: matchingPostId,
-        title: "Post by Target Author",
+        title: matchingPostTitle,
         content: "This post is by the target author",
         authorId: targetUserId,
         likes: 0,
@@ -543,9 +596,16 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        matchingPostTitle
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        targetUserId
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -558,14 +618,17 @@ describe("Deep Relational Query Tests", () => {
         mutation: any;
       }> = [];
 
-      // Get a specific org to filter by
+      // Get the acme org
       const existingOrgs = await storage.get({
         resource: "orgs",
+        where: { id: orgId1 },
         limit: 1,
       });
-      expect(existingOrgs.length).toBeGreaterThan(0);
+      expect(existingOrgs.length).toBe(1);
       const targetOrgId = existingOrgs[0].value.id.value;
       const targetOrgName = existingOrgs[0].value.name.value;
+      expect(targetOrgId).toBe(orgId1);
+      expect(targetOrgName).toBe("acme");
 
       // Get a user from that org
       const orgUsers = await storage.get({
@@ -573,8 +636,9 @@ describe("Deep Relational Query Tests", () => {
         where: { orgId: targetOrgId },
         limit: 1,
       });
-      expect(orgUsers.length).toBeGreaterThan(0);
+      expect(orgUsers.length).toBe(1);
       const userId = orgUsers[0].value.id.value;
+      expect([userId1, userId2]).toContain(userId);
 
       // Subscribe to posts where author's org name matches
       const result = await testServer.handleQuery({
@@ -599,15 +663,20 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns posts by authors from the target org
+      // Verify initial query returns exactly 2 posts by authors from acme org (postId1 and postId2)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(2);
+      const returnedPostIds = result.data.map((p: any) => p.value.id.value);
+      expect(returnedPostIds).toContain(postId1);
+      expect(returnedPostIds).toContain(postId2);
 
       // Insert a post by an author from the matching org
       const matchingPostId = generateId();
+      const matchingPostTitle = "Post by Author from Target Org";
       await storage.insert(deepSchema.posts, {
         id: matchingPostId,
-        title: "Post by Author from Target Org",
+        title: matchingPostTitle,
         content: "This post is by an author from the target org",
         authorId: userId,
         likes: 0,
@@ -616,9 +685,16 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        matchingPostTitle
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        userId
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -634,11 +710,13 @@ describe("Deep Relational Query Tests", () => {
       // Get a specific user
       const existingUsers = await storage.get({
         resource: "users",
+        where: { id: userId1 },
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const targetUserId = existingUsers[0].value.id.value;
       const targetUserName = existingUsers[0].value.name.value;
+      expect(targetUserName).toBe("John Doe");
 
       // Subscribe to posts with likes > 5 AND author name matches
       const result = await testServer.handleQuery({
@@ -662,15 +740,19 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns matching posts
+      // Verify initial query returns exactly 1 post (postId1: likes=10, author=John Doe)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.id.value).toBe(postId1);
+      expect(result.data[0].value.likes.value).toBe(10);
 
       // Insert a post that matches both conditions
       const matchingPostId = generateId();
+      const matchingPostTitle = "Matching Post";
       await storage.insert(deepSchema.posts, {
         id: matchingPostId,
-        title: "Matching Post",
+        title: matchingPostTitle,
         content: "This post matches both conditions",
         authorId: targetUserId,
         likes: 10,
@@ -679,34 +761,40 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(10);
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        targetUserId
+      );
 
       // Insert a post that only matches one condition (likes > 5 but wrong author)
       const partialMatchPostId = generateId();
-      // Get a different user
+      // Get a different user (Jane Smith)
       const otherUsers = await storage.get({
         resource: "users",
-        where: { id: { $not: { $eq: targetUserId } } },
+        where: { id: userId2 },
         limit: 1,
       });
-      if (otherUsers.length > 0) {
-        const otherUserId = otherUsers[0].value.id.value;
-        await storage.insert(deepSchema.posts, {
-          id: partialMatchPostId,
-          title: "Partial Match Post",
-          content: "This post only matches likes condition",
-          authorId: otherUserId,
-          likes: 10,
-        });
+      expect(otherUsers.length).toBe(1);
+      const otherUserId = otherUsers[0].value.id.value;
+      expect(otherUserId).toBe(userId2);
 
-        // Wait for async operations to complete
-        await new Promise((resolve) => setTimeout(resolve, 200));
+      await storage.insert(deepSchema.posts, {
+        id: partialMatchPostId,
+        title: "Partial Match Post",
+        content: "This post only matches likes condition",
+        authorId: otherUserId,
+        likes: 10,
+      });
 
-        // Verify the subscription callback was NOT called again
-        expect(subscriptionCallbacks.length).toBe(1);
-      }
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify the subscription callback was NOT called again
+      expect(subscriptionCallbacks.length).toBe(1);
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -722,11 +810,13 @@ describe("Deep Relational Query Tests", () => {
       // Get a specific user
       const existingUsers = await storage.get({
         resource: "users",
+        where: { id: userId1 },
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const targetUserId = existingUsers[0].value.id.value;
       const targetUserName = existingUsers[0].value.name.value;
+      expect(targetUserName).toBe("John Doe");
 
       // Subscribe to posts with $and operator
       const result = await testServer.handleQuery({
@@ -756,15 +846,18 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns matching posts
+      // Verify initial query returns exactly 1 post (postId1: likes=10, author=John Doe)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.id.value).toBe(postId1);
 
       // Insert a post that matches all $and conditions
       const matchingPostId = generateId();
+      const matchingPostTitle = "And Condition Post";
       await storage.insert(deepSchema.posts, {
         id: matchingPostId,
-        title: "And Condition Post",
+        title: matchingPostTitle,
         content: "This post matches all $and conditions",
         authorId: targetUserId,
         likes: 8,
@@ -773,9 +866,14 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(8);
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        targetUserId
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -807,23 +905,28 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns posts with matching titles
+      // Verify initial query returns exactly 2 posts (First Post and Second Post)
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(2);
+      const returnedTitles = result.data.map((p: any) => p.value.title.value);
+      expect(returnedTitles).toContain("First Post");
+      expect(returnedTitles).toContain("Second Post");
 
       // Get a user ID
       const existingUsers = await storage.get({
         resource: "users",
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const userId = existingUsers[0].value.id.value;
 
       // Insert a post with a matching title
       const matchingPostId = generateId();
+      const matchingPostTitle = "New Matching Post";
       await storage.insert(deepSchema.posts, {
         id: matchingPostId,
-        title: "New Matching Post",
+        title: matchingPostTitle,
         content: "This post has a matching title",
         authorId: userId,
         likes: 0,
@@ -832,9 +935,13 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called
+      // Verify exactly one subscription callback was called
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(matchingPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        matchingPostTitle
+      );
 
       // Insert a post with a non-matching title
       const nonMatchingPostId = generateId();
@@ -868,10 +975,14 @@ describe("Deep Relational Query Tests", () => {
       // Get an existing post
       const existingPosts = await storage.get({
         resource: "posts",
+        where: { id: postId1 },
         limit: 1,
       });
-      expect(existingPosts.length).toBeGreaterThan(0);
+      expect(existingPosts.length).toBe(1);
       const postId = existingPosts[0].value.id.value;
+      expect(postId).toBe(postId1);
+      const initialTitle = existingPosts[0].value.title.value;
+      expect(initialTitle).toBe("First Post");
 
       // Subscribe to all posts
       const result = await testServer.handleQuery({
@@ -889,29 +1000,35 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
-      // Verify initial query returns existing posts
+      // Verify initial query returns exactly 4 existing posts
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
-      expect(result.data.length).toBeGreaterThan(0);
+      expect(result.data.length).toBe(4);
 
       // Wait for initial subscription to settle
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Update the post
+      const updatedTitle = "Updated Title";
+      const updatedLikes = 20;
       await storage.update(deepSchema.posts, postId, {
-        title: "Updated Title",
-        likes: 20,
+        title: updatedTitle,
+        likes: updatedLikes,
       });
 
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called with UPDATE mutation
+      // Verify exactly one subscription callback was called with UPDATE mutation
       expect(subscriptionCallbacks.length).toBe(1);
-      expect(subscriptionCallbacks[0].mutation).toBeDefined();
-      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
-      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
-      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+      const mutation = subscriptionCallbacks[0].mutation;
+      expect(mutation).toBeDefined();
+      expect(mutation.resource).toBe("posts");
+      expect(mutation.resourceId).toBe(postId);
+      expect(mutation.procedure).toBe("UPDATE");
+      expect(mutation.payload).toBeDefined();
+      expect(mutation.payload.title.value).toBe(updatedTitle);
+      expect(mutation.payload.likes.value).toBe(updatedLikes);
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -924,14 +1041,16 @@ describe("Deep Relational Query Tests", () => {
         mutation: any;
       }> = [];
 
-      // Get a post with likes > 10
+      // Get a post with likes > 10 (postId3 with 15 likes)
       const existingPosts = await storage.get({
         resource: "posts",
-        where: { likes: { $gt: 10 } },
+        where: { id: postId3 },
         limit: 1,
       });
-      expect(existingPosts.length).toBeGreaterThan(0);
+      expect(existingPosts.length).toBe(1);
       const postId = existingPosts[0].value.id.value;
+      expect(postId).toBe(postId3);
+      expect(existingPosts[0].value.likes.value).toBe(15);
 
       // Subscribe to posts with likes > 10
       const result = await testServer.handleQuery({
@@ -952,22 +1071,34 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
+      // Verify initial query returns exactly 1 post (postId3)
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.id.value).toBe(postId3);
+
       // Wait for initial subscription to settle
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Update the post but keep likes > 10 (still matches)
+      const updatedTitle = "Still Matching Post";
+      const updatedLikes = 15;
       await storage.update(deepSchema.posts, postId, {
-        title: "Still Matching Post",
-        likes: 15,
+        title: updatedTitle,
+        likes: updatedLikes,
       });
 
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called with UPDATE
+      // Verify exactly one subscription callback was called with UPDATE
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        updatedTitle
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(
+        updatedLikes
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -980,15 +1111,17 @@ describe("Deep Relational Query Tests", () => {
         mutation: any;
       }> = [];
 
-      // Get a post with likes <= 10
+      // Get a post with likes <= 10 (postId2 with 5 likes)
       const existingPosts = await storage.get({
         resource: "posts",
-        where: { likes: { $lte: 10 } },
+        where: { id: postId2 },
         limit: 1,
       });
-      expect(existingPosts.length).toBeGreaterThan(0);
+      expect(existingPosts.length).toBe(1);
       const postId = existingPosts[0].value.id.value;
+      expect(postId).toBe(postId2);
       const initialLikes = existingPosts[0].value.likes.value;
+      expect(initialLikes).toBe(5);
 
       // Subscribe to posts with likes > 10
       const result = await testServer.handleQuery({
@@ -1013,23 +1146,29 @@ describe("Deep Relational Query Tests", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Verify the post is not in the initial results
-      const initialResults = result.data.filter((p: any) => p.id === postId);
+      const initialResults = result.data.filter(
+        (p: any) => p.value.id.value === postId
+      );
       expect(initialResults.length).toBe(0);
 
       // Update the post to have likes > 10 (now matches)
+      const updatedLikes = 15;
       await storage.update(deepSchema.posts, postId, {
-        likes: 15,
+        likes: updatedLikes,
       });
 
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called with INSERT (newly matched)
+      // Verify exactly one subscription callback was called with INSERT (newly matched)
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
       expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
-      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(15);
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(
+        updatedLikes
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.id.value).toBe(postId);
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -1042,14 +1181,16 @@ describe("Deep Relational Query Tests", () => {
         mutation: any;
       }> = [];
 
-      // Get a post with likes > 10
+      // Get a post with likes > 10 (postId3 with 15 likes)
       const existingPosts = await storage.get({
         resource: "posts",
-        where: { likes: { $gt: 10 } },
+        where: { id: postId3 },
         limit: 1,
       });
-      expect(existingPosts.length).toBeGreaterThan(0);
+      expect(existingPosts.length).toBe(1);
       const postId = existingPosts[0].value.id.value;
+      expect(postId).toBe(postId3);
+      expect(existingPosts[0].value.likes.value).toBe(15);
 
       // Subscribe to posts with likes > 10
       const result = await testServer.handleQuery({
@@ -1080,17 +1221,22 @@ describe("Deep Relational Query Tests", () => {
       expect(initialResults.length).toBe(1);
 
       // Update the post to have likes <= 10 (no longer matches)
+      const updatedLikes = 5;
       await storage.update(deepSchema.posts, postId, {
-        likes: 5,
+        likes: updatedLikes,
       });
 
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called with UPDATE
+      // Verify exactly one subscription callback was called with UPDATE
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(
+        updatedLikes
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -1103,14 +1249,16 @@ describe("Deep Relational Query Tests", () => {
         mutation: any;
       }> = [];
 
-      // Get a post with likes > 10
+      // Get a post with likes > 10 (postId3 with 15 likes)
       const existingPosts = await storage.get({
         resource: "posts",
-        where: { likes: { $gt: 10 } },
+        where: { id: postId3 },
         limit: 1,
       });
-      expect(existingPosts.length).toBeGreaterThan(0);
+      expect(existingPosts.length).toBe(1);
       const postId = existingPosts[0].value.id.value;
+      expect(postId).toBe(postId3);
+      expect(existingPosts[0].value.likes.value).toBe(15);
 
       // Subscribe to posts with likes > 10
       const result = await testServer.handleQuery({
@@ -1134,9 +1282,16 @@ describe("Deep Relational Query Tests", () => {
       // Wait for initial subscription to settle
       await new Promise((resolve) => setTimeout(resolve, 100));
 
+      // Verify post is initially in results
+      const initialResults = result.data.filter(
+        (p: any) => p.value.id.value === postId
+      );
+      expect(initialResults.length).toBe(1);
+
       // Update 1: Change to not match (should receive UPDATE)
+      const nonMatchingLikes = 5;
       await storage.update(deepSchema.posts, postId, {
-        likes: 5,
+        likes: nonMatchingLikes,
       });
 
       // Wait for async operations to complete
@@ -1145,10 +1300,15 @@ describe("Deep Relational Query Tests", () => {
       // Verify first update
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(
+        nonMatchingLikes
+      );
 
       // Update 2: Change back to match (should receive INSERT with full data)
+      const matchingLikes = 15;
       await storage.update(deepSchema.posts, postId, {
-        likes: 15,
+        likes: matchingLikes,
       });
 
       // Wait for async operations to complete
@@ -1159,7 +1319,10 @@ describe("Deep Relational Query Tests", () => {
       expect(subscriptionCallbacks[1].mutation.procedure).toBe("INSERT");
       expect(subscriptionCallbacks[1].mutation.resourceId).toBe(postId);
       expect(subscriptionCallbacks[1].mutation.payload).toBeDefined();
-      expect(subscriptionCallbacks[1].mutation.payload.likes.value).toBe(15);
+      expect(subscriptionCallbacks[1].mutation.payload.likes.value).toBe(
+        matchingLikes
+      );
+      expect(subscriptionCallbacks[1].mutation.payload.id.value).toBe(postId);
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -1172,23 +1335,28 @@ describe("Deep Relational Query Tests", () => {
         mutation: any;
       }> = [];
 
-      // Get a specific user
+      // Get a specific user (John Doe)
       const existingUsers = await storage.get({
         resource: "users",
+        where: { id: userId1 },
         limit: 1,
       });
-      expect(existingUsers.length).toBeGreaterThan(0);
+      expect(existingUsers.length).toBe(1);
       const targetUserId = existingUsers[0].value.id.value;
       const targetUserName = existingUsers[0].value.name.value;
+      expect(targetUserId).toBe(userId1);
+      expect(targetUserName).toBe("John Doe");
 
-      // Get a post by this user
+      // Get a post by this user (postId1)
       const userPosts = await storage.get({
         resource: "posts",
-        where: { authorId: targetUserId },
+        where: { id: postId1 },
         limit: 1,
       });
-      expect(userPosts.length).toBeGreaterThan(0);
+      expect(userPosts.length).toBe(1);
       const postId = userPosts[0].value.id.value;
+      expect(postId).toBe(postId1);
+      expect(userPosts[0].value.authorId.value).toBe(userId1);
 
       // Subscribe to posts where author name matches
       const result = await testServer.handleQuery({
@@ -1211,22 +1379,34 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
+      // Verify initial query returns exactly 1 post (postId1)
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.id.value).toBe(postId1);
+
       // Wait for initial subscription to settle
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Update the post (author name unchanged, still matches)
+      const updatedTitle = "Updated Post Title";
+      const updatedLikes = 25;
       await storage.update(deepSchema.posts, postId, {
-        title: "Updated Post Title",
-        likes: 25,
+        title: updatedTitle,
+        likes: updatedLikes,
       });
 
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called with UPDATE
+      // Verify exactly one subscription callback was called with UPDATE
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        updatedTitle
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.likes.value).toBe(
+        updatedLikes
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -1242,21 +1422,25 @@ describe("Deep Relational Query Tests", () => {
       // Get two different users
       const allUsers = await storage.get({
         resource: "users",
+        where: { id: { $in: [userId1, userId2] } },
         limit: 2,
       });
-      expect(allUsers.length).toBeGreaterThanOrEqual(2);
-      const targetUserId = allUsers[0].value.id.value;
-      const targetUserName = allUsers[0].value.name.value;
-      const otherUserId = allUsers[1].value.id.value;
+      expect(allUsers.length).toBe(2);
+      const targetUserId = userId1;
+      const targetUserName = "John Doe";
+      const otherUserId = userId2;
+      expect(otherUserId).not.toBe(targetUserId);
 
-      // Get a post by the other user (not matching)
+      // Get a post by the other user (Jane Smith - postId2)
       const otherUserPosts = await storage.get({
         resource: "posts",
-        where: { authorId: otherUserId },
+        where: { id: postId2 },
         limit: 1,
       });
-      expect(otherUserPosts.length).toBeGreaterThan(0);
+      expect(otherUserPosts.length).toBe(1);
       const postId = otherUserPosts[0].value.id.value;
+      expect(postId).toBe(postId2);
+      expect(otherUserPosts[0].value.authorId.value).toBe(userId2);
 
       // Subscribe to posts where author name matches target user
       const result = await testServer.handleQuery({
@@ -1283,7 +1467,9 @@ describe("Deep Relational Query Tests", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Verify the post is not in the initial results
-      const initialResults = result.data.filter((p: any) => p.id === postId);
+      const initialResults = result.data.filter(
+        (p: any) => p.value.id.value === postId
+      );
       expect(initialResults.length).toBe(0);
 
       // Update the post to change author to target user (now matches)
@@ -1294,11 +1480,15 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // Verify the subscription callback was called with INSERT (newly matched)
+      // Verify exactly one subscription callback was called with INSERT (newly matched)
       expect(subscriptionCallbacks.length).toBe(1);
       expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
       expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId);
       expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        targetUserId
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.id.value).toBe(postId);
 
       // Clean up subscription
       if (result.unsubscribe) {
@@ -1310,14 +1500,17 @@ describe("Deep Relational Query Tests", () => {
       const query1Callbacks: Array<{ mutation: any }> = [];
       const query2Callbacks: Array<{ mutation: any }> = [];
 
-      // Get a post with likes > 10
+      // Get a post with likes > 10 (postId3 with 15 likes)
       const existingPosts = await storage.get({
         resource: "posts",
-        where: { likes: { $gt: 10 } },
+        where: { id: postId3 },
         limit: 1,
       });
-      expect(existingPosts.length).toBeGreaterThan(0);
+      expect(existingPosts.length).toBe(1);
       const postId = existingPosts[0].value.id.value;
+      expect(postId).toBe(postId3);
+      const initialLikes = existingPosts[0].value.likes.value;
+      expect(initialLikes).toBe(15);
 
       // Subscribe to posts with likes > 10
       const result1 = await testServer.handleQuery({
@@ -1338,6 +1531,10 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
+      // Verify initial query1 returns exactly 1 post (postId3)
+      expect(result1.data.length).toBe(1);
+      expect(result1.data[0].value.id.value).toBe(postId3);
+
       // Subscribe to posts with likes > 20
       const result2 = await testServer.handleQuery({
         req: {
@@ -1357,10 +1554,13 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
+      // Verify initial query2 returns 0 posts (no posts with likes > 20)
+      expect(result2.data.length).toBe(0);
+
       // Wait for initial subscriptions to settle
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Update post to likes = 15 (matches query1, still matches query2 if it was matching)
+      // Update post to likes = 15 (matches query1, doesn't match query2)
       await storage.update(deepSchema.posts, postId, {
         likes: 15,
       });
@@ -1371,9 +1571,11 @@ describe("Deep Relational Query Tests", () => {
       // Query1 should receive UPDATE (continues to match)
       expect(query1Callbacks.length).toBe(1);
       expect(query1Callbacks[0].mutation.procedure).toBe("UPDATE");
+      expect(query1Callbacks[0].mutation.resourceId).toBe(postId);
+      expect(query1Callbacks[0].mutation.payload.likes.value).toBe(15);
 
-      // Query2 should receive UPDATE if it was matching, or nothing if it wasn't
-      // (depends on initial likes value)
+      // Query2 should receive nothing (still doesn't match)
+      expect(query2Callbacks.length).toBe(0);
 
       // Now update to likes = 25 (matches both)
       await storage.update(deepSchema.posts, postId, {
@@ -1386,14 +1588,14 @@ describe("Deep Relational Query Tests", () => {
       // Query1 should receive another UPDATE (continues to match)
       expect(query1Callbacks.length).toBe(2);
       expect(query1Callbacks[1].mutation.procedure).toBe("UPDATE");
+      expect(query1Callbacks[1].mutation.resourceId).toBe(postId);
+      expect(query1Callbacks[1].mutation.payload.likes.value).toBe(25);
 
-      // Query2 should receive INSERT if it wasn't matching before, or UPDATE if it was
-      expect(query2Callbacks.length).toBeGreaterThan(0);
-      const lastQuery2Mutation = query2Callbacks[query2Callbacks.length - 1];
-      expect(
-        lastQuery2Mutation.mutation.procedure === "INSERT" ||
-          lastQuery2Mutation.mutation.procedure === "UPDATE"
-      ).toBe(true);
+      // Query2 should receive INSERT (now matches)
+      expect(query2Callbacks.length).toBe(1);
+      expect(query2Callbacks[0].mutation.procedure).toBe("INSERT");
+      expect(query2Callbacks[0].mutation.resourceId).toBe(postId);
+      expect(query2Callbacks[0].mutation.payload.likes.value).toBe(25);
 
       // Clean up subscriptions
       if (result1.unsubscribe) {
@@ -1412,38 +1614,51 @@ describe("Deep Relational Query Tests", () => {
       // Get the acme org
       const acmeOrg = await storage.get({
         resource: "orgs",
-        where: { name: "acme" },
+        where: { id: orgId1 },
         limit: 1,
       });
+      expect(acmeOrg.length).toBe(1);
       const acmeOrgId = acmeOrg[0].value.id.value;
+      expect(acmeOrgId).toBe(orgId1);
 
       // Get a user from acme org
       const acmeUsers = await storage.get({
         resource: "users",
-        where: { orgId: acmeOrgId },
+        where: { id: userId1 },
         limit: 1,
       });
+      expect(acmeUsers.length).toBe(1);
       const acmeUserId = acmeUsers[0].value.id.value;
+      expect(acmeUserId).toBe(userId1);
 
-      // Get a post from tech org (not acme)
+      // Get a post from tech org (not acme) - postId3 or postId4
       const techOrg = await storage.get({
         resource: "orgs",
-        where: { name: "tech" },
+        where: { id: orgId2 },
         limit: 1,
       });
+      expect(techOrg.length).toBe(1);
       const techOrgId = techOrg[0].value.id.value;
+      expect(techOrgId).toBe(orgId2);
+
       const techUsers = await storage.get({
         resource: "users",
-        where: { orgId: techOrgId },
+        where: { id: userId3 },
         limit: 1,
       });
+      expect(techUsers.length).toBe(1);
       const techUserId = techUsers[0].value.id.value;
+      expect(techUserId).toBe(userId3);
+
       const techUserPosts = await storage.get({
         resource: "posts",
-        where: { authorId: techUserId },
+        where: { id: postId3 },
         limit: 1,
       });
+      expect(techUserPosts.length).toBe(1);
       const postId = techUserPosts[0].value.id.value;
+      expect(postId).toBe(postId3);
+      expect(techUserPosts[0].value.authorId.value).toBe(userId3);
 
       // Subscribe to orgs with nested includes: users > posts > comments
       const result = await testServer.handleQuery({
@@ -1472,18 +1687,34 @@ describe("Deep Relational Query Tests", () => {
         },
       });
 
+      // Verify initial query returns exactly 1 org (acme)
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].value.name.value).toBe("acme");
+      expect(result.data[0].value.users.value.length).toBe(2); // John and Jane
+
       // Wait for initial subscription to settle
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Insert a new post matching the query (author from acme org)
       const newPostId = generateId();
+      const newPostTitle = "New Post from Acme";
       await storage.insert(deepSchema.posts, {
         id: newPostId,
-        title: "New Post from Acme",
+        title: newPostTitle,
         content: "This post matches the query",
         authorId: acmeUserId,
         likes: 0,
       });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify subscription was called for the new post
+      const newPostMutations = subscriptionCallbacks.filter(
+        (cb) => cb.mutation.resourceId === newPostId
+      );
+      expect(newPostMutations.length).toBeGreaterThan(0);
+      expect(newPostMutations[0].mutation.procedure).toBe("INSERT");
 
       // Insert a new post that doesn't match the query (author from tech org)
       const nonMatchingPostId = generateId();
@@ -1498,6 +1729,12 @@ describe("Deep Relational Query Tests", () => {
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
 
+      // Verify no mutation for non-matching post (it shouldn't trigger for org query)
+      const nonMatchingMutations = subscriptionCallbacks.filter(
+        (cb) => cb.mutation.resourceId === nonMatchingPostId
+      );
+      expect(nonMatchingMutations.length).toBe(0);
+
       // Move the post to acme org by updating its authorId to a user from acme org
       await storage.update(deepSchema.posts, postId, {
         authorId: acmeUserId,
@@ -1505,6 +1742,18 @@ describe("Deep Relational Query Tests", () => {
 
       // Wait for async operations to complete
       await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the moved post
+      const movedPostMutations = subscriptionCallbacks.filter(
+        (cb) => cb.mutation.resourceId === postId
+      );
+      expect(movedPostMutations.length).toBeGreaterThan(0);
+      const lastMovedMutation =
+        movedPostMutations[movedPostMutations.length - 1];
+      expect(lastMovedMutation.mutation.procedure).toBe("INSERT");
+      expect(lastMovedMutation.mutation.payload.authorId.value).toBe(
+        acmeUserId
+      );
 
       // Clean up subscription
       if (result.unsubscribe) {
