@@ -17,6 +17,11 @@ export const clSubscribeMsgSchema = querySchema.extend({
   type: z.literal("SUBSCRIBE"),
 });
 
+export const clUnsubscribeMsgSchema = querySchema.extend({
+  id: msgId,
+  type: z.literal("UNSUBSCRIBE"),
+});
+
 export const clQueryMsgSchema = querySchema.extend({
   id: msgId,
   type: z.literal("QUERY"),
@@ -48,6 +53,7 @@ export const clientMessageSchema = z.union([
   clSubscribeMsgSchema,
   clQueryMsgSchema,
   mutationMsgSchema,
+  clUnsubscribeMsgSchema,
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

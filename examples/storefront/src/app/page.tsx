@@ -1,13 +1,15 @@
 "use client";
 
 import { Switch } from "@/components/ui/switch";
-import { SubscriptionProvider } from "@live-state/sync/client";
+import { useLoadData } from "@live-state/sync/client";
 import { useSyncExternalStore } from "react";
 import { Board } from "./board";
 import { DndProvider } from "./dnd-context";
-import { client } from "./live-client";
+import { client, store } from "./live-client";
 
 export default function Store(): JSX.Element {
+  useLoadData(client, store.query.groups.include({ cards: true }));
+
   const isConnected = useSyncExternalStore(
     (cb) => {
       client.ws.addEventListener("connectionChange", cb);
@@ -19,7 +21,6 @@ export default function Store(): JSX.Element {
   );
 
   return (
-    <SubscriptionProvider client={client}>
       <DndProvider>
         <header className="w-full h-16 flex items-center justify-end gap-2 p-2 border-b">
           <div className="flex items-center gap-2">
@@ -34,6 +35,5 @@ export default function Store(): JSX.Element {
         </header>
         <Board />
       </DndProvider>
-    </SubscriptionProvider>
   );
 }

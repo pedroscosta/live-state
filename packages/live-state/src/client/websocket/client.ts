@@ -54,6 +54,8 @@ class InnerClient implements QueryExecutor {
 
   private remoteSubCounters: Record<string, number> = {};
 
+  private remoteSubscriptions: Set<RawQueryRequest> = new Set();
+
   private eventListeners: Set<(event: ClientEvents) => void> = new Set();
 
   private replyHandlers: Record<
@@ -118,6 +120,14 @@ class InnerClient implements QueryExecutor {
               resource: routeName,
             });
           }
+        });
+
+        Array.from(this.remoteSubscriptions).forEach((query) => {
+          this.sendWsMessage({
+            id: generateId(),
+            type: "SUBSCRIBE",
+            ...query,
+          });
         });
 
         Object.values(this.store.optimisticMutationStack).forEach(
@@ -197,6 +207,27 @@ class InnerClient implements QueryExecutor {
 
       if (this.remoteSubCounters[routeName] === 0) {
         // TODO add unsubscribe message
+      }
+    };
+  }
+
+  public load(query: RawQueryRequest) {
+    this.sendWsMessage({
+      id: generateId(),
+      type: "SUBSCRIBE",
+      ...query,
+    });
+
+    this.remoteSubscriptions.add(query);
+
+    return () => {
+      if (this.remoteSubscriptions.has(query)) {
+        this.remoteSubscriptions.delete(query);
+        this.sendWsMessage({
+          id: generateId(),
+          type: "UNSUBSCRIBE",
+          ...query,
+        });
       }
     };
   }
@@ -285,6 +316,7 @@ export type Client<TRouter extends AnyRouter> = {
     ws: WebSocketClient;
     subscribe: (resourceType?: string[]) => () => void;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
+    load: (query: RawQueryRequest) => () => void;
   };
   store: ClientType<TRouter>;
 };
@@ -314,6 +346,9 @@ export const createClient = <TRouter extends AnyRouter>(
             remove();
           });
         };
+      },
+      load: (query: RawQueryRequest) => {
+        return ogClient.load(query);
       },
       addEventListener: (listener) => {
         return ogClient.addEventListener(listener);

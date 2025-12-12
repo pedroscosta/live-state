@@ -69,6 +69,8 @@ export const extractIncludeFromWhere = (
   return include as IncludeClause<any>;
 };
 
+// TODO create a version of applyWhere that works on raw materialized objects
+
 export const applyWhere = <T extends object>(
   obj: T,
   where: WhereClause<LiveObjectAny>,

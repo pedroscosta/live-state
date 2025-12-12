@@ -884,6 +884,18 @@ describe("SQLStorage", () => {
     };
     mockDb.insertInto.mockReturnValue(mockInsertInto);
 
+    // Mock rawFindById to return the complete entity after update
+    const completeEntity: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "John",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+    vi.spyOn(storage, "rawFindById").mockResolvedValue(completeEntity);
+
     const result = await storage.rawUpdate("users", "test-id", mockValue);
 
     expect(mockDb.updateTable).toHaveBeenCalledWith("users");
@@ -1511,6 +1523,17 @@ describe("SQLStorage", () => {
     };
     mockDb.insertInto.mockReturnValue(mockInsertInto);
 
+    // Mock rawFindById to return the complete entity after update
+    const completeEntity: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "John",
+        },
+      },
+    };
+    vi.spyOn(storage, "rawFindById").mockResolvedValue(completeEntity);
+
     const result = await storage.rawUpdate("users", "test-id", mockValue);
 
     expect(mockDb.updateTable).toHaveBeenCalledWith("users");
@@ -1921,6 +1944,18 @@ describe("SQLStorage", () => {
     };
     mockDb.insertInto.mockReturnValue(mockInsertInto);
 
+    // Mock rawFindById to return the complete entity after update
+    const completeEntity: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "Jane",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+    vi.spyOn(storage, "rawFindById").mockResolvedValue(completeEntity);
+
     await storage.rawUpdate("users", "test-id", mockValue);
 
     // Verify mutation was notified with entityData
@@ -2098,6 +2133,18 @@ describe("SQLStorage", () => {
       execute: vi.fn().mockResolvedValue(undefined),
     };
     mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+    // Mock rawFindById to return the complete entity after update
+    const completeEntity: MaterializedLiveType<any> = {
+      value: {
+        id: { value: "test-id" },
+        name: {
+          value: "Jane",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+    };
+    vi.spyOn(storage, "rawFindById").mockResolvedValue(completeEntity);
 
     await storage.rawUpdate("users", "test-id", mockValue, providedMutationId);
 

@@ -385,8 +385,12 @@ export class SQLStorage extends Storage {
       mutationId
     );
 
+    // TODO investigate using returning queries
     if (mutation) {
-      this.trackMutation(mutation, value);
+      const completeEntity = await this.rawFindById(resourceName, resourceId);
+      if (completeEntity) {
+        this.trackMutation(mutation, completeEntity);
+      }
     }
 
     return value;

@@ -1,9 +1,11 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: any's are actually used correctly */
+import { QueryEngine } from "../core/query-engine";
+import type { QueryStep as CoreQueryStep } from "../core/query-engine/types";
 import type {
   DefaultMutation,
   RawQueryRequest,
 } from "../core/schemas/core-protocol";
-import type { Awaitable } from "../core/utils";
+import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
 import type { LiveObjectAny, Schema, WhereClause } from "../schema";
 import { inferValue } from "../schema";
@@ -14,7 +16,7 @@ import {
   type Logger,
   LogLevel,
 } from "../utils";
-import type { AnyRouter, MutationResult, QueryResult, Route } from "./router";
+import type { AnyRouter, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import { Batcher } from "./storage/batcher";
 
@@ -58,7 +60,7 @@ interface CollectionSubscription {
   authorizationWhere?: WhereClause<any>;
 }
 
-export type NextFunction<O, R = Request> = (req: R) => Awaitable<O>;
+export type NextFunction<O, R = Request> = (req: R) => PromiseOrSync<O>;
 
 export type Middleware<T = any> = (opts: {
   req: Request;
@@ -74,8 +76,9 @@ export class Server<TRouter extends AnyRouter> {
 
   contextProvider?: ContextProvider;
 
-  /** @deprecated */
-  private mutationSubscriptions: Set<MutationHandler> = new Set();
+  /** @internal */
+  readonly queryEngine: QueryEngine;
+
   private collectionSubscriptions: Map<
     string,
     Map<string, CollectionSubscription>
@@ -101,6 +104,84 @@ export class Server<TRouter extends AnyRouter> {
 
     this.storage.init(this.schema, this.logger, this);
     this.contextProvider = opts.contextProvider;
+
+    this.queryEngine = new QueryEngine({
+      router: {
+        get: async (
+          query: RawQueryRequest,
+          extra?: { context?: any; batcher?: Batcher }
+        ) => {
+          const {
+            headers,
+            cookies,
+            queryParams,
+            context: ctx,
+          } = extra?.context ?? {};
+
+          if (!extra?.batcher) {
+            throw new Error("Batcher is required");
+          }
+
+          const req: QueryRequest = {
+            ...query,
+            type: "QUERY",
+            headers,
+            cookies,
+            queryParams,
+            context: ctx,
+          };
+
+          const result = await (
+            this.router.routes[query.resource] as
+              | Route<any, any, any>
+              | undefined
+          )?.handleQuery({
+            req,
+            batcher: extra.batcher,
+          });
+
+          return result?.data ?? [];
+        },
+        incrementQueryStep: (step: CoreQueryStep, context: any = {}) => {
+          const authorizationClause = (
+            this.router.routes[step.query.resource] as
+              | Route<any, any, any>
+              | undefined
+          )?.getAuthorizationClause({
+            ...step.query,
+            type: "QUERY",
+            headers: context.headers,
+            cookies: context.cookies,
+            queryParams: context.queryParams,
+            context: context.context,
+          });
+
+          if (
+            typeof authorizationClause === "boolean" &&
+            !authorizationClause
+          ) {
+            throw new Error("Not authorized");
+          }
+
+          const mergedWhere = mergeWhereClauses(
+            step.query.where,
+            typeof authorizationClause === "object"
+              ? authorizationClause
+              : undefined
+          );
+
+          return {
+            ...step,
+            query: {
+              ...step.query,
+              where: mergedWhere,
+            },
+          } satisfies CoreQueryStep;
+        },
+      },
+      storage: this.storage,
+      schema: this.schema,
+    });
   }
 
   public static create<TRouter extends AnyRouter>(opts: {
@@ -114,7 +195,45 @@ export class Server<TRouter extends AnyRouter> {
     return new Server<TRouter>(opts);
   }
 
-  public handleQuery(opts: { req: QueryRequest }): Promise<QueryResult<any>> {
+  public handleQuery(opts: {
+    req: QueryRequest;
+    subscription?: (mutation: DefaultMutation) => void;
+    testNewEngine?: boolean;
+  }): Promise<QueryResult<any>> {
+    if (opts.testNewEngine) {
+      const { headers, cookies, queryParams, context, ...rawQuery } = opts.req;
+
+      const ctx = {
+        headers,
+        cookies,
+        queryParams,
+        context,
+      };
+
+      const unsubscribe = opts.subscription
+        ? this.queryEngine.subscribe(
+            rawQuery,
+            (mutation) => {
+              opts.subscription?.(mutation);
+            },
+            ctx
+          )
+        : undefined;
+
+      return new Promise((resolve) => {
+        this.queryEngine
+          .get(rawQuery, {
+            context: ctx,
+          })
+          .then((data) => {
+            resolve({
+              data,
+              unsubscribe,
+            });
+          });
+      });
+    }
+
     const batcher = new Batcher(this.storage);
 
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
@@ -123,6 +242,9 @@ export class Server<TRouter extends AnyRouter> {
         collectionName: req.resource,
         included: Object.keys(req.include ?? {}),
       });
+
+      const unsubscribeFunctions: (() => void)[] = [];
+
       const sharedContext = {
         headers: req.headers,
         cookies: req.cookies,
@@ -131,6 +253,7 @@ export class Server<TRouter extends AnyRouter> {
       };
 
       const stepResults: Record<string, QueryStepResult[]> = {};
+      const stepQueryHashes: Record<string, string | undefined> = {};
 
       for (let i = 0; i < queryPlan.length; i++) {
         const step = queryPlan[i];
@@ -143,6 +266,7 @@ export class Server<TRouter extends AnyRouter> {
         }
 
         let wheres: (WhereClause<any> | undefined)[];
+
         if (step.getWhere && step.referenceGetter) {
           const referenceIds = step.referenceGetter(stepResults);
           wheres = [];
@@ -169,20 +293,28 @@ export class Server<TRouter extends AnyRouter> {
           }
         }
 
+        // Extract relation name from stepId if it's a child query
+        // stepId format is "${parentStepId}.${relationName}" for child queries
+        const parentRelationName = step.prevStepId
+          ? step.stepId.split(".").pop()
+          : undefined;
+
         const promises = [];
         for (let j = 0; j < wheres.length; j++) {
           const where = wheres[j];
           const includedBy = prevStepKeys[j];
           promises.push(
             (async () => {
+              const query: QueryRequest = {
+                type: "QUERY",
+                ...step,
+                ...sharedContext,
+                where: step.where,
+                relationalWhere: where,
+              };
+
               const result = await route.handleQuery({
-                req: {
-                  type: "QUERY",
-                  ...step,
-                  ...sharedContext,
-                  where: step.where,
-                  relationalWhere: where,
-                },
+                req: query,
                 batcher,
               });
 
@@ -332,33 +464,6 @@ export class Server<TRouter extends AnyRouter> {
       }
     )(opts.req);
 
-    if (
-      result &&
-      opts.req.type === "MUTATE" &&
-      result.acceptedValues &&
-      (opts.req.procedure === "INSERT" || opts.req.procedure === "UPDATE") &&
-      opts.req.resourceId
-    ) {
-      const mutationResult = result as MutationResult<any>;
-      const acceptedValues = mutationResult.acceptedValues ?? {};
-      const req = opts.req as MutationRequest;
-      const resourceId = req.resourceId;
-
-      if (Object.keys(acceptedValues).length && resourceId) {
-        // TODO refactor this to be called by the storage instead of the server
-        this.mutationSubscriptions.forEach((handler) => {
-          handler({
-            id: opts.req.context.messageId,
-            type: "MUTATE",
-            resource: req.resource,
-            payload: acceptedValues,
-            resourceId,
-            procedure: req.procedure as "INSERT" | "UPDATE",
-          });
-        });
-      }
-    }
-
     return result;
   }
 
@@ -372,7 +477,7 @@ export class Server<TRouter extends AnyRouter> {
     return this;
   }
 
-  /** @internal */
+  /** @internal @deprecated */
   public subscribeToMutations(
     query: RawQueryRequest,
     handler: MutationHandler,
@@ -420,6 +525,8 @@ export class Server<TRouter extends AnyRouter> {
 
   /** @internal */
   public notifySubscribers(mutation: DefaultMutation, entityData: any) {
+    this.queryEngine.handleMutation(mutation, entityData);
+    // TODO remove this once the query engine is used for subscriptions
     const resource = mutation.resource;
     const resourceSubscriptions = this.collectionSubscriptions.get(resource);
     if (!resourceSubscriptions) return;

@@ -1,4 +1,4 @@
-import type { Awaitable, Generatable } from "../core/utils";
+import type { Generatable, PromiseOrSync } from "../core/utils";
 import type { Schema } from "../schema";
 import type { LogLevel } from "../utils";
 
@@ -8,7 +8,7 @@ export * from "./websocket/client";
 export type ClientOptions = {
   url: string;
   schema: Schema<any>;
-  credentials?: Generatable<Awaitable<Record<string, string>>>;
+  credentials?: Generatable<PromiseOrSync<Record<string, string>>>;
   storage:
     | {
         name: string;
