@@ -912,6 +912,82 @@ export class QueryEngine {
     }
   }
 
+  /**
+   * Builds an include object from a query node's child queries recursively.
+   * This allows fetching related data when an object moves into scope.
+   */
+  private buildIncludeFromChildQueries(queryHash: string): Record<string, any> {
+    const queryNode = this.queryNodes.get(queryHash);
+    if (!queryNode || queryNode.childQueries.size === 0) return {};
+
+    const include: Record<string, any> = {};
+
+    for (const childHash of Array.from(queryNode.childQueries)) {
+      const childNode = this.queryNodes.get(childHash);
+      if (!childNode || !childNode.relationName) continue;
+
+      const nestedInclude = this.buildIncludeFromChildQueries(childHash);
+
+      include[childNode.relationName] =
+        Object.keys(nestedInclude).length > 0 ? nestedInclude : true;
+    }
+
+    return include;
+  }
+
+  /**
+   * Recursively sends INSERT mutations for an object and all its included relations.
+   * This is used when an object moves into scope to notify subscribers of the entire tree.
+   */
+  private sendInsertsForTree(
+    queryNode: QueryNode,
+    data: any,
+    resourceName: string
+  ): void {
+    const id = data?.value?.id?.value as string | undefined;
+    if (!id) return;
+
+    // Send INSERT for this object
+    const insertMutation: DefaultMutation = {
+      procedure: "INSERT",
+      resource: resourceName,
+      resourceId: id,
+      type: "MUTATE",
+      payload: data.value,
+    };
+
+    queryNode.subscriptions.forEach((subscription) => {
+      subscription(insertMutation);
+    });
+
+    // Track this object in the query
+    queryNode.trackedObjects.add(id);
+    const objectNode = this.ensureObjectNode(id, resourceName, queryNode.hash);
+    objectNode.matchedQueries.add(queryNode.hash);
+
+    // Process child queries and send INSERTs for related objects
+    for (const childHash of Array.from(queryNode.childQueries)) {
+      const childQueryNode = this.queryNodes.get(childHash);
+      if (!childQueryNode || !childQueryNode.relationName) continue;
+
+      const relationName = childQueryNode.relationName;
+      const childResource = childQueryNode.queryStep.query.resource;
+      const relatedData = data.value[relationName];
+
+      if (!relatedData) continue;
+
+      // Handle both single objects and arrays
+      const relatedItems = relatedData.value;
+      if (Array.isArray(relatedItems)) {
+        for (const item of relatedItems) {
+          this.sendInsertsForTree(childQueryNode, item, childResource);
+        }
+      } else if (relatedItems && typeof relatedItems === "object") {
+        this.sendInsertsForTree(childQueryNode, relatedItems, childResource);
+      }
+    }
+  }
+
   public handleMutation(
     mutation: DefaultMutation,
     entityValue: MaterializedLiveType<LiveObjectAny>
@@ -1073,32 +1149,32 @@ export class QueryEngine {
             });
           }
 
-          // For newly matched queries, fetch full data and send INSERT mutation
+          // For newly matched queries, fetch full data with includes and send INSERT mutations
+          // for the object and all its children down the tree
           if (newlyMatchedQueries.length > 0) {
-            this.get({
-              resource: mutation.resource,
-              where: { id: mutation.resourceId },
-            }).then((results: any[]) => {
-              if (!results || results.length === 0) return;
+            for (const queryHash of newlyMatchedQueries) {
+              const queryNode = this.queryNodes.get(queryHash);
 
-              const insertMutation: DefaultMutation = {
-                procedure: "INSERT",
+              if (!queryNode) continue;
+
+              // Build include structure from child queries
+              const include = this.buildIncludeFromChildQueries(queryHash);
+
+              this.get({
                 resource: mutation.resource,
-                resourceId: mutation.resourceId,
-                type: "MUTATE",
-                payload: results[0]?.value,
-              };
+                where: { id: mutation.resourceId },
+                include: Object.keys(include).length > 0 ? include : undefined,
+              }).then((results: any[]) => {
+                if (!results || results.length === 0) return;
 
-              for (const queryHash of newlyMatchedQueries) {
-                const queryNode = this.queryNodes.get(queryHash);
-
-                if (!queryNode) continue;
-
-                queryNode.subscriptions.forEach((subscription) => {
-                  subscription(insertMutation);
-                });
-              }
-            });
+                // Send INSERT for the main object and all its included children
+                this.sendInsertsForTree(
+                  queryNode,
+                  results[0],
+                  mutation.resource
+                );
+              });
+            }
           }
         }
       );

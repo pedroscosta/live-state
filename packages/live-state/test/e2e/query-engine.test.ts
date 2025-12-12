@@ -2260,5 +2260,405 @@ describe("Deep Relational Query Tests", () => {
         result.unsubscribe();
       }
     });
+
+    test("subscribes to orgs with users.posts include and receives notification when post moves out of scope by changing author", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to acme org with users.posts included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: true,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 1 org (acme)
+      expect(result.data.length).toBe(1);
+      const org = result.data[0];
+      expect(org.value.name.value).toBe("acme");
+      expect(org.value.users.value.length).toBe(2);
+
+      // Verify postId1 is included (by userId1 from acme org)
+      const user1 = org.value.users.value.find(
+        (u: any) => u.value.id.value === userId1
+      );
+      expect(user1).toBeDefined();
+      const post1InResults = user1.value.posts.value.find(
+        (p: any) => p.value.id.value === postId1
+      );
+      expect(post1InResults).toBeDefined();
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get a user from tech org (not acme)
+      const techUsers = await storage.get({
+        resource: "users",
+        where: { id: userId3 },
+        limit: 1,
+      });
+      expect(techUsers.length).toBe(1);
+      const techUserId = techUsers[0].value.id.value;
+      expect(techUserId).toBe(userId3);
+
+      // Change postId1's author to a user from tech org (moves out of acme scope)
+      await storage.update(deepSchema.posts, postId1, {
+        authorId: techUserId,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the post
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const postMutation = subscriptionCallbacks.find(
+        (cb) =>
+          cb.mutation.resource === "posts" && cb.mutation.resourceId === postId1
+      );
+      expect(postMutation).toBeDefined();
+      expect(postMutation!.mutation.procedure).toBe("UPDATE");
+      expect(postMutation!.mutation.payload.authorId.value).toBe(techUserId);
+
+      // Record callback count after object moved out of scope
+      const callbacksAfterOutOfScope = subscriptionCallbacks.length;
+
+      // Update the post again (now that it's out of scope, this shouldn't trigger a notification)
+      await storage.update(deepSchema.posts, postId1, {
+        title: "Updated Title After Out of Scope",
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify no additional mutation was received (object is out of scope)
+      expect(subscriptionCallbacks.length).toBe(callbacksAfterOutOfScope);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to orgs with users.posts include and receives notification when post moves into scope by changing author", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to acme org with users.posts included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: true,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 1 org (acme)
+      expect(result.data.length).toBe(1);
+      const org = result.data[0];
+      expect(org.value.name.value).toBe("acme");
+
+      // Verify postId3 is NOT included (it's by userId3 from tech org)
+      const user1 = org.value.users.value.find(
+        (u: any) => u.value.id.value === userId1
+      );
+      expect(user1).toBeDefined();
+      const post3InResults = user1.value.posts.value.find(
+        (p: any) => p.value.id.value === postId3
+      );
+      expect(post3InResults).toBeUndefined();
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get a user from acme org
+      const acmeUsers = await storage.get({
+        resource: "users",
+        where: { id: userId1 },
+        limit: 1,
+      });
+      expect(acmeUsers.length).toBe(1);
+      const acmeUserId = acmeUsers[0].value.id.value;
+      expect(acmeUserId).toBe(userId1);
+
+      // Verify postId3 has comments (commentId4 and commentId5)
+      const post3Data = await storage.get({
+        resource: "posts",
+        where: { id: postId3 },
+        limit: 1,
+      });
+      expect(post3Data.length).toBe(1);
+
+      // Change postId3's author to a user from acme org (moves into acme scope)
+      await storage.update(deepSchema.posts, postId3, {
+        authorId: acmeUserId,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify INSERT mutation was received for the post
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const postMutation = subscriptionCallbacks.find(
+        (cb) =>
+          cb.mutation.resource === "posts" && cb.mutation.resourceId === postId3
+      );
+      expect(postMutation).toBeDefined();
+      expect(postMutation!.mutation.procedure).toBe("INSERT");
+      expect(postMutation!.mutation.payload.authorId.value).toBe(acmeUserId);
+
+      // Note: Since this query only includes users.posts (not comments),
+      // we only expect the post INSERT, not comments
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to orgs with users.posts.comments include and receives notification when comment moves out of scope by changing postId", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to acme org with users.posts.comments included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 1 org (acme)
+      expect(result.data.length).toBe(1);
+      const org = result.data[0];
+      expect(org.value.name.value).toBe("acme");
+
+      // Verify commentId1 is included in postId1
+      const user1 = org.value.users.value.find(
+        (u: any) => u.value.id.value === userId1
+      );
+      expect(user1).toBeDefined();
+      const post1 = user1.value.posts.value.find(
+        (p: any) => p.value.id.value === postId1
+      );
+      expect(post1).toBeDefined();
+      const comment1InResults = post1.value.comments.value.find(
+        (c: any) => c.value.id.value === commentId1
+      );
+      expect(comment1InResults).toBeDefined();
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get a post from tech org (postId4) that commentId1 is not currently on
+      const techUsers = await storage.get({
+        resource: "users",
+        where: { id: userId4 },
+        limit: 1,
+      });
+      expect(techUsers.length).toBe(1);
+      const techUserPosts = await storage.get({
+        resource: "posts",
+        where: { id: postId4 },
+        limit: 1,
+      });
+      expect(techUserPosts.length).toBe(1);
+
+      // Change commentId1's postId to postId4 (moves out of acme org scope)
+      await storage.update(deepSchema.comments, commentId1, {
+        postId: postId4,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the comment
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const commentMutation = subscriptionCallbacks.find(
+        (cb) =>
+          cb.mutation.resource === "comments" &&
+          cb.mutation.resourceId === commentId1
+      );
+      expect(commentMutation).toBeDefined();
+      expect(commentMutation!.mutation.procedure).toBe("UPDATE");
+      expect(commentMutation!.mutation.payload.postId.value).toBe(postId4);
+
+      // Record callback count after comment moved out of scope
+      const callbacksAfterOutOfScope = subscriptionCallbacks.length;
+
+      // Update the comment again (now that it's out of scope, this shouldn't trigger a notification)
+      await storage.update(deepSchema.comments, commentId1, {
+        content: "Updated content after out of scope",
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify no additional mutation was received (comment is out of scope)
+      expect(subscriptionCallbacks.length).toBe(callbacksAfterOutOfScope);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to orgs with users.posts.comments include and receives INSERT for post and all comments when post moves into scope", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to acme org with users.posts.comments included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 1 org (acme)
+      expect(result.data.length).toBe(1);
+      const org = result.data[0];
+      expect(org.value.name.value).toBe("acme");
+
+      // Verify postId3 is NOT included (it's by userId3 from tech org)
+      const user1 = org.value.users.value.find(
+        (u: any) => u.value.id.value === userId1
+      );
+      expect(user1).toBeDefined();
+      const post3InResults = user1.value.posts.value.find(
+        (p: any) => p.value.id.value === postId3
+      );
+      expect(post3InResults).toBeUndefined();
+
+      // Verify postId3 has comments (commentId4 and commentId5)
+      const post3Data = await storage.get({
+        resource: "posts",
+        where: { id: postId3 },
+        include: {
+          comments: true,
+        },
+        limit: 1,
+      });
+      expect(post3Data.length).toBe(1);
+      const post3Comments = post3Data[0].value.comments?.value || [];
+      expect(post3Comments.length).toBeGreaterThan(0);
+      const post3CommentIds = post3Comments.map((c: any) => c.value.id.value);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get a user from acme org
+      const acmeUsers = await storage.get({
+        resource: "users",
+        where: { id: userId1 },
+        limit: 1,
+      });
+      expect(acmeUsers.length).toBe(1);
+      const acmeUserId = acmeUsers[0].value.id.value;
+      expect(acmeUserId).toBe(userId1);
+
+      // Change postId3's author to a user from acme org (moves into acme scope)
+      // This should trigger INSERTs for the post AND all its comments
+      await storage.update(deepSchema.posts, postId3, {
+        authorId: acmeUserId,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify INSERT mutation was received for the post
+      const postMutation = subscriptionCallbacks.find(
+        (cb) =>
+          cb.mutation.resource === "posts" && cb.mutation.resourceId === postId3
+      );
+      expect(postMutation).toBeDefined();
+      expect(postMutation!.mutation.procedure).toBe("INSERT");
+      expect(postMutation!.mutation.payload.authorId.value).toBe(acmeUserId);
+
+      // Verify INSERT mutations were received for all comments on the post
+      // When a new branch comes into scope, it should receive INSERTs for every object down the tree
+      for (const commentId of post3CommentIds) {
+        const commentMutation = subscriptionCallbacks.find(
+          (cb) =>
+            cb.mutation.resource === "comments" &&
+            cb.mutation.resourceId === commentId
+        );
+        expect(commentMutation).toBeDefined();
+        expect(commentMutation!.mutation.procedure).toBe("INSERT");
+        expect(commentMutation!.mutation.payload.postId.value).toBe(postId3);
+      }
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
   });
 });
