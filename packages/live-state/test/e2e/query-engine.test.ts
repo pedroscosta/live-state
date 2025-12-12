@@ -1761,4 +1761,720 @@ describe("Deep Relational Query Tests", () => {
       }
     });
   });
+
+  describe("queries with include clauses", () => {
+    test("subscribes to posts with single-level include (author) and receives notification when included author is created", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with author included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts with authors included
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.data.length).toBe(4);
+
+      // Verify all posts have author included
+      result.data.forEach((post: any) => {
+        expect(post.value.author).toBeDefined();
+        expect(post.value.author.value).toBeDefined();
+        expect(post.value.author.value.id).toBeDefined();
+        expect(post.value.author.value.name).toBeDefined();
+        expect(post.value.author.value.email).toBeDefined();
+      });
+
+      // Create a new user
+      const newUserId = generateId();
+      const newUserName = "New User";
+      const newUserEmail = "newuser@example.com";
+      await storage.insert(deepSchema.users, {
+        id: newUserId,
+        name: newUserName,
+        email: newUserEmail,
+        orgId: orgId1,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify no mutation for user creation (user is not the queried resource)
+      expect(subscriptionCallbacks.length).toBe(0);
+
+      // Create a new post with the new author
+      const newPostId = generateId();
+      const newPostTitle = "Post by New User";
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: newPostTitle,
+        content: "Content by new user",
+        authorId: newUserId,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the new post
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(newPostId);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("INSERT");
+      expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.payload.title.value).toBe(
+        newPostTitle
+      );
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        newUserId
+      );
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to posts with single-level include (author) and receives notification when included author is updated", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with author included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts
+      expect(result.data.length).toBe(4);
+
+      // Get postId1 which has author userId1
+      const post1 = result.data.find((p: any) => p.value.id.value === postId1);
+      expect(post1).toBeDefined();
+      expect(post1!).toBeDefined();
+      expect(post1!.value.author.value.id.value).toBe(userId1);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the author's name
+      const updatedName = "John Updated";
+      await storage.update(deepSchema.users, userId1, {
+        name: updatedName,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the post (because author changed)
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to posts with single-level include (comments) and receives notification when included comment is created", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with comments included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            comments: true,
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts
+      expect(result.data.length).toBe(4);
+
+      // Verify postId1 has 2 comments included
+      const post1 = result.data.find((p: any) => p.value.id.value === postId1);
+      expect(post1).toBeDefined();
+      expect(post1!).toBeDefined();
+      expect(post1!.value.comments).toBeDefined();
+      expect(post1!.value.comments.value).toBeDefined();
+      expect(Array.isArray(post1!.value.comments.value)).toBe(true);
+      expect(post1!.value.comments.value.length).toBe(2);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create a new comment on postId1
+      const newCommentId = generateId();
+      const newCommentContent = "New comment";
+      await storage.insert(deepSchema.comments, {
+        id: newCommentId,
+        content: newCommentContent,
+        postId: postId1,
+        authorId: userId1,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the post (because comment was added)
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId1);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to posts with two-level include (author.org) and receives notification when nested org is updated", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with author and author.org included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: {
+              org: true,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts
+      expect(result.data.length).toBe(4);
+
+      // Verify postId1 has author with org included
+      const post1 = result.data.find((p: any) => p.value.id.value === postId1);
+      expect(post1).toBeDefined();
+      expect(post1!).toBeDefined();
+      expect(post1!.value.author.value.org).toBeDefined();
+      expect(post1!.value.author.value.org.value).toBeDefined();
+      expect(post1!.value.author.value.org.value.id.value).toBe(orgId1);
+      expect(post1!.value.author.value.org.value.name.value).toBe("acme");
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the org name
+      const updatedOrgName = "Acme Corp Updated";
+      await storage.update(deepSchema.orgs, orgId1, {
+        name: updatedOrgName,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutations were received for posts by users from that org
+      // postId1 and postId2 are by users from orgId1
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const post1Mutation = subscriptionCallbacks.find(
+        (cb) => cb.mutation.resourceId === postId1
+      );
+      expect(post1Mutation).toBeDefined();
+      expect(post1Mutation!).toBeDefined();
+      expect(post1Mutation!.mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to orgs with two-level include (users.posts) and receives notification when nested post is created", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to orgs with users and users.posts included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: true,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 1 org (acme)
+      expect(result.data.length).toBe(1);
+      const org = result.data[0];
+      expect(org.value.name.value).toBe("acme");
+      expect(org.value.users.value.length).toBe(2);
+
+      // Verify users have posts included
+      org.value.users.value.forEach((user: any) => {
+        expect(user.value.posts).toBeDefined();
+        expect(user.value.posts.value).toBeDefined();
+        expect(Array.isArray(user.value.posts.value)).toBe(true);
+      });
+
+      // Verify user1 (John Doe) has 1 post (postId1)
+      const user1 = org.value.users.value.find(
+        (u: any) => u.value.id.value === userId1
+      );
+      expect(user1).toBeDefined();
+      expect(user1.value.posts.value.length).toBe(1);
+      expect(user1.value.posts.value[0].value.id.value).toBe(postId1);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create a new post by user1
+      const newPostId = generateId();
+      const newPostTitle = "New Post by John";
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: newPostTitle,
+        content: "New content",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the org (because nested post was created)
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const orgMutation = subscriptionCallbacks.find(
+        (cb) => cb.mutation.resource === "orgs"
+      );
+      expect(orgMutation).toBeDefined();
+      expect(orgMutation!).toBeDefined();
+      expect(orgMutation!.mutation.resourceId).toBe(orgId1);
+      expect(orgMutation!.mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to orgs with three-level include (users.posts.comments) and receives notification when deeply nested comment is created", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to orgs with users.posts.comments included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 1 org
+      expect(result.data.length).toBe(1);
+      const org = result.data[0];
+      expect(org.value.name.value).toBe("acme");
+
+      // Verify nested structure: org -> users -> posts -> comments
+      const user1 = org.value.users.value.find(
+        (u: any) => u.value.id.value === userId1
+      );
+      expect(user1).toBeDefined();
+      const post1 = user1.value.posts.value.find(
+        (p: any) => p.value.id.value === postId1
+      );
+      expect(post1).toBeDefined();
+      expect(post1.value.comments).toBeDefined();
+      expect(post1.value.comments.value).toBeDefined();
+      expect(Array.isArray(post1.value.comments.value)).toBe(true);
+      expect(post1.value.comments.value.length).toBe(2);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create a new comment on postId1
+      const newCommentId = generateId();
+      const newCommentContent = "Deeply nested comment";
+      await storage.insert(deepSchema.comments, {
+        id: newCommentId,
+        content: newCommentContent,
+        postId: postId1,
+        authorId: userId2,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the org (because deeply nested comment was created)
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const orgMutation = subscriptionCallbacks.find(
+        (cb) => cb.mutation.resource === "orgs"
+      );
+      expect(orgMutation).toBeDefined();
+      expect(orgMutation!).toBeDefined();
+      expect(orgMutation!.mutation.resourceId).toBe(orgId1);
+      expect(orgMutation!.mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to posts with include (author) and receives notification when post author changes", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with author included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts
+      expect(result.data.length).toBe(4);
+
+      // Get postId2 which has author userId2
+      const post2 = result.data.find((p: any) => p.value.id.value === postId2);
+      expect(post2).toBeDefined();
+      expect(post2!).toBeDefined();
+      expect(post2!.value.author.value.id.value).toBe(userId2);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the post to change its author
+      await storage.update(deepSchema.posts, postId2, {
+        authorId: userId1,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the post
+      expect(subscriptionCallbacks.length).toBe(1);
+      expect(subscriptionCallbacks[0].mutation.resource).toBe("posts");
+      expect(subscriptionCallbacks[0].mutation.resourceId).toBe(postId2);
+      expect(subscriptionCallbacks[0].mutation.procedure).toBe("UPDATE");
+      expect(subscriptionCallbacks[0].mutation.payload).toBeDefined();
+      expect(subscriptionCallbacks[0].mutation.payload.authorId.value).toBe(
+        userId1
+      );
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to posts with include (comments.author) and receives notification when comment author is updated", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with comments and comments.author included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            comments: {
+              author: true,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts
+      expect(result.data.length).toBe(4);
+
+      // Verify postId1 has comments with authors included
+      const post1 = result.data.find((p: any) => p.value.id.value === postId1);
+      expect(post1).toBeDefined();
+      expect(post1!).toBeDefined();
+      expect(post1!.value.comments.value.length).toBe(2);
+      post1!.value.comments.value.forEach((comment: any) => {
+        expect(comment.value.author).toBeDefined();
+        expect(comment.value.author.value).toBeDefined();
+        expect(comment.value.author.value.id).toBeDefined();
+        expect(comment.value.author.value.name).toBeDefined();
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update a comment author's name
+      const updatedName = "Jane Updated";
+      await storage.update(deepSchema.users, userId2, {
+        name: updatedName,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the post (because comment author changed)
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const post1Mutation = subscriptionCallbacks.find(
+        (cb) => cb.mutation.resourceId === postId1
+      );
+      expect(post1Mutation).toBeDefined();
+      expect(post1Mutation!).toBeDefined();
+      expect(post1Mutation!.mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to users with include (posts.comments) and receives notification when nested comment is updated", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to users with posts and posts.comments included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "users",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            posts: {
+              comments: true,
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 users
+      expect(result.data.length).toBe(4);
+
+      // Verify user1 has posts with comments included
+      const user1 = result.data.find((u: any) => u.value.id.value === userId1);
+      expect(user1).toBeDefined();
+      expect(user1!).toBeDefined();
+      expect(user1!.value.posts.value.length).toBe(1);
+      const post1 = user1!.value.posts.value.find(
+        (p: any) => p.value.id.value === postId1
+      );
+      expect(post1).toBeDefined();
+      expect(post1!).toBeDefined();
+      expect(post1!.value.comments.value.length).toBe(2);
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update a comment on postId1
+      const updatedContent = "Updated comment content";
+      await storage.update(deepSchema.comments, commentId1, {
+        content: updatedContent,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for the user (because nested comment was updated)
+      expect(subscriptionCallbacks.length).toBeGreaterThan(0);
+      const user1Mutation = subscriptionCallbacks.find(
+        (cb) => cb.mutation.resourceId === userId1
+      );
+      expect(user1Mutation).toBeDefined();
+      expect(user1Mutation!).toBeDefined();
+      expect(user1Mutation!.mutation.procedure).toBe("UPDATE");
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+
+    test("subscribes to posts with multiple includes (author, comments) and receives notifications for both", async () => {
+      const subscriptionCallbacks: Array<{
+        mutation: any;
+      }> = [];
+
+      // Subscribe to posts with both author and comments included
+      const result = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+            comments: true,
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          subscriptionCallbacks.push({ mutation });
+        },
+      });
+
+      // Verify initial query returns exactly 4 posts
+      expect(result.data.length).toBe(4);
+
+      // Verify all posts have both author and comments included
+      result.data.forEach((post: any) => {
+        expect(post.value.author).toBeDefined();
+        expect(post.value.author.value).toBeDefined();
+        expect(post.value.comments).toBeDefined();
+        expect(post.value.comments.value).toBeDefined();
+        expect(Array.isArray(post.value.comments.value)).toBe(true);
+      });
+
+      // Wait for initial subscription to settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update the author's name
+      const updatedName = "John Updated Again";
+      await storage.update(deepSchema.users, userId1, {
+        name: updatedName,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for posts by that author
+      const post1Mutations = subscriptionCallbacks.filter(
+        (cb) => cb.mutation.resourceId === postId1
+      );
+      expect(post1Mutations.length).toBeGreaterThan(0);
+      expect(post1Mutations[0].mutation.procedure).toBe("UPDATE");
+
+      // Create a new comment
+      const newCommentId = generateId();
+      await storage.insert(deepSchema.comments, {
+        id: newCommentId,
+        content: "New comment",
+        postId: postId2,
+        authorId: userId1,
+      });
+
+      // Wait for async operations to complete
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Verify mutation was received for postId2 (because comment was added)
+      const post2Mutations = subscriptionCallbacks.filter(
+        (cb) => cb.mutation.resourceId === postId2
+      );
+      expect(post2Mutations.length).toBeGreaterThan(0);
+
+      // Clean up subscription
+      if (result.unsubscribe) {
+        result.unsubscribe();
+      }
+    });
+  });
 });

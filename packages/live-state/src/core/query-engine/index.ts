@@ -460,30 +460,59 @@ export class QueryEngine {
           return;
         }
 
-        // Collect all parent data
-        const allParentData = parentResults.flatMap((r) => r.data);
-
         // If we have a referenceGetter, use it to get IDs and getWhere to build queries
         if (step.referenceGetter && step.getWhere) {
-          const referenceIds = step.referenceGetter(allParentData);
+          // Build a map from reference ID (e.g., authorId) to parent IDs (e.g., post IDs)
+          // This allows us to track which parent each reference belongs to
+          const referenceToParents = new Map<string, Set<string>>();
 
-          if (referenceIds.length === 0) {
+          for (const parentResultGroup of parentResults) {
+            for (const parentItem of parentResultGroup.data) {
+              const parentId = parentItem?.value?.id?.value as
+                | string
+                | undefined;
+              if (!parentId) continue;
+
+              const referenceIds = step.referenceGetter([parentItem]);
+              const referenceId = referenceIds[0];
+              if (referenceId) {
+                if (!referenceToParents.has(referenceId)) {
+                  referenceToParents.set(referenceId, new Set());
+                }
+                const parentSet = referenceToParents.get(referenceId);
+                if (parentSet) {
+                  parentSet.add(parentId);
+                }
+              }
+            }
+          }
+
+          const uniqueReferenceIds = Array.from(referenceToParents.keys());
+
+          if (uniqueReferenceIds.length === 0) {
             stepResults[step.stepPath.join(".")] = [];
             return;
           }
 
-          // Execute a query for each parent ID to maintain the mapping
+          // Execute a query for each unique reference ID, then distribute results to parents
           const results: { includedBy?: string; data: any[] }[] = [];
 
-          for (const parentId of referenceIds) {
-            const relationalWhere = step.getWhere(parentId);
+          for (const referenceId of uniqueReferenceIds) {
+            const relationalWhere = step.getWhere(referenceId);
             const stepWithRelationalWhere: QueryStep = {
               ...step,
               relationalWhere,
             };
 
             const data = await this.resolveStep(stepWithRelationalWhere, extra);
-            results.push({ includedBy: parentId, data });
+
+            // For each parent that references this ID, create a result entry
+            const parentIds = referenceToParents.get(referenceId);
+            if (parentIds) {
+              for (const parentId of Array.from(parentIds)) {
+                results.push({ includedBy: parentId, data });
+              }
+            }
           }
 
           console.log(
@@ -513,6 +542,13 @@ export class QueryEngine {
     plan: QueryStep[],
     stepResults: Record<string, { includedBy?: string; data: any[] }[]>
   ): any[] {
+    console.log("[QueryEngine] assembleResults: Starting assembly");
+    console.log("[QueryEngine] assembleResults: Plan steps:", plan.length);
+    console.log(
+      "[QueryEngine] assembleResults: Step results keys:",
+      Object.keys(stepResults)
+    );
+
     // Build a map of all entities by their full path + id
     const entriesMap = new Map<
       string,
@@ -531,13 +567,36 @@ export class QueryEngine {
     for (const step of plan) {
       const stepPath = step.stepPath.join(".");
       const results = stepResults[stepPath] ?? [];
-      const resourceSchema = this.schema[step.query.resource];
       const includedRelations = Object.keys(step.query.include ?? {});
 
+      console.log(
+        `[QueryEngine] assembleResults: Processing step "${stepPath}"`,
+        {
+          resource: step.query.resource,
+          includedRelations,
+          resultGroups: results.length,
+          isMany: step.isMany,
+          relationName: step.relationName,
+        }
+      );
+
       for (const resultGroup of results) {
+        console.log(
+          `[QueryEngine] assembleResults: Processing result group for "${stepPath}"`,
+          {
+            dataCount: resultGroup.data.length,
+            includedBy: resultGroup.includedBy,
+          }
+        );
+
         for (const data of resultGroup.data) {
           const id = data?.value?.id?.value as string | undefined;
-          if (!id) continue;
+          if (!id) {
+            console.log(
+              `[QueryEngine] assembleResults: Skipping data without id in step "${stepPath}"`
+            );
+            continue;
+          }
 
           const key = stepPath ? `${stepPath}.${id}` : id;
 
@@ -550,14 +609,42 @@ export class QueryEngine {
                 ? `${parentStepPath}.${resultGroup.includedBy}`
                 : resultGroup.includedBy,
             ];
+            console.log(
+              `[QueryEngine] assembleResults: Child entity "${key}" has parent keys:`,
+              parentKeys,
+              {
+                stepPath,
+                parentStepPath,
+                includedBy: resultGroup.includedBy,
+              }
+            );
+          } else {
+            console.log(
+              `[QueryEngine] assembleResults: Root entity "${key}" (no parent)`
+            );
           }
 
           const existing = entriesMap.get(key);
           if (existing) {
+            console.log(
+              `[QueryEngine] assembleResults: Entity "${key}" already exists, adding parent keys:`,
+              parentKeys
+            );
             for (const parentKey of parentKeys) {
               existing.includedBy.add(parentKey);
             }
           } else {
+            console.log(
+              `[QueryEngine] assembleResults: Adding new entity "${key}"`,
+              {
+                resource: step.query.resource,
+                path: step.stepPath.at(-1) ?? "",
+                isMany: step.isMany ?? false,
+                relationName: step.relationName,
+                includedRelations,
+                parentKeys,
+              }
+            );
             entriesMap.set(key, {
               data,
               includedBy: new Set(parentKeys),
@@ -572,46 +659,118 @@ export class QueryEngine {
       }
     }
 
+    console.log(
+      `[QueryEngine] assembleResults: Built entriesMap with ${entriesMap.size} entries`
+    );
+    console.log(
+      "[QueryEngine] assembleResults: EntriesMap keys:",
+      Array.from(entriesMap.keys())
+    );
+
     // Assemble: iterate in reverse to attach children to parents
     const entriesArray = Array.from(entriesMap.entries());
     const resultData: any[] = [];
+
+    console.log(
+      `[QueryEngine] assembleResults: Starting assembly phase with ${entriesArray.length} entries`
+    );
 
     for (let i = entriesArray.length - 1; i >= 0; i--) {
       const [key, entry] = entriesArray[i];
       const resourceSchema = this.schema[entry.resourceName];
 
+      console.log(`[QueryEngine] assembleResults: Processing entry "${key}"`, {
+        resource: entry.resourceName,
+        path: entry.path,
+        isMany: entry.isMany,
+        relationName: entry.relationName,
+        includedRelations: entry.includedRelations,
+        parentKeys: Array.from(entry.includedBy),
+      });
+
       // Initialize included relations if they don't exist
       for (const includedRelation of entry.includedRelations) {
         const relationType =
           resourceSchema?.relations?.[includedRelation]?.type;
+        const hasRelation = !!entry.data.value[includedRelation];
+        console.log(
+          `[QueryEngine] assembleResults: Checking included relation "${includedRelation}" for "${key}"`,
+          {
+            relationType,
+            hasRelation,
+            resourceHasRelation:
+              !!resourceSchema?.relations?.[includedRelation],
+          }
+        );
+
         if (!entry.data.value[includedRelation]) {
-          entry.data.value[includedRelation] =
+          const defaultValue =
             relationType === "many" ? { value: [] } : { value: null };
+          entry.data.value[includedRelation] = defaultValue;
+          console.log(
+            `[QueryEngine] assembleResults: Initialized relation "${includedRelation}" for "${key}" with`,
+            defaultValue
+          );
+        } else {
+          console.log(
+            `[QueryEngine] assembleResults: Relation "${includedRelation}" already exists for "${key}"`,
+            entry.data.value[includedRelation]
+          );
         }
       }
 
       // Root level items (no path)
       if (entry.path === "") {
+        console.log(
+          `[QueryEngine] assembleResults: Adding root entity "${key}" to resultData`
+        );
         resultData.push(entry.data);
         continue;
       }
 
       // Attach to parent(s)
+      console.log(
+        `[QueryEngine] assembleResults: Attaching "${key}" to ${entry.includedBy.size} parent(s)`
+      );
       for (const parentKey of Array.from(entry.includedBy)) {
         const parent = entriesMap.get(parentKey);
-        if (!parent) continue;
+        if (!parent) {
+          console.log(
+            `[QueryEngine] assembleResults: WARNING - Parent "${parentKey}" not found in entriesMap for child "${key}"`
+          );
+          continue;
+        }
 
         const relationName = entry.relationName ?? entry.path;
+        console.log(
+          `[QueryEngine] assembleResults: Attaching "${key}" to parent "${parentKey}" via relation "${relationName}"`,
+          {
+            isMany: entry.isMany,
+            parentHasRelation: !!parent.data.value[relationName],
+          }
+        );
 
         if (entry.isMany) {
           parent.data.value[relationName] ??= { value: [] };
           parent.data.value[relationName].value.push(entry.data);
+          console.log(
+            `[QueryEngine] assembleResults: Added "${key}" to many relation "${relationName}" on parent "${parentKey}"`,
+            {
+              arrayLength: parent.data.value[relationName].value.length,
+            }
+          );
         } else {
           parent.data.value[relationName] = entry.data;
+          console.log(
+            `[QueryEngine] assembleResults: Set one relation "${relationName}" on parent "${parentKey}" to "${key}"`
+          );
         }
       }
     }
 
+    console.log(
+      `[QueryEngine] assembleResults: Assembly complete. Returning ${resultData.length} root items`
+    );
     return resultData;
   }
 
