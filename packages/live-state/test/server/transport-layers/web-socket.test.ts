@@ -123,14 +123,29 @@ describe("webSocketAdapter", () => {
 
     await messageHandler(Buffer.from(JSON.stringify(subscribeMessage)));
 
-    // Verify subscription was registered via subscribeToMutations
-    // Now includes authorizationWhere as third parameter (can be undefined)
-    expect(mockServer.subscribeToMutations).toHaveBeenCalledWith(
+    // Verify handleQuery was called with subscription callback
+    expect(mockServer.handleQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        resource: "users",
-      }),
-      expect.any(Function),
-      undefined
+        req: expect.objectContaining({
+          type: "QUERY",
+          resource: "users",
+          context: { userId: "user123" },
+          headers: expect.objectContaining({ cookie: "sessionId=abc123" }),
+          cookies: { sessionId: "abc123" },
+        }),
+        subscription: expect.any(Function),
+      })
+    );
+
+    expect(mockWebSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        id: "msg-1",
+        type: "REPLY",
+        data: {
+          resource: "users",
+          data: [{ id: { value: "user1" }, name: { value: "John" } }],
+        },
+      })
     );
   });
 
@@ -355,9 +370,12 @@ describe("webSocketAdapter", () => {
       (call) => call[0] === "close"
     )?.[1];
 
-    // Create a mock unsubscribe function
+    // Create a mock unsubscribe function returned by handleQuery
     const unsubscribe = vi.fn();
-    (mockServer.subscribeToMutations as Mock).mockReturnValue(unsubscribe);
+    (mockServer.handleQuery as Mock).mockResolvedValueOnce({
+      data: [{ value: { id: { value: "user1" }, name: { value: "John" } } }],
+      unsubscribe,
+    });
 
     // Subscribe first
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
@@ -377,7 +395,7 @@ describe("webSocketAdapter", () => {
 
     // Verify unsubscribe was called (indirectly through cleanup)
     // The actual cleanup happens in the adapter, but we verify the structure
-    expect(closeHandler).toBeDefined();
+    expect(unsubscribe).toHaveBeenCalled();
   });
 
   test("should not propagate mutations without resourceId", async () => {
@@ -400,11 +418,10 @@ describe("webSocketAdapter", () => {
 
     await messageHandler!(Buffer.from(JSON.stringify(subscribeMessage)));
 
-    // Get the handler that was registered
-    const subscribeCall = (
-      mockServer.subscribeToMutations as Mock
-    ).mock.calls.find((call) => call[0]?.resource === "users");
-    const mutationHandler = subscribeCall?.[1];
+    // Get the subscription handler that was registered
+    const subscriptionHandler = (mockServer.handleQuery as Mock).mock.calls
+      .map((call) => call[0]?.subscription)
+      .find((handler) => typeof handler === "function");
 
     // Try to propagate mutation without resourceId
     const mutation = {
@@ -419,12 +436,16 @@ describe("webSocketAdapter", () => {
       // Missing resourceId
     };
 
-    if (mutationHandler) {
-      mutationHandler(mutation);
+    if (subscriptionHandler) {
+      subscriptionHandler(mutation);
     }
 
-    // Should not send any message because resourceId is missing
-    expect(ws.send).not.toHaveBeenCalled();
+    // Should not propagate MUTATE messages because resourceId is missing
+    const forwardedMutations = (ws.send as Mock).mock.calls
+      .map((call) => JSON.parse(call[0] as string))
+      .filter((message) => message.type === "MUTATE");
+
+    expect(forwardedMutations).toHaveLength(0);
   });
 
   test("should not propagate mutations without payload", async () => {
@@ -447,11 +468,10 @@ describe("webSocketAdapter", () => {
 
     await messageHandler!(Buffer.from(JSON.stringify(subscribeMessage)));
 
-    // Get the handler that was registered
-    const subscribeCall = (
-      mockServer.subscribeToMutations as Mock
-    ).mock.calls.find((call) => call[0]?.resource === "users");
-    const mutationHandler = subscribeCall?.[1];
+    // Get the subscription handler that was registered
+    const subscriptionHandler = (mockServer.handleQuery as Mock).mock.calls
+      .map((call) => call[0]?.subscription)
+      .find((handler) => typeof handler === "function");
 
     // Try to propagate mutation without payload
     const mutation = {
@@ -461,12 +481,16 @@ describe("webSocketAdapter", () => {
       // Missing payload
     };
 
-    if (mutationHandler) {
-      mutationHandler(mutation);
+    if (subscriptionHandler) {
+      subscriptionHandler(mutation);
     }
 
-    // Should not send any message because payload is missing
-    expect(ws.send).not.toHaveBeenCalled();
+    // Should not propagate MUTATE messages because payload is missing
+    const forwardedMutations = (ws.send as Mock).mock.calls
+      .map((call) => JSON.parse(call[0] as string))
+      .filter((message) => message.type === "MUTATE");
+
+    expect(forwardedMutations).toHaveLength(0);
   });
 
   test("should handle context provider returning promise", async () => {

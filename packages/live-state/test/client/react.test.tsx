@@ -1,4 +1,3 @@
-import { render, screen } from "@testing-library/react";
 import { renderHook } from "@testing-library/react-hooks";
 import {
   afterEach,
@@ -10,7 +9,7 @@ import {
   vi,
 } from "vitest";
 import { QueryBuilder } from "../../src/client/query";
-import { SubscriptionProvider, useLiveQuery } from "../../src/client/react";
+import { useLiveQuery, useLoadData } from "../../src/client/react";
 import { Client } from "../../src/client/websocket/client";
 import { AnyRouter } from "../../src/server";
 
@@ -220,14 +219,22 @@ describe("useLiveQuery", () => {
   });
 });
 
-describe("SubscriptionProvider", () => {
-  let mockClient: Client<AnyRouter>["client"];
+describe("useLoadData", () => {
+  let mockClient: Pick<Client<AnyRouter>["client"], "load">;
+  let mockQueryBuilder: Pick<QueryBuilder<any, any>, "buildQueryRequest">;
+  let mockUnsubscribe: Mock;
 
   beforeEach(() => {
+    mockUnsubscribe = vi.fn();
     mockClient = {
-      subscribe: vi.fn(),
-      ws: {} as any,
-      addEventListener: vi.fn(),
+      load: vi.fn(() => mockUnsubscribe),
+    };
+    mockQueryBuilder = {
+      buildQueryRequest: vi.fn(() => ({
+        resource: "users",
+        where: {},
+        include: {},
+      })),
     };
   });
 
@@ -235,109 +242,66 @@ describe("SubscriptionProvider", () => {
     vi.clearAllMocks();
   });
 
-  test("should render children", () => {
-    render(
-      <SubscriptionProvider client={mockClient}>
-        <div data-testid="child">Test Child</div>
-      </SubscriptionProvider>
-    );
+  test("should call client.load with built query on mount", () => {
+    renderHook(() => useLoadData(mockClient as any, mockQueryBuilder as any));
 
-    expect(screen.getByTestId("child")).toBeInTheDocument();
-    expect(screen.getByText("Test Child")).toBeInTheDocument();
+    expect(mockQueryBuilder.buildQueryRequest).toHaveBeenCalledTimes(1);
+    expect(mockClient.load).toHaveBeenCalledTimes(1);
+    expect(mockClient.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: "users",
+      })
+    );
   });
 
-  test("should call client.subscribe on mount", () => {
-    render(
-      <SubscriptionProvider client={mockClient}>
-        <div>Test</div>
-      </SubscriptionProvider>
+  test("should not recall client.load when rerendered with same query", () => {
+    const { rerender } = renderHook(
+      ({ query }) => useLoadData(mockClient as any, query as any),
+      {
+        initialProps: { query: mockQueryBuilder },
+      }
     );
 
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-    expect(mockClient.subscribe).toHaveBeenCalledWith();
+    rerender({ query: mockQueryBuilder });
+
+    expect(mockClient.load).toHaveBeenCalledTimes(1);
   });
 
-  test("should not call client.subscribe on re-render", () => {
-    const { rerender } = render(
-      <SubscriptionProvider client={mockClient}>
-        <div>Test</div>
-      </SubscriptionProvider>
+  test("should call client.load again when query changes", () => {
+    const { rerender } = renderHook(
+      ({ query }) => useLoadData(mockClient as any, query as any),
+      {
+        initialProps: { query: mockQueryBuilder },
+      }
     );
 
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
+    const newQuery = {
+      buildQueryRequest: vi.fn(() => ({
+        resource: "posts",
+        where: { published: true },
+        include: {},
+      })),
+    };
 
-    // Re-render with same props
-    rerender(
-      <SubscriptionProvider client={mockClient}>
-        <div>Test Updated</div>
-      </SubscriptionProvider>
+    rerender({ query: newQuery as any });
+
+    expect(mockClient.load).toHaveBeenCalledTimes(2);
+    expect(newQuery.buildQueryRequest).toHaveBeenCalledTimes(1);
+    expect(mockClient.load).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        resource: "posts",
+        where: { published: true },
+      })
     );
-
-    // Should still only be called once
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  test("should render multiple children", () => {
-    render(
-      <SubscriptionProvider client={mockClient}>
-        <div data-testid="child1">Child 1</div>
-        <div data-testid="child2">Child 2</div>
-        <span data-testid="child3">Child 3</span>
-      </SubscriptionProvider>
+  test("should unsubscribe on unmount", () => {
+    const { unmount } = renderHook(() =>
+      useLoadData(mockClient as any, mockQueryBuilder as any)
     );
 
-    expect(screen.getByTestId("child1")).toBeInTheDocument();
-    expect(screen.getByTestId("child2")).toBeInTheDocument();
-    expect(screen.getByTestId("child3")).toBeInTheDocument();
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-  });
+    unmount();
 
-  test("should handle null children", () => {
-    render(
-      <SubscriptionProvider client={mockClient}>{null}</SubscriptionProvider>
-    );
-
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-  });
-
-  test("should handle undefined children", () => {
-    render(
-      <SubscriptionProvider client={mockClient}>
-        {undefined}
-      </SubscriptionProvider>
-    );
-
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-  });
-
-  test("should handle conditional children", () => {
-    const showChild = true;
-
-    render(
-      <SubscriptionProvider client={mockClient}>
-        {showChild && <div data-testid="conditional-child">Conditional</div>}
-      </SubscriptionProvider>
-    );
-
-    expect(screen.getByTestId("conditional-child")).toBeInTheDocument();
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
-  });
-
-  test("should work with nested components", () => {
-    const NestedComponent = () => (
-      <div data-testid="nested">Nested Component</div>
-    );
-
-    render(
-      <SubscriptionProvider client={mockClient}>
-        <div data-testid="wrapper">
-          <NestedComponent />
-        </div>
-      </SubscriptionProvider>
-    );
-
-    expect(screen.getByTestId("wrapper")).toBeInTheDocument();
-    expect(screen.getByTestId("nested")).toBeInTheDocument();
-    expect(mockClient.subscribe).toHaveBeenCalledTimes(1);
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
   });
 });
