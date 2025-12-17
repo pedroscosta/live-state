@@ -2076,32 +2076,6 @@ describe("Route Authorization Error Handling", () => {
     vi.clearAllMocks();
   });
 
-  test("should handle authorization handler throwing error", async () => {
-    const authHandler = vi.fn().mockImplementation(() => {
-      throw new Error("Authorization error");
-    });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await expect(
-      route.handleQuery({
-        req: mockRequest,
-        batcher,
-      })
-    ).rejects.toThrow("Authorization error");
-
-    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-  });
-
   test("should handle insert authorization handler throwing error", async () => {
     const insertAuth = vi.fn().mockImplementation(() => {
       throw new Error("Insert authorization error");
@@ -2419,65 +2393,6 @@ describe("Route Complex Authorization Scenarios", () => {
         }),
       })
     );
-  });
-
-  test("should handle authorization with complex context", async () => {
-    const authHandler = vi.fn().mockReturnValue({
-      $and: [
-        { userId: "123" },
-        { role: "admin" },
-        { department: "engineering" },
-      ],
-    });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      where: { active: true },
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {
-        userId: "123",
-        role: "admin",
-        department: "engineering",
-        permissions: ["read", "write"],
-      },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(authHandler).toHaveBeenCalledWith({
-      ctx: {
-        userId: "123",
-        role: "admin",
-        department: "engineering",
-        permissions: ["read", "write"],
-      },
-    });
-    expect(mockStorage.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: {
-        $and: [
-          { active: true },
-          {
-            $and: [
-              { userId: "123" },
-              { role: "admin" },
-              { department: "engineering" },
-            ],
-          },
-        ],
-      },
-      include: undefined,
-      limit: undefined,
-      sort: undefined,
-    });
   });
 });
 

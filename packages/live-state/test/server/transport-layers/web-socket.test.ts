@@ -363,7 +363,7 @@ describe("webSocketAdapter", () => {
     expect(mockWebSocket.send).not.toHaveBeenCalled();
   });
 
-  test("should handle connection close and unsubscribe", () => {
+  test("should handle connection close and unsubscribe", async () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const closeHandler = (mockWebSocket.on as Mock).mock.calls.find(
@@ -388,7 +388,7 @@ describe("webSocketAdapter", () => {
       id: "msg-1",
     };
 
-    messageHandler(Buffer.from(JSON.stringify(subscribeMessage)));
+    await messageHandler(Buffer.from(JSON.stringify(subscribeMessage)));
 
     // Now close the connection
     closeHandler?.();
