@@ -53,8 +53,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-          PGPASSWORD=admin psql -h localhost -U admin -d live_state_test -c "CREATE DATABASE IF NOT EXISTS live_state_e2e_test;"
-          PGPASSWORD=admin psql -h localhost -U admin -d live_state_test -c "CREATE DATABASE IF NOT EXISTS live_state_query_engine_test;"
+          PGPASSWORD=admin psql -h localhost -U admin -d live_state_test -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'live_state_e2e_test') THEN CREATE DATABASE live_state_e2e_test; END IF; END $$;"
+          PGPASSWORD=admin psql -h localhost -U admin -d live_state_test -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'live_state_query_engine_test') THEN CREATE DATABASE live_state_query_engine_test; END IF; END $$;"
 
       - name: Run type checking
         run: pnpm typecheck --filter="./packages/*"
