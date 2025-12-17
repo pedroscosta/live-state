@@ -87,7 +87,6 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                   connections[clientId]?.send(JSON.stringify(m));
                 }
               : undefined,
-            testNewEngine: true,
           });
 
           if (!result || !result.data) {
