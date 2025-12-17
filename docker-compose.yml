@@ -12,6 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - ./.pg-data:/var/lib/postgresql/data
+      - ./docker/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin"]
       interval: 5s

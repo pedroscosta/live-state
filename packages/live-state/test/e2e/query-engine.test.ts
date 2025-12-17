@@ -140,7 +140,7 @@ describe("Query Engine Functional Requirements", () => {
   beforeAll(async () => {
     pool = new Pool({
       connectionString:
-        "postgresql://admin:admin@localhost:5432/live_state_test",
+        "postgresql://admin:admin@localhost:5432/live_state_query_engine_test",
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,

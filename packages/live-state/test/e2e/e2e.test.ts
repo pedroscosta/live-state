@@ -87,7 +87,7 @@ describe("End-to-End Query Tests", () => {
   beforeAll(async () => {
     pool = new Pool({
       connectionString:
-        "postgresql://admin:admin@localhost:5432/live_state_test",
+        "postgresql://admin:admin@localhost:5432/live_state_e2e_test",
       max: 10, // Limit pool size
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
