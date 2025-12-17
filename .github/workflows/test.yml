@@ -28,7 +28,6 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --volume ${{ github.workspace }}/docker/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
@@ -49,6 +48,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Create additional test databases
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD=admin psql -h localhost -U admin -d live_state_test -c "CREATE DATABASE IF NOT EXISTS live_state_e2e_test;"
+          PGPASSWORD=admin psql -h localhost -U admin -d live_state_test -c "CREATE DATABASE IF NOT EXISTS live_state_query_engine_test;"
 
       - name: Run type checking
         run: pnpm typecheck --filter="./packages/*"
