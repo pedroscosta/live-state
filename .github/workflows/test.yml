@@ -28,6 +28,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --volume ${{ github.workspace }}/docker/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
