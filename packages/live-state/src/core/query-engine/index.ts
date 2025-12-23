@@ -968,9 +968,22 @@ export class QueryEngine {
       payload: data.value,
     };
 
-    queryNode.subscriptions.forEach((subscription) => {
-      subscription(insertMutation);
-    });
+    for (const subscription of Array.from(queryNode.subscriptions)) {
+      try {
+        subscription(insertMutation);
+      } catch (error) {
+        this.logger.error(
+          "[QueryEngine] Error in subscription callback during sendInsertsForTree",
+          {
+            error,
+            queryHash: queryNode.hash,
+            resource: resourceName,
+            resourceId: id,
+            stepPath: queryNode.queryStep.stepPath.join("."),
+          }
+        );
+      }
+    }
 
     // Track this object in the query
     queryNode.trackedObjects.add(id);
@@ -1058,9 +1071,22 @@ export class QueryEngine {
             storedObjectNode.matchedQueries.add(queryHash);
           }
 
-          queryNode.subscriptions.forEach((subscription) => {
-            subscription(mutation);
-          });
+          for (const subscription of Array.from(queryNode.subscriptions)) {
+            try {
+              subscription(mutation);
+            } catch (error) {
+              this.logger.error(
+                "[QueryEngine] Error in subscription callback during INSERT mutation",
+                {
+                  error,
+                  queryHash: queryNode.hash,
+                  resource: mutation.resource,
+                  resourceId: mutation.resourceId,
+                  stepPath: queryNode.queryStep.stepPath.join("."),
+                }
+              );
+            }
+          }
         }
       });
 
@@ -1156,9 +1182,22 @@ export class QueryEngine {
 
             if (!queryNode) continue;
 
-            queryNode.subscriptions.forEach((subscription) => {
-              subscription(mutation);
-            });
+            for (const subscription of Array.from(queryNode.subscriptions)) {
+              try {
+                subscription(mutation);
+              } catch (error) {
+                this.logger.error(
+                  "[QueryEngine] Error in subscription callback during UPDATE mutation",
+                  {
+                    error,
+                    queryHash: queryNode.hash,
+                    resource: mutation.resource,
+                    resourceId: mutation.resourceId,
+                    stepPath: queryNode.queryStep.stepPath.join("."),
+                  }
+                );
+              }
+            }
           }
 
           // For newly matched queries, fetch full data with includes and send INSERT mutations
