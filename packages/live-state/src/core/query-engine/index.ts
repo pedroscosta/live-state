@@ -8,7 +8,7 @@ import {
 } from "../../schema";
 import type { Storage } from "../../server";
 import { Batcher } from "../../server/storage/batcher";
-import { applyWhere, extractIncludeFromWhere } from "../../utils";
+import { applyWhere, extractIncludeFromWhere, type Logger } from "../../utils";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -41,6 +41,7 @@ export class QueryEngine {
   private router: DataRouter<any>;
   private storage: DataSource;
   private schema: Schema<any>;
+  private logger: Logger;
   private queryNodes: Map<string, QueryNode> = new Map();
   private objectNodes: Map<string, ObjectNode> = new Map();
 
@@ -48,10 +49,12 @@ export class QueryEngine {
     router: DataRouter<any>;
     storage: DataSource;
     schema: Schema<any>;
+    logger: Logger;
   }) {
     this.router = opts.router;
     this.storage = opts.storage;
     this.schema = opts.schema;
+    this.logger = opts.logger;
   }
 
   private getRelationalColumns(
@@ -278,7 +281,10 @@ export class QueryEngine {
     const unsubscribeFunctions: (() => void)[] = [];
 
     for (const step of queryPlan) {
-      console.log("[QueryEngine] Subscribing to step", step.stepPath.join("."));
+      this.logger.debug(
+        "[QueryEngine] Subscribing to step",
+        step.stepPath.join(".")
+      );
 
       const stepHash = hashStep(step);
       const lastStepHash = stepHashes[step.stepPath.at(-2) ?? ""];
@@ -428,7 +434,7 @@ export class QueryEngine {
     plan: QueryStep[],
     extra?: { context?: any; batcher?: Batcher }
   ): PromiseLike<any[]> {
-    console.log(
+    this.logger.debug(
       "[QueryEngine] Resolving query",
       plan.map((step) => step.stepPath.join(".")).join(" -> ")
     );
@@ -439,7 +445,7 @@ export class QueryEngine {
 
     let chain: PromiseLike<void> = this.resolveStep(plan[0], extra).then(
       (results) => {
-        console.log(
+        this.logger.debug(
           "[QueryEngine] Resolved step",
           plan[0].stepPath.join("."),
           "with results count:",
@@ -515,7 +521,7 @@ export class QueryEngine {
             }
           }
 
-          console.log(
+          this.logger.debug(
             "[QueryEngine] Resolved step",
             step.stepPath.join("."),
             "with results count:",
@@ -531,7 +537,7 @@ export class QueryEngine {
     }
 
     chain = chain.then((() => {
-      console.log("[QueryEngine] Assembling results");
+      this.logger.debug("[QueryEngine] Assembling results");
       return this.assembleResults(plan, stepResults);
     }) as () => void);
 
@@ -542,9 +548,12 @@ export class QueryEngine {
     plan: QueryStep[],
     stepResults: Record<string, { includedBy?: string; data: any[] }[]>
   ): any[] {
-    console.log("[QueryEngine] assembleResults: Starting assembly");
-    console.log("[QueryEngine] assembleResults: Plan steps:", plan.length);
-    console.log(
+    this.logger.debug("[QueryEngine] assembleResults: Starting assembly");
+    this.logger.debug(
+      "[QueryEngine] assembleResults: Plan steps:",
+      plan.length
+    );
+    this.logger.debug(
       "[QueryEngine] assembleResults: Step results keys:",
       Object.keys(stepResults)
     );
@@ -569,7 +578,7 @@ export class QueryEngine {
       const results = stepResults[stepPath] ?? [];
       const includedRelations = Object.keys(step.query.include ?? {});
 
-      console.log(
+      this.logger.debug(
         `[QueryEngine] assembleResults: Processing step "${stepPath}"`,
         {
           resource: step.query.resource,
@@ -581,7 +590,7 @@ export class QueryEngine {
       );
 
       for (const resultGroup of results) {
-        console.log(
+        this.logger.debug(
           `[QueryEngine] assembleResults: Processing result group for "${stepPath}"`,
           {
             dataCount: resultGroup.data.length,
@@ -592,7 +601,7 @@ export class QueryEngine {
         for (const data of resultGroup.data) {
           const id = data?.value?.id?.value as string | undefined;
           if (!id) {
-            console.log(
+            this.logger.debug(
               `[QueryEngine] assembleResults: Skipping data without id in step "${stepPath}"`
             );
             continue;
@@ -609,7 +618,7 @@ export class QueryEngine {
                 ? `${parentStepPath}.${resultGroup.includedBy}`
                 : resultGroup.includedBy,
             ];
-            console.log(
+            this.logger.debug(
               `[QueryEngine] assembleResults: Child entity "${key}" has parent keys:`,
               parentKeys,
               {
@@ -619,14 +628,14 @@ export class QueryEngine {
               }
             );
           } else {
-            console.log(
+            this.logger.debug(
               `[QueryEngine] assembleResults: Root entity "${key}" (no parent)`
             );
           }
 
           const existing = entriesMap.get(key);
           if (existing) {
-            console.log(
+            this.logger.debug(
               `[QueryEngine] assembleResults: Entity "${key}" already exists, adding parent keys:`,
               parentKeys
             );
@@ -634,7 +643,7 @@ export class QueryEngine {
               existing.includedBy.add(parentKey);
             }
           } else {
-            console.log(
+            this.logger.debug(
               `[QueryEngine] assembleResults: Adding new entity "${key}"`,
               {
                 resource: step.query.resource,
@@ -659,10 +668,10 @@ export class QueryEngine {
       }
     }
 
-    console.log(
+    this.logger.debug(
       `[QueryEngine] assembleResults: Built entriesMap with ${entriesMap.size} entries`
     );
-    console.log(
+    this.logger.debug(
       "[QueryEngine] assembleResults: EntriesMap keys:",
       Array.from(entriesMap.keys())
     );
@@ -671,7 +680,7 @@ export class QueryEngine {
     const entriesArray = Array.from(entriesMap.entries());
     const resultData: any[] = [];
 
-    console.log(
+    this.logger.debug(
       `[QueryEngine] assembleResults: Starting assembly phase with ${entriesArray.length} entries`
     );
 
@@ -679,21 +688,24 @@ export class QueryEngine {
       const [key, entry] = entriesArray[i];
       const resourceSchema = this.schema[entry.resourceName];
 
-      console.log(`[QueryEngine] assembleResults: Processing entry "${key}"`, {
-        resource: entry.resourceName,
-        path: entry.path,
-        isMany: entry.isMany,
-        relationName: entry.relationName,
-        includedRelations: entry.includedRelations,
-        parentKeys: Array.from(entry.includedBy),
-      });
+      this.logger.debug(
+        `[QueryEngine] assembleResults: Processing entry "${key}"`,
+        {
+          resource: entry.resourceName,
+          path: entry.path,
+          isMany: entry.isMany,
+          relationName: entry.relationName,
+          includedRelations: entry.includedRelations,
+          parentKeys: Array.from(entry.includedBy),
+        }
+      );
 
       // Initialize included relations if they don't exist
       for (const includedRelation of entry.includedRelations) {
         const relationType =
           resourceSchema?.relations?.[includedRelation]?.type;
         const hasRelation = !!entry.data.value[includedRelation];
-        console.log(
+        this.logger.debug(
           `[QueryEngine] assembleResults: Checking included relation "${includedRelation}" for "${key}"`,
           {
             relationType,
@@ -707,12 +719,12 @@ export class QueryEngine {
           const defaultValue =
             relationType === "many" ? { value: [] } : { value: null };
           entry.data.value[includedRelation] = defaultValue;
-          console.log(
+          this.logger.debug(
             `[QueryEngine] assembleResults: Initialized relation "${includedRelation}" for "${key}" with`,
             defaultValue
           );
         } else {
-          console.log(
+          this.logger.debug(
             `[QueryEngine] assembleResults: Relation "${includedRelation}" already exists for "${key}"`,
             entry.data.value[includedRelation]
           );
@@ -721,7 +733,7 @@ export class QueryEngine {
 
       // Root level items (no path)
       if (entry.path === "") {
-        console.log(
+        this.logger.debug(
           `[QueryEngine] assembleResults: Adding root entity "${key}" to resultData`
         );
         resultData.push(entry.data);
@@ -729,20 +741,20 @@ export class QueryEngine {
       }
 
       // Attach to parent(s)
-      console.log(
+      this.logger.debug(
         `[QueryEngine] assembleResults: Attaching "${key}" to ${entry.includedBy.size} parent(s)`
       );
       for (const parentKey of Array.from(entry.includedBy)) {
         const parent = entriesMap.get(parentKey);
         if (!parent) {
-          console.log(
+          this.logger.warn(
             `[QueryEngine] assembleResults: WARNING - Parent "${parentKey}" not found in entriesMap for child "${key}"`
           );
           continue;
         }
 
         const relationName = entry.relationName ?? entry.path;
-        console.log(
+        this.logger.debug(
           `[QueryEngine] assembleResults: Attaching "${key}" to parent "${parentKey}" via relation "${relationName}"`,
           {
             isMany: entry.isMany,
@@ -753,7 +765,7 @@ export class QueryEngine {
         if (entry.isMany) {
           parent.data.value[relationName] ??= { value: [] };
           parent.data.value[relationName].value.push(entry.data);
-          console.log(
+          this.logger.debug(
             `[QueryEngine] assembleResults: Added "${key}" to many relation "${relationName}" on parent "${parentKey}"`,
             {
               arrayLength: parent.data.value[relationName].value.length,
@@ -761,14 +773,14 @@ export class QueryEngine {
           );
         } else {
           parent.data.value[relationName] = entry.data;
-          console.log(
+          this.logger.debug(
             `[QueryEngine] assembleResults: Set one relation "${relationName}" on parent "${parentKey}" to "${key}"`
           );
         }
       }
     }
 
-    console.log(
+    this.logger.debug(
       `[QueryEngine] assembleResults: Assembly complete. Returning ${resultData.length} root items`
     );
     return resultData;
@@ -778,7 +790,7 @@ export class QueryEngine {
     step: QueryStep,
     extra?: { context?: any; batcher?: Batcher }
   ): PromiseLike<any[]> {
-    console.log(
+    this.logger.debug(
       "[QueryEngine] Resolving step",
       step.stepPath.join("."),
       "with query",
@@ -808,7 +820,7 @@ export class QueryEngine {
   }
 
   loadStepResults(step: QueryStep, results: any[]): void {
-    console.log(
+    this.logger.debug(
       "[QueryEngine] Loading step results",
       step.stepPath.join("."),
       "with results",
@@ -848,7 +860,7 @@ export class QueryEngine {
       }
 
       this.loadNestedRelations(resourceName, id, result);
-      console.log("[QueryEngine] Loaded nested relations for", id);
+      this.logger.debug("[QueryEngine] Loaded nested relations for", id);
     }
   }
 

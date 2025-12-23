@@ -76,7 +76,6 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             },
             subscription: isSubscribe
               ? (m) => {
-                  console.log("m", JSON.stringify(m, null, 2));
                   if (
                     !m.resourceId ||
                     !m.payload ||

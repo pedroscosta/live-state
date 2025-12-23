@@ -162,6 +162,7 @@ export class Server<TRouter extends AnyRouter> {
       },
       storage: this.storage,
       schema: this.schema,
+      logger: this.logger,
     });
   }
 
