@@ -8,9 +8,11 @@
         "name": "next"
       }
     ],
+    "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "react": ["./node_modules/@types/react"]
     }
   },
   "include": ["src", "next.config.js", "next-env.d.ts", ".next/types/**/*.ts"]
