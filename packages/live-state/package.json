@@ -26,7 +26,8 @@
     "lint": "biome lint",
     "typecheck": "tsc --noEmit --project . && tsc --noEmit --project src/client",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark": "tsx benchmark/benchmark.ts"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
@@ -50,6 +51,7 @@
     "react": "18.0.0",
     "react-dom": "^18.2.0",
     "tsup": "^8.0.2",
+    "tsx": "^4.19.2",
     "typescript": "5.5.4",
     "ulid": "^3.0.0",
     "vitest": "^3.2.4"
