@@ -126,7 +126,7 @@ class InnerClient implements QueryExecutor {
           }
         });
 
-        Object.values(this.remoteSubscriptions).forEach((query) => {
+        Array.from(this.remoteSubscriptions.values()).forEach(({ query }) => {
           this.sendWsMessage({
             id: generateId(),
             type: "SUBSCRIBE",
