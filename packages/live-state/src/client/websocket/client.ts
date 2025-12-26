@@ -196,25 +196,6 @@ class InnerClient implements QueryExecutor {
     }
   }
 
-  public subscribeToRemote(routeName: string) {
-    this.remoteSubCounters[routeName] =
-      (this.remoteSubCounters[routeName] ?? 0) + 1;
-
-    this.sendWsMessage({
-      id: generateId(),
-      type: "SUBSCRIBE",
-      resource: routeName,
-    });
-
-    return () => {
-      this.remoteSubCounters[routeName] -= 1;
-
-      if (this.remoteSubCounters[routeName] === 0) {
-        // TODO add unsubscribe message
-      }
-    };
-  }
-
   public load(query: RawQueryRequest) {
     this.sendWsMessage({
       id: generateId(),
@@ -330,7 +311,6 @@ class InnerClient implements QueryExecutor {
 export type Client<TRouter extends AnyRouter> = {
   client: {
     ws: WebSocketClient;
-    subscribe: (resourceType?: string[]) => () => void;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
     load: (query: RawQueryRequest) => () => void;
   };
@@ -341,28 +321,10 @@ export const createClient = <TRouter extends AnyRouter>(
   opts: WebSocketClientOptions
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
-  const logger = createLogger({
-    level: opts.logLevel ?? LogLevel.INFO,
-    prefix: "Client",
-  });
 
   return {
     client: {
       ws: ogClient.ws,
-      subscribe: (resourceType?: string[]) => {
-        const removeListeners: (() => void)[] = [];
-
-        for (const rt of resourceType ?? Object.keys(ogClient.store.schema)) {
-          removeListeners.push(ogClient.subscribeToRemote(rt));
-        }
-
-        return () => {
-          logger.debug("Removing listeners", removeListeners);
-          removeListeners.forEach((remove) => {
-            remove();
-          });
-        };
-      },
       load: (query: RawQueryRequest) => {
         return ogClient.load(query);
       },

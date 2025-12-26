@@ -165,7 +165,8 @@ describe("End-to-End Query Tests", () => {
       },
     });
 
-    wsClient.client.subscribe();
+    await wsClient.client.load(wsClient.store.query.users.buildQueryRequest());
+    await wsClient.client.load(wsClient.store.query.posts.buildQueryRequest());
 
     // Wait for websocket client to connect
     await waitForConnection(wsClient);
@@ -435,7 +436,12 @@ describe("End-to-End Query Tests", () => {
           },
         });
 
-        client1.client.subscribe();
+        await client1.client.load(
+          client1.store.query.users.buildQueryRequest()
+        );
+        await client1.client.load(
+          client1.store.query.posts.buildQueryRequest()
+        );
 
         // Wait for first client to connect
         await waitForConnection(client1);
@@ -451,7 +457,12 @@ describe("End-to-End Query Tests", () => {
           },
         });
 
-        client2.client.subscribe();
+        await client2.client.load(
+          client2.store.query.users.buildQueryRequest()
+        );
+        await client2.client.load(
+          client2.store.query.posts.buildQueryRequest()
+        );
 
         // Wait for second client to connect
         await waitForConnection(client2);
@@ -1317,7 +1328,12 @@ describe("End-to-End Query Tests", () => {
         },
       });
 
-      complexClient.client.subscribe();
+      await complexClient.client.load(
+        complexClient.store.query.users.buildQueryRequest()
+      );
+      await complexClient.client.load(
+        complexClient.store.query.posts.buildQueryRequest()
+      );
       await waitForConnection(complexClient);
 
       // Insert users with different email domains

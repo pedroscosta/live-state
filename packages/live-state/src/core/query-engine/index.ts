@@ -291,22 +291,28 @@ export class QueryEngine {
 
       const currentRelationName = step.stepPath.at(-1) ?? "";
 
-      const queryNode: QueryNode = {
-        hash: stepHash,
-        queryStep: step,
-        relationName: currentRelationName,
-        trackedObjects: new Set(),
-        subscriptions: new Set([callback]),
-        parentQuery: lastStepHash,
-        childQueries: new Set(),
-      };
+      let queryNode = this.queryNodes.get(stepHash);
 
-      this.queryNodes.set(queryNode.hash, queryNode);
+      if (queryNode) {
+        queryNode.subscriptions.add(callback);
+      } else {
+        queryNode = {
+          hash: stepHash,
+          queryStep: step,
+          relationName: currentRelationName,
+          trackedObjects: new Set(),
+          subscriptions: new Set([callback]),
+          parentQuery: lastStepHash,
+          childQueries: new Set(),
+        };
 
-      if (lastStepHash) {
-        const lastStepNode = this.queryNodes.get(lastStepHash);
-        if (lastStepNode) {
-          lastStepNode.childQueries.add(queryNode.hash);
+        this.queryNodes.set(queryNode.hash, queryNode);
+
+        if (lastStepHash) {
+          const lastStepNode = this.queryNodes.get(lastStepHash);
+          if (lastStepNode) {
+            lastStepNode.childQueries.add(queryNode.hash);
+          }
         }
       }
 

@@ -329,7 +329,6 @@ describe("Query Engine Functional Requirements", () => {
           queryParams: {},
           context: {},
         },
-        testNewEngine: true,
       });
 
       expect(result.data).toBeDefined();
@@ -371,7 +370,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
       });
 
       expect(result.data).toBeDefined();
@@ -434,7 +432,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
       });
 
       expect(result.data.length).toBe(1);
@@ -458,7 +455,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
       });
 
       expect(result.data.length).toBe(2);
@@ -489,7 +485,6 @@ describe("Query Engine Functional Requirements", () => {
             ],
           },
         },
-        testNewEngine: true,
       });
 
       expect(result.data.length).toBe(1);
@@ -510,7 +505,6 @@ describe("Query Engine Functional Requirements", () => {
             title: { $in: ["First Post", "Second Post", "Non-existent"] },
           },
         },
-        testNewEngine: true,
       });
 
       expect(result.data.length).toBe(2);
@@ -533,7 +527,6 @@ describe("Query Engine Functional Requirements", () => {
           queryParams: {},
           context: {},
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -588,7 +581,6 @@ describe("Query Engine Functional Requirements", () => {
             likes: { $gt: 10 },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -659,7 +651,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -711,7 +702,6 @@ describe("Query Engine Functional Requirements", () => {
           queryParams: {},
           context: {},
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -757,7 +747,6 @@ describe("Query Engine Functional Requirements", () => {
             likes: { $gt: 10 },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -804,7 +793,6 @@ describe("Query Engine Functional Requirements", () => {
             likes: { $gt: 10 },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -851,7 +839,6 @@ describe("Query Engine Functional Requirements", () => {
             likes: { $gt: 10 },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -909,7 +896,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -964,7 +950,6 @@ describe("Query Engine Functional Requirements", () => {
             likes: { $gt: 10 },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           query1Mutations.push(mutation);
         },
@@ -982,7 +967,6 @@ describe("Query Engine Functional Requirements", () => {
             likes: { $gt: 20 },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           query2Mutations.push(mutation);
         },
@@ -1041,7 +1025,6 @@ describe("Query Engine Functional Requirements", () => {
             comments: true,
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1093,7 +1076,6 @@ describe("Query Engine Functional Requirements", () => {
             author: true,
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1140,7 +1122,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1195,7 +1176,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1255,7 +1235,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1323,7 +1302,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1395,7 +1373,6 @@ describe("Query Engine Functional Requirements", () => {
             },
           },
         },
-        testNewEngine: true,
         subscription: (mutation) => {
           mutations.push(mutation);
         },
@@ -1442,6 +1419,654 @@ describe("Query Engine Functional Requirements", () => {
 
       if (result.unsubscribe) {
         result.unsubscribe();
+      }
+    });
+  });
+
+  describe("Multiple Clients and Unsubscribing", () => {
+    test("multiple clients receive notifications for shallow query", async () => {
+      const client1Mutations: any[] = [];
+      const client2Mutations: any[] = [];
+      const client3Mutations: any[] = [];
+
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        subscription: (mutation) => {
+          client1Mutations.push(mutation);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        subscription: (mutation) => {
+          client2Mutations.push(mutation);
+        },
+      });
+
+      const result3 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        subscription: (mutation) => {
+          client3Mutations.push(mutation);
+        },
+      });
+
+      // Verify all clients receive initial data
+      expect(result1.data.length).toBe(4);
+      expect(result2.data.length).toBe(4);
+      expect(result3.data.length).toBe(4);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert a new post
+      const newPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: "Shared Post",
+        content: "This post should be seen by all clients",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // All clients should receive the notification
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(1);
+      expect(client3Mutations.length).toBe(1);
+
+      expect(client1Mutations[0].resourceId).toBe(newPostId);
+      expect(client2Mutations[0].resourceId).toBe(newPostId);
+      expect(client3Mutations[0].resourceId).toBe(newPostId);
+
+      // Update the post
+      await storage.update(deepSchema.posts, newPostId, {
+        likes: 10,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // All clients should receive the update
+      expect(client1Mutations.length).toBe(2);
+      expect(client2Mutations.length).toBe(2);
+      expect(client3Mutations.length).toBe(2);
+
+      expect(client1Mutations[1].procedure).toBe("UPDATE");
+      expect(client2Mutations[1].procedure).toBe("UPDATE");
+      expect(client3Mutations[1].procedure).toBe("UPDATE");
+
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+      if (result3.unsubscribe) {
+        result3.unsubscribe();
+      }
+    });
+
+    test("multiple clients receive notifications for deep query with includes", async () => {
+      const client1Mutations: any[] = [];
+      const client2Mutations: any[] = [];
+
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            author: {
+              org: true,
+            },
+            comments: true,
+          },
+        },
+        subscription: (mutation) => {
+          client1Mutations.push(mutation);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            author: {
+              org: true,
+            },
+            comments: true,
+          },
+        },
+        subscription: (mutation) => {
+          client2Mutations.push(mutation);
+        },
+      });
+
+      // Verify both clients receive initial data with nested structure
+      expect(result1.data.length).toBe(4);
+      expect(result2.data.length).toBe(4);
+
+      const post1Client1 = result1.data.find(
+        (p: any) => p.value.id.value === postId1
+      );
+      const post1Client2 = result2.data.find(
+        (p: any) => p.value.id.value === postId1
+      );
+
+      expect(post1Client1!.value.author.value.org.value).toBeDefined();
+      expect(post1Client2!.value.author.value.org.value).toBeDefined();
+      expect(post1Client1!.value.comments.value).toBeDefined();
+      expect(post1Client2!.value.comments.value).toBeDefined();
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create a new comment on postId1
+      const newCommentId = generateId();
+      await storage.insert(deepSchema.comments, {
+        id: newCommentId,
+        content: "New comment from multiple clients test",
+        postId: postId1,
+        authorId: userId1,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Both clients should receive the comment notification
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(1);
+
+      expect(client1Mutations[0].resource).toBe("comments");
+      expect(client2Mutations[0].resource).toBe("comments");
+      expect(client1Mutations[0].resourceId).toBe(newCommentId);
+      expect(client2Mutations[0].resourceId).toBe(newCommentId);
+
+      // Update the author (included relation)
+      await storage.update(deepSchema.users, userId1, {
+        name: "John Updated Name",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Both clients should receive the author update
+      expect(client1Mutations.length).toBe(2);
+      expect(client2Mutations.length).toBe(2);
+
+      const authorUpdate1 = client1Mutations.find(
+        (m) => m.resource === "users" && m.resourceId === userId1
+      );
+      const authorUpdate2 = client2Mutations.find(
+        (m) => m.resource === "users" && m.resourceId === userId1
+      );
+
+      expect(authorUpdate1).toBeDefined();
+      expect(authorUpdate2).toBeDefined();
+      expect(authorUpdate1!.procedure).toBe("UPDATE");
+      expect(authorUpdate2!.procedure).toBe("UPDATE");
+
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+    });
+
+    test("unsubscribed client stops receiving notifications while others continue", async () => {
+      const client1Mutations: any[] = [];
+      const client2Mutations: any[] = [];
+      const client3Mutations: any[] = [];
+
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        subscription: (mutation) => {
+          client1Mutations.push(mutation);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        subscription: (mutation) => {
+          client2Mutations.push(mutation);
+        },
+      });
+
+      const result3 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+        subscription: (mutation) => {
+          client3Mutations.push(mutation);
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert first post - all clients should receive it
+      const post1Id = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: post1Id,
+        title: "Post Before Unsubscribe",
+        content: "All clients should see this",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(1);
+      expect(client3Mutations.length).toBe(1);
+
+      // Unsubscribe client2
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Insert second post - only client1 and client3 should receive it
+      const post2Id = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: post2Id,
+        title: "Post After Unsubscribe",
+        content: "Only active clients should see this",
+        authorId: userId1,
+        likes: 0,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // client1 and client3 should receive the new post
+      expect(client1Mutations.length).toBe(2);
+      expect(client3Mutations.length).toBe(2);
+
+      // client2 should NOT receive the new post (unsubscribed)
+      expect(client2Mutations.length).toBe(1);
+
+      expect(client1Mutations[1].resourceId).toBe(post2Id);
+      expect(client3Mutations[1].resourceId).toBe(post2Id);
+
+      // Update post1 - only client1 and client3 should receive it
+      await storage.update(deepSchema.posts, post1Id, {
+        likes: 5,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // client1 and client3 should receive the update
+      expect(client1Mutations.length).toBe(3);
+      expect(client3Mutations.length).toBe(3);
+
+      // client2 should still have only 1 mutation
+      expect(client2Mutations.length).toBe(1);
+
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+      if (result3.unsubscribe) {
+        result3.unsubscribe();
+      }
+    });
+
+    test("unsubscribed client stops receiving notifications for deep query", async () => {
+      const client1Mutations: any[] = [];
+      const client2Mutations: any[] = [];
+
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+            comments: true,
+          },
+        },
+        subscription: (mutation) => {
+          client1Mutations.push(mutation);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          include: {
+            author: true,
+            comments: true,
+          },
+        },
+        subscription: (mutation) => {
+          client2Mutations.push(mutation);
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create a comment - both clients should receive it
+      const comment1Id = generateId();
+      await storage.insert(deepSchema.comments, {
+        id: comment1Id,
+        content: "Comment before unsubscribe",
+        postId: postId1,
+        authorId: userId1,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(1);
+
+      // Unsubscribe client2
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create another comment - only client1 should receive it
+      const comment2Id = generateId();
+      await storage.insert(deepSchema.comments, {
+        id: comment2Id,
+        content: "Comment after unsubscribe",
+        postId: postId1,
+        authorId: userId1,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(2);
+      expect(client2Mutations.length).toBe(1);
+
+      // Update author - only client1 should receive it
+      await storage.update(deepSchema.users, userId1, {
+        name: "Updated After Unsubscribe",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBeGreaterThan(2);
+      expect(client2Mutations.length).toBe(1);
+
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+    });
+
+    test("multiple clients with same filtered query receive notifications independently", async () => {
+      const client1Mutations: any[] = [];
+      const client2Mutations: any[] = [];
+
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        subscription: (mutation) => {
+          client1Mutations.push(mutation);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+          where: {
+            likes: { $gt: 10 },
+          },
+        },
+        subscription: (mutation) => {
+          client2Mutations.push(mutation);
+        },
+      });
+
+      // Both clients should receive initial matching data
+      expect(result1.data.length).toBe(1);
+      expect(result2.data.length).toBe(1);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update postId3 to match filter - both should receive it
+      await storage.update(deepSchema.posts, postId3, {
+        likes: 20,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(1);
+
+      // Unsubscribe client1
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Update postId3 again - only client2 should receive it
+      await storage.update(deepSchema.posts, postId3, {
+        likes: 25,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(2);
+
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+    });
+
+    test("unsubscribing one client does not affect others with same deep query", async () => {
+      const client1Mutations: any[] = [];
+      const client2Mutations: any[] = [];
+      const client3Mutations: any[] = [];
+
+      const result1 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
+            },
+          },
+        },
+        subscription: (mutation) => {
+          client1Mutations.push(mutation);
+        },
+      });
+
+      const result2 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
+            },
+          },
+        },
+        subscription: (mutation) => {
+          client2Mutations.push(mutation);
+        },
+      });
+
+      const result3 = await testServer.handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "orgs",
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {
+            org: "acme",
+          },
+          include: {
+            users: {
+              posts: {
+                comments: true,
+              },
+            },
+          },
+        },
+        testNewEngine: true,
+        subscription: (mutation) => {
+          client3Mutations.push(mutation);
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create a comment on postId1 - all clients should receive it
+      const comment1Id = generateId();
+      await storage.insert(deepSchema.comments, {
+        id: comment1Id,
+        content: "Comment before unsubscribe",
+        postId: postId1,
+        authorId: userId1,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(1);
+      expect(client2Mutations.length).toBe(1);
+      expect(client3Mutations.length).toBe(1);
+
+      // Unsubscribe client2
+      if (result2.unsubscribe) {
+        result2.unsubscribe();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Create another comment - only client1 and client3 should receive it
+      const comment2Id = generateId();
+      await storage.insert(deepSchema.comments, {
+        id: comment2Id,
+        content: "Comment after unsubscribe",
+        postId: postId1,
+        authorId: userId2,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(client1Mutations.length).toBe(2);
+      expect(client2Mutations.length).toBe(1);
+      expect(client3Mutations.length).toBe(2);
+
+      // Update nested org - only client1 and client3 should receive it
+      await storage.update(deepSchema.orgs, orgId1, {
+        name: "Acme Updated",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const orgUpdate1 = client1Mutations.find(
+        (m) => m.resource === "orgs" && m.resourceId === orgId1
+      );
+      const orgUpdate2 = client2Mutations.find(
+        (m) => m.resource === "orgs" && m.resourceId === orgId1
+      );
+      const orgUpdate3 = client3Mutations.find(
+        (m) => m.resource === "orgs" && m.resourceId === orgId1
+      );
+
+      expect(orgUpdate1).toBeDefined();
+      expect(orgUpdate2).toBeUndefined();
+      expect(orgUpdate3).toBeDefined();
+
+      if (result1.unsubscribe) {
+        result1.unsubscribe();
+      }
+      if (result3.unsubscribe) {
+        result3.unsubscribe();
       }
     });
   });
