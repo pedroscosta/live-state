@@ -259,17 +259,117 @@ export class OptimisticStore {
       const id = payload.id?.value as string | undefined;
       if (!id) return;
 
+      const { cleanedPayload, nestedMutations } = this.extractNestedRelations(
+        resourceType,
+        payload
+      );
+
+      nestedMutations.forEach((mutation) => {
+        this.addMutation(mutation.resource, mutation);
+      });
+
       this.addMutation(resourceType, {
-        // this id is not used because only this client will see this mutation, so it can be any unique string
-        // since resource's ids are already unique, there is no need to generate a new id
         id,
         type: "MUTATE",
         resource: resourceType,
         resourceId: id,
         procedure: "INSERT",
-        payload,
+        payload: cleanedPayload,
       });
     });
+  }
+
+  private extractNestedRelations(
+    resourceType: string,
+    payload: DefaultMutationMessage["payload"]
+  ): {
+    cleanedPayload: DefaultMutationMessage["payload"];
+    nestedMutations: DefaultMutationMessage[];
+  } {
+    const schema = this.schema[resourceType];
+    const cleanedPayload: DefaultMutationMessage["payload"] = { ...payload };
+    const nestedMutations: DefaultMutationMessage[] = [];
+
+    if (!schema?.relations) {
+      return { cleanedPayload, nestedMutations };
+    }
+
+    // Process each field in the payload
+    Object.entries(payload).forEach(([fieldName, fieldValue]) => {
+      const relation = schema.relations[fieldName];
+      if (!relation) return;
+
+      const targetResource = relation.entity.name;
+      const nestedData = fieldValue?.value;
+
+      if (relation.type === "one") {
+        if (
+          nestedData &&
+          typeof nestedData === "object" &&
+          !Array.isArray(nestedData) &&
+          nestedData.value?.id?.value
+        ) {
+          const nestedId = nestedData.value.id.value as string;
+
+          const nestedPayload = {
+            ...nestedData.value,
+          } as DefaultMutationMessage["payload"];
+          const {
+            cleanedPayload: cleanedNestedPayload,
+            nestedMutations: deeperMutations,
+          } = this.extractNestedRelations(targetResource, nestedPayload);
+
+          nestedMutations.push(...deeperMutations);
+
+          nestedMutations.push({
+            id: nestedId,
+            type: "MUTATE",
+            resource: targetResource,
+            resourceId: nestedId,
+            procedure: "INSERT",
+            payload: cleanedNestedPayload,
+          });
+
+          delete cleanedPayload[fieldName];
+        }
+      } else if (relation.type === "many") {
+        if (Array.isArray(nestedData)) {
+          nestedData.forEach((item) => {
+            if (
+              item &&
+              typeof item === "object" &&
+              !Array.isArray(item) &&
+              item.value?.id?.value
+            ) {
+              const nestedId = item.value.id.value as string;
+
+              const nestedPayload = {
+                ...item.value,
+              } as DefaultMutationMessage["payload"];
+              const {
+                cleanedPayload: cleanedNestedPayload,
+                nestedMutations: deeperMutations,
+              } = this.extractNestedRelations(targetResource, nestedPayload);
+
+              nestedMutations.push(...deeperMutations);
+
+              nestedMutations.push({
+                id: nestedId,
+                type: "MUTATE",
+                resource: targetResource,
+                resourceId: nestedId,
+                procedure: "INSERT",
+                payload: cleanedNestedPayload,
+              });
+            }
+          });
+
+          delete cleanedPayload[fieldName];
+        }
+      }
+    });
+
+    return { cleanedPayload, nestedMutations };
   }
 
   private updateRawObjPool(

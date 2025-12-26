@@ -53,8 +53,6 @@ class InnerClient implements QueryExecutor {
   public readonly store: OptimisticStore;
   private readonly logger: Logger;
 
-  private remoteSubCounters: Record<string, number> = {};
-
   private remoteSubscriptions: Map<
     string,
     { query: RawQueryRequest; subCounter: number }
@@ -106,26 +104,6 @@ class InnerClient implements QueryExecutor {
       });
 
       if (e.open) {
-        // TODO move this logic to the Provider
-        Object.keys(this.store.schema).forEach((routeName) => {
-          this.sendWsMessage({
-            id: generateId(),
-            type: "QUERY",
-            resource: routeName,
-            // TODO add lastSyncedAt
-          });
-        });
-
-        Object.entries(this.remoteSubCounters).forEach(([routeName, count]) => {
-          if (count > 0) {
-            this.sendWsMessage({
-              id: generateId(),
-              type: "SUBSCRIBE",
-              resource: routeName,
-            });
-          }
-        });
-
         Array.from(this.remoteSubscriptions.values()).forEach(({ query }) => {
           this.sendWsMessage({
             id: generateId(),
