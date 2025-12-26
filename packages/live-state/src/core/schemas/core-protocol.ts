@@ -16,7 +16,7 @@ export type RawQueryRequest = z.infer<typeof querySchema>;
 export const queryPayloadSchema = z.record(
   z.string(),
   z.object({
-    value: z.string().or(z.number()).or(z.boolean()).or(z.date()).nullable(),
+    value: z.any().nullable(),
     _meta: z.object({ timestamp: z.string().optional().nullable() }).optional(),
   })
 );
