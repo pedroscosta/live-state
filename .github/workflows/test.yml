@@ -49,6 +49,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Create test databases
+        env:
+          PGPASSWORD: admin
+        run: |
+          for db in live_state_e2e_test live_state_query_engine_test; do
+            psql -h localhost -U admin -d live_state_test -tc "SELECT 1 FROM pg_database WHERE datname='${db}'" | grep -q 1 || \
+              psql -h localhost -U admin -d live_state_test -c "CREATE DATABASE ${db};"
+          done
+
       - name: Run type checking
         run: pnpm typecheck --filter="./packages/*"
 

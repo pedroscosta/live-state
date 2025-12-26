@@ -6,6 +6,7 @@
 import {
   afterAll,
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -29,6 +30,7 @@ import { generateId } from "../../src/core/utils";
 import { createClient } from "../../src/client";
 import { createClient as createFetchClient } from "../../src/client/fetch";
 import type { Server as HttpServer } from "http";
+import { LogLevel } from "../../src/utils";
 
 /**
  * Test schema
@@ -81,6 +83,17 @@ describe("End-to-End Query Tests", () => {
   let wsClient: ReturnType<typeof createClient<typeof testRouter>>;
   let fetchClient: ReturnType<typeof createFetchClient<typeof testRouter>>;
 
+  // Create a single shared pool for all tests to prevent connection leaks
+  beforeAll(async () => {
+    pool = new Pool({
+      connectionString:
+        "postgresql://admin:admin@localhost:5432/live_state_e2e_test",
+      max: 10, // Limit pool size
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
+  });
+
   const waitForConnection = (client: ReturnType<typeof createClient>) => {
     return new Promise<void>((resolve) => {
       if (client.client.ws.connected()) {
@@ -100,13 +113,7 @@ describe("End-to-End Query Tests", () => {
   };
 
   beforeEach(async () => {
-    // Create PostgreSQL connection pool
-    pool = new Pool({
-      connectionString:
-        "postgresql://admin:admin@localhost:5432/live_state_test",
-    });
-
-    // Create SQL storage
+    // Create SQL storage using the shared pool
     storage = new SQLStorage(pool);
 
     // Create server
@@ -114,6 +121,7 @@ describe("End-to-End Query Tests", () => {
       router: testRouter,
       storage,
       schema: testSchema,
+      logLevel: LogLevel.DEBUG,
     });
 
     // Wait for storage to initialize
@@ -157,7 +165,8 @@ describe("End-to-End Query Tests", () => {
       },
     });
 
-    wsClient.client.subscribe();
+    await wsClient.client.load(wsClient.store.query.users.buildQueryRequest());
+    await wsClient.client.load(wsClient.store.query.posts.buildQueryRequest());
 
     // Wait for websocket client to connect
     await waitForConnection(wsClient);
@@ -184,18 +193,22 @@ describe("End-to-End Query Tests", () => {
     }
 
     // Clean up all tables after each test
-    try {
-      await pool.query(
-        "TRUNCATE TABLE users, users_meta, posts, posts_meta RESTART IDENTITY CASCADE"
-      );
-    } catch (error) {
-      // Ignore errors during cleanup
+    if (pool) {
+      try {
+        await pool.query(
+          "TRUNCATE TABLE users, users_meta, posts, posts_meta RESTART IDENTITY CASCADE"
+        );
+      } catch (error) {
+        // Ignore errors during cleanup
+      }
     }
   });
 
   afterAll(async () => {
-    // Close the pool after all tests
-    await pool.end();
+    // Close the shared pool after all tests
+    if (pool) {
+      await pool.end();
+    }
   });
 
   describe("Websocket Client Tests", () => {
@@ -423,7 +436,12 @@ describe("End-to-End Query Tests", () => {
           },
         });
 
-        client1.client.subscribe();
+        await client1.client.load(
+          client1.store.query.users.buildQueryRequest()
+        );
+        await client1.client.load(
+          client1.store.query.posts.buildQueryRequest()
+        );
 
         // Wait for first client to connect
         await waitForConnection(client1);
@@ -439,7 +457,12 @@ describe("End-to-End Query Tests", () => {
           },
         });
 
-        client2.client.subscribe();
+        await client2.client.load(
+          client2.store.query.users.buildQueryRequest()
+        );
+        await client2.client.load(
+          client2.store.query.posts.buildQueryRequest()
+        );
 
         // Wait for second client to connect
         await waitForConnection(client2);
@@ -984,9 +1007,10 @@ describe("End-to-End Query Tests", () => {
           autoConnect: true,
           autoReconnect: false,
         },
+        logLevel: LogLevel.DEBUG,
       });
 
-      client1.client.subscribe();
+      await client1.client.load(client1.store.query.users.buildQueryRequest());
       await waitForConnection(client1);
 
       // Create second client with userId2
@@ -998,9 +1022,10 @@ describe("End-to-End Query Tests", () => {
           autoConnect: true,
           autoReconnect: false,
         },
+        logLevel: LogLevel.DEBUG,
       });
 
-      client2.client.subscribe();
+      await client2.client.load(client2.store.query.users.buildQueryRequest());
       await waitForConnection(client2);
     });
 
@@ -1303,7 +1328,12 @@ describe("End-to-End Query Tests", () => {
         },
       });
 
-      complexClient.client.subscribe();
+      await complexClient.client.load(
+        complexClient.store.query.users.buildQueryRequest()
+      );
+      await complexClient.client.load(
+        complexClient.store.query.posts.buildQueryRequest()
+      );
       await waitForConnection(complexClient);
 
       // Insert users with different email domains

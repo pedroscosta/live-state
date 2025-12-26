@@ -6,6 +6,7 @@ import express from "express";
 import expressWs from "express-ws";
 import morgan from "morgan";
 import { Pool } from "pg";
+import { LogLevel } from "@live-state/sync";
 
 const lsServer = server({
   router: routerImpl,
@@ -15,6 +16,7 @@ const lsServer = server({
     })
   ),
   schema,
+  logLevel: LogLevel.DEBUG,
 });
 
 export const createServer = (): ReturnType<typeof expressWs>["app"] => {

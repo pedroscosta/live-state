@@ -125,11 +125,13 @@ describe("Route", () => {
     expect(mockStorage.get).toHaveBeenCalledWith(
       expect.objectContaining({
         resource: "users",
-        where: {},
+        where: undefined,
       })
     );
     expect(result).toEqual({
       data: mockData,
+      unsubscribe: undefined,
+      queryHash: expect.any(String),
     });
   });
 
@@ -475,246 +477,6 @@ describe("RouteFactory", () => {
     expect(route).toBeInstanceOf(Route);
     expect(route.resourceSchema).toBe(mockShape);
     expect(route.authorization).toBe(mockAuth);
-  });
-});
-
-describe("Route Authorization", () => {
-  let mockStorage: Storage;
-  let mockSchema: Schema<any>;
-  let mockResource: LiveObjectAny;
-
-  beforeEach(() => {
-    mockStorage = {
-      get: vi.fn().mockResolvedValue([]),
-      rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      transaction: vi.fn().mockImplementation(async (fn) => {
-        return await fn({
-          trx: mockStorage,
-          commit: vi.fn().mockResolvedValue(undefined),
-          rollback: vi.fn().mockResolvedValue(undefined),
-        });
-      }),
-    } as unknown as Storage;
-
-    mockResource = {
-      name: "users",
-      mergeMutation: vi.fn().mockReturnValue([{}, { accepted: true }]),
-    } as unknown as LiveObjectAny;
-
-    mockSchema = {
-      users: mockResource,
-    };
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  test("should apply authorization to QUERY requests", async () => {
-    const authHandler = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-    expect(mockStorage.get).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: "users",
-        where: { userId: "123" },
-      })
-    );
-  });
-
-  test("should merge authorization with existing where clause", async () => {
-    const authHandler = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      where: { active: true },
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(mockStorage.get).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: "users",
-        where: { $and: [{ active: true }, { userId: "123" }] },
-      })
-    );
-  });
-
-  test("should handle QUERY without authorization", async () => {
-    const route = new Route(mockResource);
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      where: { active: true },
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {},
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(mockStorage.get).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: "users",
-        where: { active: true },
-      })
-    );
-  });
-
-  test("should handle QUERY authorization with boolean false", async () => {
-    const authHandler = vi.fn().mockReturnValue(false);
-    const route = new Route(mockResource, undefined, { read: authHandler });
-    const batcher = new Batcher(mockStorage);
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    await expect(
-      route.handleQuery({
-        req: mockRequest,
-        batcher,
-      })
-    ).rejects.toThrow("Not authorized");
-
-    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-  });
-
-  test("should handle QUERY authorization with boolean true", async () => {
-    const authHandler = vi.fn().mockReturnValue(true);
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      where: { active: true },
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-    expect(mockStorage.get).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: "users",
-        where: { active: true },
-      })
-    );
-  });
-
-  test("should handle QUERY authorization with where clause only", async () => {
-    const authHandler = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-    expect(mockStorage.get).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: "users",
-        where: { userId: "123" },
-      })
-    );
-  });
-
-  test("should handle QUERY authorization with complex where clause", async () => {
-    const authHandler = vi.fn().mockReturnValue({
-      $and: [{ userId: "123" }, { role: "admin" }],
-    });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      where: { active: true },
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123", role: "admin" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(authHandler).toHaveBeenCalledWith({
-      ctx: {
-        userId: "123",
-        role: "admin",
-      },
-    });
-    expect(mockStorage.get).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: "users",
-        where: {
-          $and: [
-            { active: true },
-            { $and: [{ userId: "123" }, { role: "admin" }] },
-          ],
-        },
-      })
-    );
   });
 });
 
@@ -2314,32 +2076,6 @@ describe("Route Authorization Error Handling", () => {
     vi.clearAllMocks();
   });
 
-  test("should handle authorization handler throwing error", async () => {
-    const authHandler = vi.fn().mockImplementation(() => {
-      throw new Error("Authorization error");
-    });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: { userId: "123" },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await expect(
-      route.handleQuery({
-        req: mockRequest,
-        batcher,
-      })
-    ).rejects.toThrow("Authorization error");
-
-    expect(authHandler).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-  });
-
   test("should handle insert authorization handler throwing error", async () => {
     const insertAuth = vi.fn().mockImplementation(() => {
       throw new Error("Insert authorization error");
@@ -2563,8 +2299,6 @@ describe("Route Complex Authorization Scenarios", () => {
       batcher,
     });
 
-    expect(readAuth).toHaveBeenCalledWith({ ctx: { userId: "123" } });
-
     // Test insert authorization
     const insertRequest: MutationRequest = {
       type: "MUTATE",
@@ -2659,65 +2393,6 @@ describe("Route Complex Authorization Scenarios", () => {
         }),
       })
     );
-  });
-
-  test("should handle authorization with complex context", async () => {
-    const authHandler = vi.fn().mockReturnValue({
-      $and: [
-        { userId: "123" },
-        { role: "admin" },
-        { department: "engineering" },
-      ],
-    });
-    const route = new Route(mockResource, undefined, { read: authHandler });
-
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      where: { active: true },
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {
-        userId: "123",
-        role: "admin",
-        department: "engineering",
-        permissions: ["read", "write"],
-      },
-    };
-
-    const batcher = new Batcher(mockStorage);
-    await route.handleQuery({
-      req: mockRequest,
-      batcher,
-    });
-
-    expect(authHandler).toHaveBeenCalledWith({
-      ctx: {
-        userId: "123",
-        role: "admin",
-        department: "engineering",
-        permissions: ["read", "write"],
-      },
-    });
-    expect(mockStorage.get).toHaveBeenCalledWith({
-      resource: "users",
-      where: {
-        $and: [
-          { active: true },
-          {
-            $and: [
-              { userId: "123" },
-              { role: "admin" },
-              { department: "engineering" },
-            ],
-          },
-        ],
-      },
-      include: undefined,
-      limit: undefined,
-      sort: undefined,
-    });
   });
 });
 

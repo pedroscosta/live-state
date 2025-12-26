@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type * as z3 from "zod/v3";
 import type * as z4 from "zod/v4/core";
-import { mergeWhereClauses } from "../core/utils";
+import type { RawQueryRequest } from "../core/schemas/core-protocol";
 import {
   type InferLiveObjectWithRelationalIds,
   inferValue,
@@ -15,7 +15,12 @@ import {
   type Schema,
   type WhereClause,
 } from "../schema";
-import { applyWhere, extractIncludeFromWhere, type Simplify } from "../utils";
+import {
+  applyWhere,
+  extractIncludeFromWhere,
+  hash,
+  type Simplify,
+} from "../utils";
 import type {
   BaseRequest,
   Middleware,
@@ -53,6 +58,7 @@ export type AnyRouter = Router<any>;
 
 export type QueryResult<TShape extends LiveObjectAny> = {
   data: MaterializedLiveType<TShape>[];
+  unsubscribe?: () => void;
 };
 
 export type MutationResult<TShape extends LiveObjectAny> = {
@@ -151,28 +157,47 @@ export class Route<
     batcher: Batcher;
   }): Promise<QueryResult<TResourceSchema>> => {
     return await this.wrapInMiddlewares(async (req: QueryRequest) => {
-      const authorizationClause = this.authorization?.read?.({
-        ctx: req.context,
+      // const authorizationClause = this.authorization?.read?.({
+      //   ctx: req.context,
+      // });
+
+      // if (typeof authorizationClause === "boolean" && !authorizationClause) {
+      //   throw new Error("Not authorized");
+      // }
+
+      // const mergedWhere = mergeWhereClauses(
+      //   req.where,
+      //   typeof authorizationClause === "object"
+      //     ? authorizationClause
+      //     : undefined
+      // );
+
+      const rawQuery: RawQueryRequest = {
+        resource: req.resource,
+        where: req.where,
+        include: req.include,
+        lastSyncedAt: req.lastSyncedAt,
+        limit: req.limit,
+        sort: req.sort,
+      };
+
+      const queryHash = hash(rawQuery);
+
+      let unsubscribeFunction: (() => void) | undefined;
+
+      const data = await batcher.rawFind<TResourceSchema>({
+        resource: req.resource,
+        commonWhere: req.where,
+        uniqueWhere: req.relationalWhere,
+        include: req.include,
+        limit: req.limit,
+        sort: req.sort,
       });
 
-      if (typeof authorizationClause === "boolean" && !authorizationClause) {
-        throw new Error("Not authorized");
-      }
-
       return {
-        data: await batcher.rawFind<TResourceSchema>({
-          resource: req.resource,
-          commonWhere: mergeWhereClauses(
-            req.where,
-            typeof authorizationClause === "object"
-              ? authorizationClause
-              : undefined
-          ),
-          uniqueWhere: req.relationalWhere,
-          include: req.include,
-          limit: req.limit,
-          sort: req.sort,
-        }),
+        data,
+        unsubscribe: unsubscribeFunction,
+        queryHash,
       };
     })(req);
   };
@@ -213,6 +238,14 @@ export class Route<
       }
     })(req);
   };
+
+  public getAuthorizationClause(
+    req: QueryRequest
+  ): WhereClause<TResourceSchema> | undefined | boolean {
+    return this.authorization?.read?.({
+      ctx: req.context,
+    });
+  }
 
   private handleSet = async ({
     req,

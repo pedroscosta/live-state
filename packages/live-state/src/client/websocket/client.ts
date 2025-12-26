@@ -14,6 +14,7 @@ import type { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
 import type { AnyRouter } from "../../server";
 import {
   createLogger,
+  hash,
   type Logger,
   LogLevel,
   type Simplify,
@@ -53,6 +54,11 @@ class InnerClient implements QueryExecutor {
   private readonly logger: Logger;
 
   private remoteSubCounters: Record<string, number> = {};
+
+  private remoteSubscriptions: Map<
+    string,
+    { query: RawQueryRequest; subCounter: number }
+  > = new Map();
 
   private eventListeners: Set<(event: ClientEvents) => void> = new Set();
 
@@ -120,6 +126,14 @@ class InnerClient implements QueryExecutor {
           }
         });
 
+        Array.from(this.remoteSubscriptions.values()).forEach(({ query }) => {
+          this.sendWsMessage({
+            id: generateId(),
+            type: "SUBSCRIBE",
+            ...query,
+          });
+        });
+
         Object.values(this.store.optimisticMutationStack).forEach(
           (mutations) => {
             if (mutations)
@@ -182,21 +196,35 @@ class InnerClient implements QueryExecutor {
     }
   }
 
-  public subscribeToRemote(routeName: string) {
-    this.remoteSubCounters[routeName] =
-      (this.remoteSubCounters[routeName] ?? 0) + 1;
-
+  public load(query: RawQueryRequest) {
     this.sendWsMessage({
       id: generateId(),
       type: "SUBSCRIBE",
-      resource: routeName,
+      ...query,
     });
 
-    return () => {
-      this.remoteSubCounters[routeName] -= 1;
+    const key = hash(query);
 
-      if (this.remoteSubCounters[routeName] === 0) {
-        // TODO add unsubscribe message
+    if (this.remoteSubscriptions.has(key)) {
+      // biome-ignore lint/style/noNonNullAssertion: false positive
+      this.remoteSubscriptions.get(key)!.subCounter += 1;
+    } else {
+      this.remoteSubscriptions.set(key, { query, subCounter: 1 });
+    }
+
+    return () => {
+      if (this.remoteSubscriptions.has(key)) {
+        // biome-ignore lint/style/noNonNullAssertion: false positive
+        this.remoteSubscriptions.get(key)!.subCounter -= 1;
+        // biome-ignore lint/style/noNonNullAssertion: false positive
+        if (this.remoteSubscriptions.get(key)!.subCounter <= 0) {
+          this.remoteSubscriptions.delete(key);
+          this.sendWsMessage({
+            id: generateId(),
+            type: "UNSUBSCRIBE",
+            ...query,
+          });
+        }
       }
     };
   }
@@ -283,8 +311,8 @@ class InnerClient implements QueryExecutor {
 export type Client<TRouter extends AnyRouter> = {
   client: {
     ws: WebSocketClient;
-    subscribe: (resourceType?: string[]) => () => void;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
+    load: (query: RawQueryRequest) => () => void;
   };
   store: ClientType<TRouter>;
 };
@@ -293,27 +321,12 @@ export const createClient = <TRouter extends AnyRouter>(
   opts: WebSocketClientOptions
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
-  const logger = createLogger({
-    level: opts.logLevel ?? LogLevel.INFO,
-    prefix: "Client",
-  });
 
   return {
     client: {
       ws: ogClient.ws,
-      subscribe: (resourceType?: string[]) => {
-        const removeListeners: (() => void)[] = [];
-
-        for (const rt of resourceType ?? Object.keys(ogClient.store.schema)) {
-          removeListeners.push(ogClient.subscribeToRemote(rt));
-        }
-
-        return () => {
-          logger.debug("Removing listeners", removeListeners);
-          removeListeners.forEach((remove) => {
-            remove();
-          });
-        };
+      load: (query: RawQueryRequest) => {
+        return ogClient.load(query);
       },
       addEventListener: (listener) => {
         return ogClient.addEventListener(listener);
