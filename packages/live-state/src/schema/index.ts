@@ -238,11 +238,13 @@ export class Relation<
     MaterializedLiveType<LiveString>,
     { value: string; _meta: { timestamp: string } } | null,
   ] {
-    if (this.type === "many") throw new Error("Many not implemented.");
+    if (this.type === "many") {
+      if (materializedShape) return [materializedShape, null];
+      return [encodedMutation, encodedMutation];
+    }
 
     if (
-      materializedShape &&
-      materializedShape._meta.timestamp &&
+      materializedShape?._meta?.timestamp &&
       encodedMutation._meta.timestamp &&
       materializedShape._meta.timestamp.localeCompare(
         encodedMutation._meta.timestamp
