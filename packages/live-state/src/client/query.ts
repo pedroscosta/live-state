@@ -149,7 +149,6 @@ export class QueryBuilder<
     } satisfies RawQueryRequest;
   }
 
-  /** @internal */
   buildQueryRequest(): RawQueryRequest {
     return {
       resource: this._collection.name,
