@@ -6,6 +6,7 @@ on:
       - "v*"
 
 permissions:
+  id-token: write # Required for OIDC
   contents: write
 
 jobs:
@@ -60,5 +61,5 @@ jobs:
 
       - name: Publish to npm
         run: pnpm -r publish --access public --no-git-checks --tag ${{ steps.determine_npm_tag.outputs.npm_tag }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # env:
+        #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
