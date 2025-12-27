@@ -3,6 +3,9 @@ packages:
   - packages/*
   - docs
 onlyBuiltDependencies:
+  - '@tailwindcss/oxide'
   - esbuild
   - sharp
   - unrs-resolver
+overrides:
+  esbuild: ^0.27.2

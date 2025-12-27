@@ -5,6 +5,7 @@
     }
   ],
   "biome.enabled": true,
+  "typescript.tsdk": "./packages/live-state/node_modules/typescript/lib",
   "editor.codeActionsOnSave": {
     "source.removeUnusedImports": "always",
     "source.organizeImports": "never",
