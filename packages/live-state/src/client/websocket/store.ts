@@ -307,12 +307,12 @@ export class OptimisticStore {
           nestedData &&
           typeof nestedData === "object" &&
           !Array.isArray(nestedData) &&
-          nestedData.value?.id?.value
+          nestedData.id?.value
         ) {
-          const nestedId = nestedData.value.id.value as string;
+          const nestedId = nestedData.id.value as string;
 
           const nestedPayload = {
-            ...nestedData.value,
+            ...nestedData,
           } as DefaultMutationMessage["payload"];
           const {
             cleanedPayload: cleanedNestedPayload,
