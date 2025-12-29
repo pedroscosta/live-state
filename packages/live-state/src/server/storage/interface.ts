@@ -58,7 +58,8 @@ export abstract class Storage implements DataSource {
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>,
-    mutationId?: string
+    mutationId?: string,
+    context?: Record<string, any>
   ): Promise<MaterializedLiveType<T>>;
 
   /** @internal */
@@ -66,7 +67,8 @@ export abstract class Storage implements DataSource {
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>,
-    mutationId?: string
+    mutationId?: string,
+    context?: Record<string, any>
   ): Promise<MaterializedLiveType<T>>;
 
   public async insert<T extends LiveObjectAny>(

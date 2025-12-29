@@ -309,12 +309,29 @@ export class SQLStorage extends Storage {
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>,
-    mutationId?: string
+    mutationId?: string,
+    context?: Record<string, any>
   ): Promise<MaterializedLiveType<T>> {
+    const hooks = this.server?.router?.getHooks(resourceName);
+
+    let processedValue = value;
+
+    if (hooks?.beforeInsert) {
+      const hookResult = await hooks.beforeInsert({
+        ctx: context,
+        value: processedValue,
+        db: this,
+      });
+
+      if (hookResult) {
+        processedValue = hookResult as MaterializedLiveType<T>;
+      }
+    }
+
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
 
-    for (const [key, val] of Object.entries(value.value)) {
+    for (const [key, val] of Object.entries(processedValue.value)) {
       const metaVal = val._meta?.timestamp;
       if (!metaVal) continue;
       values[key] = val.value;
@@ -336,15 +353,23 @@ export class SQLStorage extends Storage {
       resourceName,
       resourceId,
       "INSERT",
-      value,
+      processedValue,
       mutationId
     );
 
     if (mutation) {
-      this.trackMutation(mutation, value);
+      this.trackMutation(mutation, processedValue);
     }
 
-    return value;
+    if (hooks?.afterInsert) {
+      await hooks.afterInsert({
+        ctx: context,
+        value: processedValue,
+        db: this,
+      });
+    }
+
+    return processedValue;
   }
 
   /** @internal */
@@ -352,12 +377,34 @@ export class SQLStorage extends Storage {
     resourceName: string,
     resourceId: string,
     value: MaterializedLiveType<T>,
-    mutationId?: string
+    mutationId?: string,
+    context?: Record<string, any>
   ): Promise<MaterializedLiveType<T>> {
+    const hooks = this.server?.router?.getHooks(resourceName);
+
+    let previousValue: MaterializedLiveType<T> | undefined;
+    if (hooks?.beforeUpdate || hooks?.afterUpdate) {
+      previousValue = await this.rawFindById<T>(resourceName, resourceId);
+    }
+
+    let processedValue = value;
+    if (hooks?.beforeUpdate) {
+      const hookResult = await hooks.beforeUpdate({
+        ctx: context,
+        value: processedValue,
+        previousValue,
+        db: this,
+      });
+
+      if (hookResult) {
+        processedValue = hookResult as MaterializedLiveType<T>;
+      }
+    }
+
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
 
-    for (const [key, val] of Object.entries(value.value)) {
+    for (const [key, val] of Object.entries(processedValue.value)) {
       const metaVal = val._meta?.timestamp;
       if (!metaVal) continue;
       values[key] = val.value;
@@ -381,7 +428,7 @@ export class SQLStorage extends Storage {
       resourceName,
       resourceId,
       "UPDATE",
-      value,
+      processedValue,
       mutationId
     );
 
@@ -393,7 +440,19 @@ export class SQLStorage extends Storage {
       }
     }
 
-    return value;
+    if (hooks?.afterUpdate) {
+      const updatedValue = await this.rawFindById<T>(resourceName, resourceId);
+      if (updatedValue) {
+        await hooks.afterUpdate({
+          ctx: context,
+          value: updatedValue,
+          previousValue,
+          db: this,
+        });
+      }
+    }
+
+    return processedValue;
   }
 
   public async transaction<T>(
