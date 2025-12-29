@@ -3677,4 +3677,1018 @@ describe("SQLStorage", () => {
       expect(mockServer.notifySubscribers).not.toHaveBeenCalled();
     });
   });
+
+  describe("lifecycle hooks", () => {
+    let mockServer: any;
+    let mockRouter: any;
+    let mockHooks: any;
+
+    beforeEach(async () => {
+      mockHooks = {};
+      mockRouter = {
+        getHooks: vi.fn().mockReturnValue(mockHooks),
+      };
+      mockServer = {
+        notifySubscribers: vi.fn(),
+        router: mockRouter,
+      };
+
+      const mockSchema: Schema<any> = {
+        users: {
+          name: "users",
+          fields: {
+            id: {
+              getStorageFieldType: () => ({
+                type: "varchar",
+                primary: true,
+                nullable: false,
+              }),
+            },
+            name: {
+              getStorageFieldType: () => ({
+                type: "varchar",
+                nullable: true,
+              }),
+            },
+            email: {
+              getStorageFieldType: () => ({
+                type: "varchar",
+                nullable: true,
+              }),
+            },
+          },
+          relations: {},
+        },
+      };
+
+      await storage.init(mockSchema, mockLogger, mockServer);
+    });
+
+    describe("beforeInsert hook", () => {
+      test("should call beforeInsert hook before inserting", async () => {
+        const beforeInsertHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.beforeInsert = beforeInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(mockRouter.getHooks).toHaveBeenCalledWith("users");
+        expect(beforeInsertHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            value: expect.objectContaining({
+              value: expect.objectContaining({
+                id: expect.objectContaining({ value: "test-id" }),
+                name: expect.objectContaining({
+                  value: "John",
+                  _meta: expect.objectContaining({
+                    timestamp: "2023-01-01T00:00:00.000Z",
+                  }),
+                }),
+              }),
+            }),
+            db: storage,
+          })
+        );
+        expect(beforeInsertHook).toHaveBeenCalledBefore(
+          mockInsertInto.values as any
+        );
+      });
+
+      test("should use modified value from beforeInsert hook", async () => {
+        const modifiedValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+            email: {
+              value: "jane@example.com",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const beforeInsertHook = vi.fn().mockResolvedValue(modifiedValue);
+        mockHooks.beforeInsert = beforeInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        const result = await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(mockInsertInto.values).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "Jane",
+            email: "jane@example.com",
+          })
+        );
+        expect(result).toEqual(modifiedValue);
+      });
+
+      test("should pass context to beforeInsert hook", async () => {
+        const beforeInsertHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.beforeInsert = beforeInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const context = { userId: "user-123", ip: "127.0.0.1" };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert(
+          "users",
+          "test-id",
+          mockValue,
+          undefined,
+          context
+        );
+
+        expect(beforeInsertHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ctx: context,
+          })
+        );
+      });
+
+      test("should handle beforeInsert hook returning void", async () => {
+        const beforeInsertHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.beforeInsert = beforeInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        const result = await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(result).toEqual(mockValue);
+      });
+    });
+
+    describe("afterInsert hook", () => {
+      test("should call afterInsert hook after inserting", async () => {
+        const afterInsertHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.afterInsert = afterInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(afterInsertHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            value: expect.objectContaining({
+              value: expect.objectContaining({
+                id: expect.objectContaining({ value: "test-id" }),
+                name: expect.objectContaining({
+                  value: "John",
+                  _meta: expect.objectContaining({
+                    timestamp: "2023-01-01T00:00:00.000Z",
+                  }),
+                }),
+              }),
+            }),
+            db: storage,
+          })
+        );
+      });
+
+      test("should pass context to afterInsert hook", async () => {
+        const afterInsertHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.afterInsert = afterInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const context = { userId: "user-123", ip: "127.0.0.1" };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert(
+          "users",
+          "test-id",
+          mockValue,
+          undefined,
+          context
+        );
+
+        expect(afterInsertHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ctx: context,
+          })
+        );
+      });
+
+      test("should call afterInsert with modified value from beforeInsert", async () => {
+        const modifiedValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const beforeInsertHook = vi.fn().mockResolvedValue(modifiedValue);
+        const afterInsertHook = vi.fn().mockResolvedValue(undefined);
+
+        mockHooks.beforeInsert = beforeInsertHook;
+        mockHooks.afterInsert = afterInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(afterInsertHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            value: modifiedValue,
+          })
+        );
+      });
+    });
+
+    describe("beforeUpdate hook", () => {
+      test("should call beforeUpdate hook before updating", async () => {
+        const beforeUpdateHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.beforeUpdate = beforeUpdateHook;
+
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(mockValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate("users", "test-id", mockValue);
+
+        expect(mockRouter.getHooks).toHaveBeenCalledWith("users");
+        expect(beforeUpdateHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            value: expect.objectContaining({
+              value: expect.objectContaining({
+                id: expect.objectContaining({ value: "test-id" }),
+                name: expect.objectContaining({
+                  value: "Jane",
+                  _meta: expect.objectContaining({
+                    timestamp: "2023-01-02T00:00:00.000Z",
+                  }),
+                }),
+              }),
+            }),
+            previousValue: expect.objectContaining({
+              value: expect.objectContaining({
+                id: expect.objectContaining({ value: "test-id" }),
+                name: expect.objectContaining({
+                  value: "John",
+                  _meta: expect.objectContaining({
+                    timestamp: "2023-01-01T00:00:00.000Z",
+                  }),
+                }),
+              }),
+            }),
+            db: storage,
+          })
+        );
+      });
+
+      test("should use modified value from beforeUpdate hook", async () => {
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const modifiedValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Modified Name",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+            email: {
+              value: "modified@example.com",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const beforeUpdateHook = vi.fn().mockResolvedValue(modifiedValue);
+        mockHooks.beforeUpdate = beforeUpdateHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(modifiedValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        const result = await storage.rawUpdate("users", "test-id", mockValue);
+
+        expect(mockUpdateTable.set).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "Modified Name",
+            email: "modified@example.com",
+          })
+        );
+        expect(result).toEqual(modifiedValue);
+      });
+
+      test("should pass context to beforeUpdate hook", async () => {
+        const beforeUpdateHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.beforeUpdate = beforeUpdateHook;
+
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const context = { userId: "user-123", ip: "127.0.0.1" };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(mockValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate(
+          "users",
+          "test-id",
+          mockValue,
+          undefined,
+          context
+        );
+
+        expect(beforeUpdateHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ctx: context,
+          })
+        );
+      });
+
+      test("should handle beforeUpdate hook when previousValue is undefined", async () => {
+        const beforeUpdateHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.beforeUpdate = beforeUpdateHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(undefined)
+          .mockResolvedValueOnce(mockValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate("users", "test-id", mockValue);
+
+        expect(beforeUpdateHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            previousValue: undefined,
+          })
+        );
+      });
+    });
+
+    describe("afterUpdate hook", () => {
+      test("should call afterUpdate hook after updating", async () => {
+        const afterUpdateHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.afterUpdate = afterUpdateHook;
+
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const updatedValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(updatedValue)
+          .mockResolvedValueOnce(updatedValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate("users", "test-id", mockValue);
+
+        expect(afterUpdateHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            value: expect.objectContaining({
+              value: expect.objectContaining({
+                id: expect.objectContaining({ value: "test-id" }),
+                name: expect.objectContaining({
+                  value: "Jane",
+                  _meta: expect.objectContaining({
+                    timestamp: "2023-01-02T00:00:00.000Z",
+                  }),
+                }),
+              }),
+            }),
+            previousValue: expect.objectContaining({
+              value: expect.objectContaining({
+                id: expect.objectContaining({ value: "test-id" }),
+                name: expect.objectContaining({
+                  value: "John",
+                  _meta: expect.objectContaining({
+                    timestamp: "2023-01-01T00:00:00.000Z",
+                  }),
+                }),
+              }),
+            }),
+            db: storage,
+          })
+        );
+      });
+
+      test("should pass context to afterUpdate hook", async () => {
+        const afterUpdateHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.afterUpdate = afterUpdateHook;
+
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const updatedValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const context = { userId: "user-123", ip: "127.0.0.1" };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(updatedValue)
+          .mockResolvedValueOnce(updatedValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate(
+          "users",
+          "test-id",
+          mockValue,
+          undefined,
+          context
+        );
+
+        expect(afterUpdateHook).toHaveBeenCalledWith(
+          expect.objectContaining({
+            ctx: context,
+          })
+        );
+      });
+
+      test("should not call afterUpdate hook if updatedValue is undefined", async () => {
+        const afterUpdateHook = vi.fn().mockResolvedValue(undefined);
+        mockHooks.afterUpdate = afterUpdateHook;
+
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(undefined)
+          .mockResolvedValueOnce(undefined);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate("users", "test-id", mockValue);
+
+        expect(afterUpdateHook).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("hook combinations", () => {
+      test("should call both beforeInsert and afterInsert hooks", async () => {
+        const beforeInsertHook = vi.fn().mockResolvedValue(undefined);
+        const afterInsertHook = vi.fn().mockResolvedValue(undefined);
+
+        mockHooks.beforeInsert = beforeInsertHook;
+        mockHooks.afterInsert = afterInsertHook;
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(beforeInsertHook).toHaveBeenCalled();
+        expect(afterInsertHook).toHaveBeenCalled();
+        expect(beforeInsertHook).toHaveBeenCalledBefore(afterInsertHook as any);
+      });
+
+      test("should call both beforeUpdate and afterUpdate hooks", async () => {
+        const beforeUpdateHook = vi.fn().mockResolvedValue(undefined);
+        const afterUpdateHook = vi.fn().mockResolvedValue(undefined);
+
+        mockHooks.beforeUpdate = beforeUpdateHook;
+        mockHooks.afterUpdate = afterUpdateHook;
+
+        const previousValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const updatedValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "Jane",
+              _meta: { timestamp: "2023-01-02T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        vi.spyOn(storage, "rawFindById")
+          .mockResolvedValueOnce(previousValue)
+          .mockResolvedValueOnce(updatedValue)
+          .mockResolvedValueOnce(updatedValue);
+
+        const mockUpdateTable = {
+          set: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.updateTable.mockReturnValue(mockUpdateTable);
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawUpdate("users", "test-id", mockValue);
+
+        expect(beforeUpdateHook).toHaveBeenCalled();
+        expect(afterUpdateHook).toHaveBeenCalled();
+        expect(beforeUpdateHook).toHaveBeenCalledBefore(afterUpdateHook as any);
+      });
+
+      test("should not call hooks when router returns undefined", async () => {
+        mockRouter.getHooks.mockReturnValue(undefined);
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        mockDb.insertInto.mockReturnValue(mockInsertInto);
+
+        await storage.rawInsert("users", "test-id", mockValue);
+
+        expect(mockRouter.getHooks).toHaveBeenCalledWith("users");
+        expect(mockInsertInto.values).toHaveBeenCalled();
+      });
+
+      test("should not call hooks when server is not provided", async () => {
+        const storageWithoutServer = new SQLStorage(mockPool);
+        const mockSchema: Schema<any> = {
+          users: {
+            name: "users",
+            fields: {
+              id: {
+                getStorageFieldType: () => ({
+                  type: "varchar",
+                  primary: true,
+                  nullable: false,
+                }),
+              },
+              name: {
+                getStorageFieldType: () => ({
+                  type: "varchar",
+                  nullable: true,
+                }),
+              },
+            },
+            relations: {},
+          },
+        };
+
+        await storageWithoutServer.init(mockSchema, mockLogger);
+
+        const mockValue: MaterializedLiveType<any> = {
+          value: {
+            id: { value: "test-id" },
+            name: {
+              value: "John",
+              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+            },
+          },
+          _meta: {},
+        };
+
+        const mockInsertInto = {
+          values: vi.fn().mockReturnThis(),
+          onConflict: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue(undefined),
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        (storageWithoutServer as any).db.insertInto = vi
+          .fn()
+          .mockReturnValue(mockInsertInto);
+
+        await storageWithoutServer.rawInsert("users", "test-id", mockValue);
+
+        expect(mockInsertInto.values).toHaveBeenCalled();
+      });
+    });
+  });
 });

@@ -36,13 +36,29 @@ export type RouteRecord = Record<string, AnyRoute>;
 
 export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
+  private readonly hooksRegistry: Map<string, Hooks<any>> = new Map();
 
   private constructor(opts: { routes: TRoutes }) {
     this.routes = opts.routes;
+
+    for (const route of Object.values(opts.routes)) {
+      const typedRoute = route;
+
+      if (typedRoute.hooks) {
+        this.hooksRegistry.set(
+          typedRoute.resourceSchema.name,
+          typedRoute.hooks
+        );
+      }
+    }
   }
 
   public static create<TRoutes extends RouteRecord>(opts: { routes: TRoutes }) {
     return new Router<TRoutes>(opts);
+  }
+
+  public getHooks(resourceName: string): Hooks<any> | undefined {
+    return this.hooksRegistry.get(resourceName);
   }
 }
 
@@ -110,6 +126,46 @@ export type Authorization<TShape extends LiveObjectAny> = {
   };
 };
 
+// Lifecycle Hook Types
+export type BeforeInsertHook<TShape extends LiveObjectAny> = (opts: {
+  ctx?: Record<string, any>;
+  value: MaterializedLiveType<TShape>;
+  db: Storage;
+}) =>
+  | Promise<MaterializedLiveType<TShape> | void>
+  | MaterializedLiveType<TShape>
+  | void;
+
+export type AfterInsertHook<TShape extends LiveObjectAny> = (opts: {
+  ctx?: Record<string, any>;
+  value: MaterializedLiveType<TShape>;
+  db: Storage;
+}) => Promise<void> | void;
+
+export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
+  ctx?: Record<string, any>;
+  value: MaterializedLiveType<TShape>;
+  previousValue?: MaterializedLiveType<TShape>;
+  db: Storage;
+}) =>
+  | Promise<MaterializedLiveType<TShape> | void>
+  | MaterializedLiveType<TShape>
+  | void;
+
+export type AfterUpdateHook<TShape extends LiveObjectAny> = (opts: {
+  ctx?: Record<string, any>;
+  value: MaterializedLiveType<TShape>;
+  previousValue?: MaterializedLiveType<TShape>;
+  db: Storage;
+}) => Promise<void> | void;
+
+export type Hooks<TShape extends LiveObjectAny> = {
+  beforeInsert?: BeforeInsertHook<TShape>;
+  afterInsert?: AfterInsertHook<TShape>;
+  beforeUpdate?: BeforeUpdateHook<TShape>;
+  afterUpdate?: AfterUpdateHook<TShape>;
+};
+
 export class Route<
   TResourceSchema extends LiveObjectAny,
   TMiddleware extends Middleware<any>,
@@ -119,16 +175,19 @@ export class Route<
   readonly middlewares: Set<TMiddleware>;
   readonly customMutations: TCustomMutations;
   readonly authorization?: Authorization<TResourceSchema>;
+  readonly hooks?: Hooks<TResourceSchema>;
 
   public constructor(
     resourceSchema: TResourceSchema,
     customMutations?: TCustomMutations,
-    authorization?: Authorization<TResourceSchema>
+    authorization?: Authorization<TResourceSchema>,
+    hooks?: Hooks<TResourceSchema>
   ) {
     this.resourceSchema = resourceSchema;
     this.middlewares = new Set();
     this.customMutations = customMutations ?? ({} as TCustomMutations);
     this.authorization = authorization;
+    this.hooks = hooks;
   }
 
   public use(...middlewares: TMiddleware[]) {
@@ -144,7 +203,17 @@ export class Route<
     return new Route<TResourceSchema, TMiddleware, T>(
       this.resourceSchema,
       mutationFactory({ mutation: mutationCreator }),
-      this.authorization
+      this.authorization,
+      this.hooks
+    );
+  }
+
+  public withHooks(hooks: Hooks<TResourceSchema>) {
+    return new Route<TResourceSchema, TMiddleware, TCustomMutations>(
+      this.resourceSchema,
+      this.customMutations,
+      this.authorization,
+      hooks
     );
   }
 
@@ -288,7 +357,8 @@ export class Route<
           req.resource,
           req.resourceId!,
           newRecord,
-          req.context?.messageId
+          req.context?.messageId,
+          req.context
         );
         const inferredResultValue = inferValue(result) as Simplify<
           InferLiveObjectWithRelationalIds<TResourceSchema>
@@ -398,7 +468,8 @@ export class Route<
         req.resource,
         req.resourceId!,
         newRecord,
-        req.context?.messageId
+        req.context?.messageId,
+        req.context
       );
 
       if (this.authorization?.update?.postMutation) {
@@ -486,7 +557,8 @@ export class RouteFactory {
     return new Route<T, Middleware<any>, Record<string, never>>(
       shape,
       undefined,
-      authorization
+      authorization,
+      undefined
     ).use(...this.middlewares);
   }
 

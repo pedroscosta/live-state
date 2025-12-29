@@ -199,7 +199,8 @@ describe("Route", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      {}
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -570,7 +571,8 @@ describe("Route UPDATE Authorization", () => {
       {
         value: { userId: { value: "123" } },
       },
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -674,7 +676,8 @@ describe("Route UPDATE Authorization", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -730,7 +733,8 @@ describe("Route UPDATE Authorization", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      expect.any(Object)
     );
   });
 
@@ -873,7 +877,8 @@ describe("Route UPDATE Authorization", () => {
       {
         value: { userId: { value: "123" } },
       },
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -952,7 +957,8 @@ describe("Route UPDATE Authorization", () => {
       {
         value: { userId: { value: "123" } },
       },
-      undefined
+      undefined,
+      expect.any(Object)
     );
   });
 
@@ -988,7 +994,8 @@ describe("Route UPDATE Authorization", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      {}
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1066,7 +1073,8 @@ describe("Route UPDATE Authorization", () => {
       {
         value: { userId: { value: "123" }, role: { value: "admin" } },
       },
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1163,7 +1171,8 @@ describe("Route INSERT Authorization", () => {
       {
         value: { userId: { value: "123" } },
       },
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1227,7 +1236,8 @@ describe("Route INSERT Authorization", () => {
       {
         value: { userId: { value: "123" } },
       },
-      undefined
+      undefined,
+      expect.any(Object)
     );
   });
 
@@ -1368,7 +1378,8 @@ describe("Route INSERT Authorization", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      {}
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1496,7 +1507,8 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1540,7 +1552,8 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      expect.any(Object)
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1577,7 +1590,8 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       "users",
       "user1",
       {},
-      mutationId
+      mutationId,
+      { messageId: mutationId }
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1616,7 +1630,8 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       "users",
       "user1",
       {},
-      mutationId
+      mutationId,
+      { messageId: mutationId }
     );
     expect(result).toEqual({
       data: mockNewData,
@@ -1652,7 +1667,8 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
       "users",
       "user1",
       {},
-      undefined
+      undefined,
+      {}
     );
     expect(result).toEqual({
       data: mockNewData,
