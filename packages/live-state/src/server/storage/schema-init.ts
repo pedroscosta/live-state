@@ -104,7 +104,6 @@ function collectColumnsToAdd(
         });
       }
     } else if (tableColumn.dataType !== storageFieldType.type) {
-      // Type mismatch warning will be logged by caller
     }
   }
 
@@ -164,7 +163,6 @@ async function addColumnsToTable(
         }
       });
 
-    // Track foreign key for later if referenced table doesn't exist
     if (
       storageFieldType.references &&
       !refTableExists &&
@@ -179,7 +177,6 @@ async function addColumnsToTable(
       });
     }
 
-    // Create index if needed
     if (storageFieldType.index) {
       await db.schema
         .createIndex(`${tableName}_${name}_index`)
@@ -256,9 +253,6 @@ async function createOrUpdateMetaTable(
   }
 }
 
-/**
- * Adds a foreign key constraint using raw SQL
- */
 async function addForeignKeyConstraint(
   db: Kysely<{ [x: string]: Selectable<any> }>,
   tableName: string,

@@ -73,7 +73,6 @@ function innerApplyWhere<T extends LiveObjectAny>(
                 } else if (val?.$lte !== undefined) {
                   return eb(`${resource}.${key}`, "<=", val.$lte);
                 } else {
-                  // Fallback to simple field equality
                   return eb(
                     `${resource}.${key}`,
                     val === null ? "is" : "=",
@@ -174,9 +173,6 @@ export function applyWhere<T extends LiveObjectAny>(
   return query.where((eb) => innerApplyWhere(schema, resource, eb, where));
 }
 
-/**
- * Helper to select meta table columns, using explicit selections for SQLite
- */
 function selectMetaColumns(
   eb: any,
   schema: Schema<any>,
@@ -188,7 +184,6 @@ function selectMetaColumns(
   const entity = schema[resourceName];
 
   if (dialect === "sqlite" && entity?.fields) {
-    // SQLite requires explicit column selections
     const fieldNames = Object.keys(entity.fields);
     let query = eb.selectFrom(metaTableName);
     for (const fieldName of fieldNames) {
@@ -197,13 +192,9 @@ function selectMetaColumns(
     return query;
   }
 
-  // For other dialects, use selectAll
   return eb.selectFrom(metaTableName).selectAll(metaTableName);
 }
 
-/**
- * Helper to select main table columns, using explicit selections for SQLite when using json helpers
- */
 function selectMainColumns(
   eb: any,
   schema: Schema<any>,
@@ -215,7 +206,6 @@ function selectMainColumns(
   const entity = schema[resourceName];
 
   if (dialect === "sqlite" && entity?.fields) {
-    // SQLite requires explicit column selections when using jsonArrayFrom/jsonObjectFrom
     const fieldNames = Object.keys(entity.fields);
     let query = eb.selectFrom(tableName);
     for (const fieldName of fieldNames) {
@@ -224,7 +214,6 @@ function selectMainColumns(
     return query;
   }
 
-  // For other dialects, use selectAll
   return eb.selectFrom(tableName).selectAll(tableName);
 }
 

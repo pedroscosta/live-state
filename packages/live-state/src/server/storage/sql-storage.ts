@@ -90,9 +90,6 @@ export class SQLStorage extends Storage {
     await initializeSchema(this.db, opts, logger);
   }
 
-  /**
-   * Helper to select meta table columns, using explicit selections for SQLite
-   */
   private selectMetaColumns(
     eb: any,
     resourceName: string,
@@ -102,7 +99,6 @@ export class SQLStorage extends Storage {
     const entity = this.schema?.[resourceName];
 
     if (dialect === "sqlite" && entity?.fields) {
-      // SQLite requires explicit column selections
       const fieldNames = Object.keys(entity.fields);
       let query = eb.selectFrom(metaTableName);
       for (const fieldName of fieldNames) {
@@ -111,7 +107,6 @@ export class SQLStorage extends Storage {
       return query;
     }
 
-    // For other dialects, use selectAll
     return eb.selectFrom(metaTableName).selectAll(metaTableName);
   }
 
@@ -535,24 +530,15 @@ export class SQLStorage extends Storage {
     return this.db;
   }
 
-  /**
-   * Checks if a field is a relational field in the schema.
-   */
   private isRelationalField(resourceName: string, fieldName: string): boolean {
     if (!this.schema) return false;
     const resourceSchema = this.schema[resourceName];
     return !!resourceSchema?.relations?.[fieldName];
   }
 
-  /**
-   * Parses JSON strings for relational fields and _meta in raw query results.
-   * SQLite returns JSON functions as strings, so we need to parse them.
-   * Only parses fields that are relations in the schema.
-   */
   private parseRelationalJsonStrings(value: any, resourceName: string): any {
     const dialect = detectDialect(this.db);
 
-    // Only parse for SQLite
     if (dialect !== "sqlite") {
       return value;
     }
@@ -570,7 +556,6 @@ export class SQLStorage extends Storage {
     const parsed: Record<string, any> = {};
 
     for (const [key, val] of Object.entries(value)) {
-      // Parse _meta field (always a JSON object)
       if (key === "_meta" && typeof val === "string") {
         if (
           (val.startsWith("{") && val.endsWith("}")) ||
@@ -584,18 +569,14 @@ export class SQLStorage extends Storage {
         } else {
           parsed[key] = val;
         }
-      }
-      // Parse relational fields (check schema to see if field is a relation)
-      else if (this.isRelationalField(resourceName, key)) {
+      } else if (this.isRelationalField(resourceName, key)) {
         if (typeof val === "string") {
-          // Try to parse as JSON if it looks like JSON
           if (
             (val.startsWith("{") && val.endsWith("}")) ||
             (val.startsWith("[") && val.endsWith("]"))
           ) {
             try {
               const jsonParsed = JSON.parse(val);
-              // Recursively parse nested relational fields
               if (this.schema) {
                 const resourceSchema = this.schema[resourceName];
                 const relation = resourceSchema?.relations?.[key];
@@ -612,7 +593,6 @@ export class SQLStorage extends Storage {
                 parsed[key] = jsonParsed;
               }
             } catch {
-              // If parsing fails, return the original string
               parsed[key] = val;
             }
           } else {
@@ -623,7 +603,6 @@ export class SQLStorage extends Storage {
           val !== null &&
           !Array.isArray(val)
         ) {
-          // Recursively handle nested objects (for nested includes)
           if (this.schema) {
             const resourceSchema = this.schema[resourceName];
             const relation = resourceSchema?.relations?.[key];
@@ -640,7 +619,6 @@ export class SQLStorage extends Storage {
             parsed[key] = val;
           }
         } else if (Array.isArray(val)) {
-          // Handle arrays (for many relations)
           parsed[key] = val.map((item) => {
             if (typeof item === "string") {
               try {
@@ -680,7 +658,6 @@ export class SQLStorage extends Storage {
           parsed[key] = val;
         }
       } else {
-        // Not a relational field, keep as-is
         parsed[key] = val;
       }
     }
