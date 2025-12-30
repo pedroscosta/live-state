@@ -1,5 +1,7 @@
 # live-state
 
+[![CodSpeed](https://img.shields.io/badge/CodSpeed-Performance%20Tracking-blue?logo=codspeed)](https://codspeed.io/pedroscosta/live-state?utm_source=badge)
+
 live-state is a high-performance, real-time sync engine written in TypeScript.
 
 ## Features
