@@ -6,7 +6,6 @@ import {
   type PostgresPool,
   type Selectable,
 } from "kysely";
-import { jsonObjectFrom } from "kysely/helpers/postgres";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -17,19 +16,24 @@ import {
   type InferLiveObject,
   inferValue,
   type LiveObjectAny,
-  type LiveTypeAny,
   type MaterializedLiveType,
   type Schema,
   type WhereClause,
 } from "../../schema";
 import type { Logger } from "../../utils";
 import type { Server } from "..";
+import {
+  type DialectHelpers,
+  detectDialect,
+  getDialectHelpers,
+} from "./dialect-helpers";
 import { Storage } from "./interface";
 import { initializeSchema } from "./schema-init";
 import { applyInclude, applyWhere } from "./sql-utils";
 
 export class SQLStorage extends Storage {
   private readonly db: Kysely<{ [x: string]: Selectable<any> }>;
+  private readonly dialectHelpers: DialectHelpers;
   private schema?: Schema<any>;
   private logger?: Logger;
   private server?: Server<any>;
@@ -64,6 +68,7 @@ export class SQLStorage extends Storage {
       });
     }
 
+    this.dialectHelpers = getDialectHelpers(this.db);
     this.schema = schema;
     this.logger = logger;
     this.server = server;
@@ -85,6 +90,31 @@ export class SQLStorage extends Storage {
     await initializeSchema(this.db, opts, logger);
   }
 
+  /**
+   * Helper to select meta table columns, using explicit selections for SQLite
+   */
+  private selectMetaColumns(
+    eb: any,
+    resourceName: string,
+    metaTableName: string
+  ): any {
+    const dialect = detectDialect(this.db);
+    const entity = this.schema?.[resourceName];
+
+    if (dialect === "sqlite" && entity?.fields) {
+      // SQLite requires explicit column selections
+      const fieldNames = Object.keys(entity.fields);
+      let query = eb.selectFrom(metaTableName);
+      for (const fieldName of fieldNames) {
+        query = query.select(`${metaTableName}.${fieldName}`);
+      }
+      return query;
+    }
+
+    // For other dialects, use selectAll
+    return eb.selectFrom(metaTableName).selectAll(metaTableName);
+  }
+
   /** @internal */
   public async rawFindById<T extends LiveObjectAny>(
     resourceName: string,
@@ -93,26 +123,39 @@ export class SQLStorage extends Storage {
   ): Promise<MaterializedLiveType<T> | undefined> {
     if (!this.schema) throw new Error("Schema not initialized");
 
+    const metaTableName = `${resourceName}_meta`;
+
     let query = await this.db
       .selectFrom(resourceName)
       .where("id", "=", id)
       .selectAll(resourceName)
       .select((eb) =>
-        jsonObjectFrom(
-          eb
-            .selectFrom(`${resourceName}_meta`)
-            .selectAll(`${resourceName}_meta`)
-            .whereRef(`${resourceName}_meta.id`, "=", `${resourceName}.id`)
-        ).as("_meta")
+        this.dialectHelpers
+          .jsonObjectFrom(
+            this.selectMetaColumns(eb, resourceName, metaTableName).whereRef(
+              `${metaTableName}.id`,
+              "=",
+              `${resourceName}.id`
+            )
+          )
+          .as("_meta")
       );
 
-    query = applyInclude(this.schema, resourceName, query, include);
+    query = applyInclude(
+      this.schema,
+      resourceName,
+      query,
+      include,
+      this.dialectHelpers,
+      this.db
+    );
 
     const rawValue = await query.executeTakeFirst();
 
     if (!rawValue) return;
 
-    return this.convertToMaterializedLiveType(rawValue);
+    const parsedValue = this.parseRelationalJsonStrings(rawValue, resourceName);
+    return this.convertToMaterializedLiveType(parsedValue);
   }
 
   public async findOne<T extends LiveObjectAny>(
@@ -138,17 +181,21 @@ export class SQLStorage extends Storage {
     if (!this.schema) throw new Error("Schema not initialized");
 
     const { resource: resourceName, where, include, limit, sort } = query;
+    const metaTableName = `${resourceName}_meta`;
 
     let queryBuilder = this.db
       .selectFrom(resourceName)
       .selectAll(resourceName)
       .select((eb) =>
-        jsonObjectFrom(
-          eb
-            .selectFrom(`${resourceName}_meta`)
-            .selectAll(`${resourceName}_meta`)
-            .whereRef(`${resourceName}_meta.id`, "=", `${resourceName}.id`)
-        ).as("_meta")
+        this.dialectHelpers
+          .jsonObjectFrom(
+            this.selectMetaColumns(eb, resourceName, metaTableName).whereRef(
+              `${metaTableName}.id`,
+              "=",
+              `${resourceName}.id`
+            )
+          )
+          .as("_meta")
       );
 
     queryBuilder = applyWhere(this.schema, resourceName, queryBuilder, where);
@@ -157,7 +204,9 @@ export class SQLStorage extends Storage {
       this.schema,
       resourceName,
       queryBuilder,
-      include
+      include,
+      this.dialectHelpers,
+      this.db
     );
 
     if (limit !== undefined) {
@@ -174,7 +223,10 @@ export class SQLStorage extends Storage {
 
     if (rawResult.length === 0) return [];
 
-    return rawResult.map((v) => this.convertToMaterializedLiveType(v));
+    return rawResult.map((v) => {
+      const parsedValue = this.parseRelationalJsonStrings(v, resourceName);
+      return this.convertToMaterializedLiveType(parsedValue);
+    });
   }
 
   public async find<T extends LiveObjectAny>(
@@ -467,6 +519,159 @@ export class SQLStorage extends Storage {
    */
   public get internalDB() {
     return this.db;
+  }
+
+  /**
+   * Checks if a field is a relational field in the schema.
+   */
+  private isRelationalField(resourceName: string, fieldName: string): boolean {
+    if (!this.schema) return false;
+    const resourceSchema = this.schema[resourceName];
+    return !!resourceSchema?.relations?.[fieldName];
+  }
+
+  /**
+   * Parses JSON strings for relational fields and _meta in raw query results.
+   * SQLite returns JSON functions as strings, so we need to parse them.
+   * Only parses fields that are relations in the schema.
+   */
+  private parseRelationalJsonStrings(value: any, resourceName: string): any {
+    const dialect = detectDialect(this.db);
+
+    // Only parse for SQLite
+    if (dialect !== "sqlite") {
+      return value;
+    }
+
+    if (typeof value !== "object" || value === null || value instanceof Date) {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) =>
+        this.parseRelationalJsonStrings(item, resourceName)
+      );
+    }
+
+    const parsed: Record<string, any> = {};
+
+    for (const [key, val] of Object.entries(value)) {
+      // Parse _meta field (always a JSON object)
+      if (key === "_meta" && typeof val === "string") {
+        if (
+          (val.startsWith("{") && val.endsWith("}")) ||
+          (val.startsWith("[") && val.endsWith("]"))
+        ) {
+          try {
+            parsed[key] = JSON.parse(val);
+          } catch {
+            parsed[key] = val;
+          }
+        } else {
+          parsed[key] = val;
+        }
+      }
+      // Parse relational fields (check schema to see if field is a relation)
+      else if (this.isRelationalField(resourceName, key)) {
+        if (typeof val === "string") {
+          // Try to parse as JSON if it looks like JSON
+          if (
+            (val.startsWith("{") && val.endsWith("}")) ||
+            (val.startsWith("[") && val.endsWith("]"))
+          ) {
+            try {
+              const jsonParsed = JSON.parse(val);
+              // Recursively parse nested relational fields
+              if (this.schema) {
+                const resourceSchema = this.schema[resourceName];
+                const relation = resourceSchema?.relations?.[key];
+                if (relation) {
+                  const nestedResourceName = relation.entity.name;
+                  parsed[key] = this.parseRelationalJsonStrings(
+                    jsonParsed,
+                    nestedResourceName
+                  );
+                } else {
+                  parsed[key] = jsonParsed;
+                }
+              } else {
+                parsed[key] = jsonParsed;
+              }
+            } catch {
+              // If parsing fails, return the original string
+              parsed[key] = val;
+            }
+          } else {
+            parsed[key] = val;
+          }
+        } else if (
+          typeof val === "object" &&
+          val !== null &&
+          !Array.isArray(val)
+        ) {
+          // Recursively handle nested objects (for nested includes)
+          if (this.schema) {
+            const resourceSchema = this.schema[resourceName];
+            const relation = resourceSchema?.relations?.[key];
+            if (relation) {
+              const nestedResourceName = relation.entity.name;
+              parsed[key] = this.parseRelationalJsonStrings(
+                val,
+                nestedResourceName
+              );
+            } else {
+              parsed[key] = val;
+            }
+          } else {
+            parsed[key] = val;
+          }
+        } else if (Array.isArray(val)) {
+          // Handle arrays (for many relations)
+          parsed[key] = val.map((item) => {
+            if (typeof item === "string") {
+              try {
+                const jsonParsed = JSON.parse(item);
+                if (this.schema) {
+                  const resourceSchema = this.schema[resourceName];
+                  const relation = resourceSchema?.relations?.[key];
+                  if (relation) {
+                    const nestedResourceName = relation.entity.name;
+                    return this.parseRelationalJsonStrings(
+                      jsonParsed,
+                      nestedResourceName
+                    );
+                  }
+                }
+                return jsonParsed;
+              } catch {
+                return item;
+              }
+            }
+            if (typeof item === "object" && item !== null) {
+              if (this.schema) {
+                const resourceSchema = this.schema[resourceName];
+                const relation = resourceSchema?.relations?.[key];
+                if (relation) {
+                  const nestedResourceName = relation.entity.name;
+                  return this.parseRelationalJsonStrings(
+                    item,
+                    nestedResourceName
+                  );
+                }
+              }
+            }
+            return item;
+          });
+        } else {
+          parsed[key] = val;
+        }
+      } else {
+        // Not a relational field, keep as-is
+        parsed[key] = val;
+      }
+    }
+
+    return parsed;
   }
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
