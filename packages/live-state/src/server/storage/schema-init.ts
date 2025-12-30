@@ -7,6 +7,22 @@ import type { Logger } from "../../utils";
 
 const POSTGRES_DUPLICATE_COLUMN_ERROR_CODE = "42701";
 
+/**
+ * Checks if an error is a duplicate/already exists error.
+ * Handles both PostgreSQL error codes and generic error messages.
+ */
+function isDuplicateError(error: any): boolean {
+  if (error.code === POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
+    return true;
+  }
+  const message = error.message?.toLowerCase() || "";
+  return (
+    message.includes("already exists") ||
+    message.includes("duplicate") ||
+    message.includes("already defined")
+  );
+}
+
 type DeferredForeignKey = {
   tableName: string;
   columnName: string;
@@ -130,7 +146,7 @@ async function createTableWithColumns(
   }
 
   await tableBuilder.execute().catch((e) => {
-    if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
+    if (!isDuplicateError(e)) {
       logger?.error("Error creating table", tableName, e);
       throw e;
     }
@@ -157,7 +173,7 @@ async function addColumnsToTable(
       )
       .execute()
       .catch((e) => {
-        if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
+        if (!isDuplicateError(e)) {
           logger?.error("Error adding column", name, e);
           throw e;
         }
@@ -223,7 +239,7 @@ async function createOrUpdateMetaTable(
     }
 
     await metaTableBuilder.execute().catch((e) => {
-      if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
+      if (!isDuplicateError(e)) {
         logger?.error("Error creating meta table", tableMetaName, e);
         throw e;
       }
@@ -244,7 +260,7 @@ async function createOrUpdateMetaTable(
         })
         .execute()
         .catch((e) => {
-          if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
+          if (!isDuplicateError(e)) {
             logger?.error("Error adding meta column", name, e);
             throw e;
           }
@@ -271,11 +287,7 @@ async function addForeignKeyConstraint(
       REFERENCES ${sql.raw(refTable)} (${sql.raw(refColumn)})
     `.execute(db);
   } catch (e: any) {
-    if (
-      e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE &&
-      !e.message?.includes("already exists") &&
-      !e.message?.includes("duplicate")
-    ) {
+    if (!isDuplicateError(e)) {
       logger?.warn(
         "Could not add foreign key constraint",
         tableName,
