@@ -424,19 +424,31 @@ export class SQLStorage extends Storage {
         .savepoint(savepointName)
         .execute();
 
+      let savepointReleased = false;
+      let savepointRolledBack = false;
+
       try {
         return await fn({
           trx: this,
           commit: async () => {
             await trx.releaseSavepoint(savepointName).execute();
+            savepointReleased = true;
             parentStack.push(...nestedStack);
           },
           rollback: async () => {
             await trx.rollbackToSavepoint(savepointName).execute();
+            savepointRolledBack = true;
             nestedStack.length = 0;
           },
         }).then((v) => {
-          if (trx.isCommitted || trx.isRolledBack) return v;
+          if (
+            trx.isCommitted ||
+            trx.isRolledBack ||
+            savepointReleased ||
+            savepointRolledBack
+          ) {
+            return v;
+          }
 
           return trx
             .releaseSavepoint(savepointName)
@@ -447,12 +459,14 @@ export class SQLStorage extends Storage {
             });
         });
       } catch (e) {
-        await trx
-          .rollbackToSavepoint(savepointName)
-          .execute()
-          .catch(() => {
-            // Ignoring this error because it's already rolled back
-          });
+        if (!savepointRolledBack) {
+          await trx
+            .rollbackToSavepoint(savepointName)
+            .execute()
+            .catch(() => {
+              // Ignoring this error because it's already rolled back
+            });
+        }
         nestedStack.length = 0;
         throw e;
       } finally {
