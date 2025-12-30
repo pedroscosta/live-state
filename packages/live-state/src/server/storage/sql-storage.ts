@@ -25,9 +25,8 @@ import {
 import type { Logger } from "../../utils";
 import type { Server } from "..";
 import { Storage } from "./interface";
+import { initializeSchema } from "./schema-init";
 import { applyInclude, applyWhere } from "./sql-utils";
-
-const POSTGRES_DUPLICATE_COLUMN_ERROR_CODE = "42701";
 
 export class SQLStorage extends Storage {
   private readonly db: Kysely<{ [x: string]: Selectable<any> }>;
@@ -83,111 +82,7 @@ export class SQLStorage extends Storage {
     this.logger = logger;
     this.server = server;
 
-    const tables = await this.db.introspection.getTables();
-
-    for (const [resourceName, entity] of Object.entries(opts)) {
-      const table = tables.find((table) => table.name === resourceName);
-      if (!table)
-        await this.db.schema.createTable(resourceName).ifNotExists().execute();
-
-      const tableMetaName = `${resourceName}_meta`;
-      const tableMeta = tables.find((table) => table.name === tableMetaName);
-
-      if (!tableMeta) {
-        // TODO add a last updated column
-        await this.db.schema.createTable(tableMetaName).ifNotExists().execute();
-      }
-
-      for (const [columnName, column] of Object.entries(entity.fields)) {
-        const tableColumn = table?.columns.find(
-          (column) => column.name === columnName
-        );
-
-        const storageFieldType = (column as LiveTypeAny).getStorageFieldType();
-
-        if (!tableColumn) {
-          await this.db.schema
-            .alterTable(resourceName)
-            .addColumn(columnName, storageFieldType.type as any, (c) => {
-              let builder = c;
-
-              if (storageFieldType.unique) {
-                builder = builder.unique();
-              }
-
-              if (!storageFieldType.nullable) {
-                builder = builder.notNull();
-              }
-
-              if (storageFieldType.references) {
-                builder = builder.references(storageFieldType.references);
-              }
-
-              if (storageFieldType.primary) {
-                builder = builder.primaryKey();
-              }
-
-              if (storageFieldType.default !== undefined) {
-                builder = builder.defaultTo(storageFieldType.default);
-              }
-
-              return builder;
-            })
-            .execute()
-            .catch((e) => {
-              if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
-                this.logger?.error("Error adding column", columnName, e);
-                throw e;
-              }
-            });
-
-          if (storageFieldType.index) {
-            await this.db.schema
-              .createIndex(`${resourceName}_${columnName}_index`)
-              .on(resourceName)
-              .column(columnName)
-              .execute()
-              .catch(() => {});
-          }
-        } else if (tableColumn.dataType !== storageFieldType.type) {
-          this.logger?.warn(
-            "Column type mismatch:",
-            columnName,
-            "expected to have type:",
-            storageFieldType.type,
-            "but has type:",
-            tableColumn.dataType
-          );
-        }
-
-        const columnMeta = tableMeta?.columns.find(
-          (column) => column.name === columnName
-        );
-
-        if (!columnMeta) {
-          await this.db.schema
-            .alterTable(tableMetaName)
-            .addColumn(columnName, "varchar", (c) => {
-              let builder = c;
-
-              if (storageFieldType.primary) {
-                builder = builder
-                  .primaryKey()
-                  .references(`${resourceName}.${columnName}`);
-              }
-
-              return builder;
-            })
-            .execute()
-            .catch((e) => {
-              if (e.code !== POSTGRES_DUPLICATE_COLUMN_ERROR_CODE) {
-                this.logger?.error("Error adding meta column", columnName, e);
-                throw e;
-              }
-            });
-        }
-      }
-    }
+    await initializeSchema(this.db, opts, logger);
   }
 
   /** @internal */
