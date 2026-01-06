@@ -95,6 +95,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
   bench(
     "insert mutation broadcast latency - simple comment insert",
     async () => {
+      console.log("simpleCommentSetup", simpleCommentSetup);
       const { sender, receiver, postId, authorId } = simpleCommentSetup!;
 
       const commentId = generateId();
@@ -141,6 +142,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           postId: posts[0].id,
           authorId: users[0].id,
         };
+        console.log("simpleCommentSetup", simpleCommentSetup);
       },
       teardown: async () => {
         if (simpleCommentSetup) {
