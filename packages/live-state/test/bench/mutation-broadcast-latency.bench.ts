@@ -195,31 +195,31 @@ describe("live-state mutation broadcast latency benchmarks", () => {
       infra = null;
     }
     // Clean up any remaining setup data
-    if (simpleCommentSetup) {
-      simpleCommentSetup.sender.client.ws.disconnect();
-      simpleCommentSetup.receiver.client.ws.disconnect();
-      simpleCommentSetup = null;
-    }
-    if (postUpdateSetup) {
-      postUpdateSetup.sender.client.ws.disconnect();
-      postUpdateSetup.receiver.client.ws.disconnect();
-      postUpdateSetup = null;
-    }
-    if (commentWithRelationsSetup) {
-      commentWithRelationsSetup.sender.client.ws.disconnect();
-      commentWithRelationsSetup.receiver.client.ws.disconnect();
-      commentWithRelationsSetup = null;
-    }
-    if (concurrentMutationsSetup) {
-      concurrentMutationsSetup.sender.client.ws.disconnect();
-      concurrentMutationsSetup.receiver.client.ws.disconnect();
-      concurrentMutationsSetup = null;
-    }
-    if (deepNestedQuerySetup) {
-      deepNestedQuerySetup.sender.client.ws.disconnect();
-      deepNestedQuerySetup.receiver.client.ws.disconnect();
-      deepNestedQuerySetup = null;
-    }
+    // if (simpleCommentSetup) {
+    //   simpleCommentSetup.sender.client.ws.disconnect();
+    //   simpleCommentSetup.receiver.client.ws.disconnect();
+    //   simpleCommentSetup = null;
+    // }
+    // if (postUpdateSetup) {
+    //   postUpdateSetup.sender.client.ws.disconnect();
+    //   postUpdateSetup.receiver.client.ws.disconnect();
+    //   postUpdateSetup = null;
+    // }
+    // if (commentWithRelationsSetup) {
+    //   commentWithRelationsSetup.sender.client.ws.disconnect();
+    //   commentWithRelationsSetup.receiver.client.ws.disconnect();
+    //   commentWithRelationsSetup = null;
+    // }
+    // if (concurrentMutationsSetup) {
+    //   concurrentMutationsSetup.sender.client.ws.disconnect();
+    //   concurrentMutationsSetup.receiver.client.ws.disconnect();
+    //   concurrentMutationsSetup = null;
+    // }
+    // if (deepNestedQuerySetup) {
+    //   deepNestedQuerySetup.sender.client.ws.disconnect();
+    //   deepNestedQuerySetup.receiver.client.ws.disconnect();
+    //   deepNestedQuerySetup = null;
+    // }
   });
 
   bench(
