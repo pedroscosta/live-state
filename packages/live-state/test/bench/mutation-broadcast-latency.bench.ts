@@ -95,6 +95,98 @@ describe("live-state mutation broadcast latency benchmarks", () => {
   beforeAll(async () => {
     infra = await setupBenchmarkInfrastructure();
     await primeDatabase(infra, 50);
+
+    // Get shared data
+    const posts = await infra.fetchClient!.query.posts.get();
+    const users = await infra.fetchClient!.query.users.get();
+
+    if (posts.length === 0 || users.length === 0) {
+      throw new Error("Database must be primed with data");
+    }
+
+    // Initialize simpleCommentSetup
+    const simpleSender = await createWSClientAndWait(infra.serverPort);
+    const simpleReceiver = await createWSClientAndWait(infra.serverPort);
+    simpleReceiver.client.load(
+      simpleReceiver.store.query.comments.buildQueryRequest()
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    simpleCommentSetup = {
+      sender: simpleSender,
+      receiver: simpleReceiver,
+      postId: posts[0].id,
+      authorId: users[0].id,
+    };
+
+    // Initialize postUpdateSetup
+    const postSender = await createWSClientAndWait(infra.serverPort);
+    const postReceiver = await createWSClientAndWait(infra.serverPort);
+    postReceiver.client.load(
+      postReceiver.store.query.posts.buildQueryRequest()
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    postUpdateSetup = {
+      sender: postSender,
+      receiver: postReceiver,
+      postId: posts[0].id,
+    };
+
+    // Initialize commentWithRelationsSetup
+    const commentRelSender = await createWSClientAndWait(infra.serverPort);
+    const commentRelReceiver = await createWSClientAndWait(infra.serverPort);
+    commentRelReceiver.client.load(
+      commentRelReceiver.store.query.comments
+        .include({
+          post: true,
+          author: true,
+        })
+        .buildQueryRequest()
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    commentWithRelationsSetup = {
+      sender: commentRelSender,
+      receiver: commentRelReceiver,
+      postId: posts[0].id,
+      authorId: users[0].id,
+    };
+
+    // Initialize concurrentMutationsSetup
+    const concurrentSender = await createWSClientAndWait(infra.serverPort);
+    const concurrentReceiver = await createWSClientAndWait(infra.serverPort);
+    concurrentReceiver.client.load(
+      concurrentReceiver.store.query.comments.buildQueryRequest()
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    concurrentMutationsSetup = {
+      sender: concurrentSender,
+      receiver: concurrentReceiver,
+      posts,
+      users,
+      mutationCount: 5,
+    };
+
+    // Initialize deepNestedQuerySetup
+    const deepSender = await createWSClientAndWait(infra.serverPort);
+    const deepReceiver = await createWSClientAndWait(infra.serverPort);
+    deepReceiver.client.load(
+      deepReceiver.store.query.orgs
+        .include({
+          posts: {
+            comments: {
+              author: true,
+            },
+            author: true,
+          },
+        })
+        .buildQueryRequest()
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    deepNestedQuerySetup = {
+      sender: deepSender,
+      receiver: deepReceiver,
+      postId: posts[0].id,
+      authorId: users[0].id,
+    };
   });
 
   afterAll(async () => {
@@ -157,30 +249,29 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           infra = await setupBenchmarkInfrastructure();
           await primeDatabase(infra, 50);
         }
+        // Setup is already initialized in beforeAll, but ensure it exists for local runs
+        if (!simpleCommentSetup) {
+          const posts = await infra.fetchClient!.query.posts.get();
+          const users = await infra.fetchClient!.query.users.get();
 
-        const sender = await createWSClientAndWait(infra.serverPort);
-        const receiver = await createWSClientAndWait(infra.serverPort);
+          if (posts.length === 0 || users.length === 0) {
+            throw new Error("Database must be primed with data");
+          }
 
-        // Subscribe receiver to comments
-        receiver.client.load(receiver.store.query.comments.buildQueryRequest());
+          const sender = await createWSClientAndWait(infra.serverPort);
+          const receiver = await createWSClientAndWait(infra.serverPort);
+          receiver.client.load(
+            receiver.store.query.comments.buildQueryRequest()
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Wait for subscription to be established
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Get a post and user for the comment
-        const posts = await infra.fetchClient!.query.posts.get();
-        const users = await infra.fetchClient!.query.users.get();
-
-        if (posts.length === 0 || users.length === 0) {
-          throw new Error("Database must be primed with data");
+          simpleCommentSetup = {
+            sender,
+            receiver,
+            postId: posts[0].id,
+            authorId: users[0].id,
+          };
         }
-
-        simpleCommentSetup = {
-          sender,
-          receiver,
-          postId: posts[0].id,
-          authorId: users[0].id,
-        };
       },
       teardown: async () => {
         if (simpleCommentSetup) {
@@ -216,28 +307,25 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           infra = await setupBenchmarkInfrastructure();
           await primeDatabase(infra, 50);
         }
+        // Setup is already initialized in beforeAll, but ensure it exists for local runs
+        if (!postUpdateSetup) {
+          const posts = await infra.fetchClient!.query.posts.get();
 
-        const sender = await createWSClientAndWait(infra.serverPort);
-        const receiver = await createWSClientAndWait(infra.serverPort);
+          if (posts.length === 0) {
+            throw new Error("Database must be primed with data");
+          }
 
-        // Subscribe receiver to posts
-        receiver.client.load(receiver.store.query.posts.buildQueryRequest());
+          const sender = await createWSClientAndWait(infra.serverPort);
+          const receiver = await createWSClientAndWait(infra.serverPort);
+          receiver.client.load(receiver.store.query.posts.buildQueryRequest());
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Wait for subscription to be established
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Get a post to update
-        const posts = await infra.fetchClient!.query.posts.get();
-
-        if (posts.length === 0) {
-          throw new Error("Database must be primed with data");
+          postUpdateSetup = {
+            sender,
+            receiver,
+            postId: posts[0].id,
+          };
         }
-
-        postUpdateSetup = {
-          sender,
-          receiver,
-          postId: posts[0].id,
-        };
       },
       teardown: async () => {
         if (postUpdateSetup) {
@@ -277,37 +365,34 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           infra = await setupBenchmarkInfrastructure();
           await primeDatabase(infra, 50);
         }
+        // Setup is already initialized in beforeAll, but ensure it exists for local runs
+        if (!commentWithRelationsSetup) {
+          const posts = await infra.fetchClient!.query.posts.get();
+          const users = await infra.fetchClient!.query.users.get();
 
-        const sender = await createWSClientAndWait(infra.serverPort);
-        const receiver = await createWSClientAndWait(infra.serverPort);
+          if (posts.length === 0 || users.length === 0) {
+            throw new Error("Database must be primed with data");
+          }
 
-        // Subscribe receiver to comments with relations
-        receiver.client.load(
-          receiver.store.query.comments
-            .include({
-              post: true,
-              author: true,
-            })
-            .buildQueryRequest()
-        );
+          const sender = await createWSClientAndWait(infra.serverPort);
+          const receiver = await createWSClientAndWait(infra.serverPort);
+          receiver.client.load(
+            receiver.store.query.comments
+              .include({
+                post: true,
+                author: true,
+              })
+              .buildQueryRequest()
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Wait for subscription to be established
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Get a post and user for the comment
-        const posts = await infra.fetchClient!.query.posts.get();
-        const users = await infra.fetchClient!.query.users.get();
-
-        if (posts.length === 0 || users.length === 0) {
-          throw new Error("Database must be primed with data");
+          commentWithRelationsSetup = {
+            sender,
+            receiver,
+            postId: posts[0].id,
+            authorId: users[0].id,
+          };
         }
-
-        commentWithRelationsSetup = {
-          sender,
-          receiver,
-          postId: posts[0].id,
-          authorId: users[0].id,
-        };
       },
       teardown: async () => {
         if (commentWithRelationsSetup) {
@@ -360,31 +445,30 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           infra = await setupBenchmarkInfrastructure();
           await primeDatabase(infra, 50);
         }
+        // Setup is already initialized in beforeAll, but ensure it exists for local runs
+        if (!concurrentMutationsSetup) {
+          const posts = await infra.fetchClient!.query.posts.get();
+          const users = await infra.fetchClient!.query.users.get();
 
-        const sender = await createWSClientAndWait(infra.serverPort);
-        const receiver = await createWSClientAndWait(infra.serverPort);
+          if (posts.length === 0 || users.length === 0) {
+            throw new Error("Database must be primed with data");
+          }
 
-        // Subscribe receiver to comments
-        receiver.client.load(receiver.store.query.comments.buildQueryRequest());
+          const sender = await createWSClientAndWait(infra.serverPort);
+          const receiver = await createWSClientAndWait(infra.serverPort);
+          receiver.client.load(
+            receiver.store.query.comments.buildQueryRequest()
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Wait for subscription to be established
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Get posts and users for comments
-        const posts = await infra.fetchClient!.query.posts.get();
-        const users = await infra.fetchClient!.query.users.get();
-
-        if (posts.length === 0 || users.length === 0) {
-          throw new Error("Database must be primed with data");
+          concurrentMutationsSetup = {
+            sender,
+            receiver,
+            posts,
+            users,
+            mutationCount: 5,
+          };
         }
-
-        concurrentMutationsSetup = {
-          sender,
-          receiver,
-          posts,
-          users,
-          mutationCount: 5,
-        };
       },
       teardown: async () => {
         if (concurrentMutationsSetup) {
@@ -424,41 +508,38 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           infra = await setupBenchmarkInfrastructure();
           await primeDatabase(infra, 50);
         }
+        // Setup is already initialized in beforeAll, but ensure it exists for local runs
+        if (!deepNestedQuerySetup) {
+          const posts = await infra.fetchClient!.query.posts.get();
+          const users = await infra.fetchClient!.query.users.get();
 
-        const sender = await createWSClientAndWait(infra.serverPort);
-        const receiver = await createWSClientAndWait(infra.serverPort);
+          if (posts.length === 0 || users.length === 0) {
+            throw new Error("Database must be primed with data");
+          }
 
-        // Subscribe receiver to deep nested query
-        receiver.client.load(
-          receiver.store.query.orgs
-            .include({
-              posts: {
-                comments: {
+          const sender = await createWSClientAndWait(infra.serverPort);
+          const receiver = await createWSClientAndWait(infra.serverPort);
+          receiver.client.load(
+            receiver.store.query.orgs
+              .include({
+                posts: {
+                  comments: {
+                    author: true,
+                  },
                   author: true,
                 },
-                author: true,
-              },
-            })
-            .buildQueryRequest()
-        );
+              })
+              .buildQueryRequest()
+          );
+          await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Wait a bit for subscription to be established
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        // Get a post and user for the comment
-        const posts = await infra.fetchClient!.query.posts.get();
-        const users = await infra.fetchClient!.query.users.get();
-
-        if (posts.length === 0 || users.length === 0) {
-          throw new Error("Database must be primed with data");
+          deepNestedQuerySetup = {
+            sender,
+            receiver,
+            postId: posts[0].id,
+            authorId: users[0].id,
+          };
         }
-
-        deepNestedQuerySetup = {
-          sender,
-          receiver,
-          postId: posts[0].id,
-          authorId: users[0].id,
-        };
       },
       teardown: async () => {
         if (deepNestedQuerySetup) {
