@@ -102,7 +102,7 @@ export abstract class Storage implements DataSource {
     resource: T,
     resourceId: string,
     value: InferUpdate<T>
-  ): Promise<InferLiveObject<T>> {
+  ): Promise<Partial<InferLiveObject<T>>> {
     const now = new Date().toISOString();
 
     // biome-ignore lint/correctness/noUnusedVariables: id is ignored on purpose
@@ -122,7 +122,7 @@ export abstract class Storage implements DataSource {
           ])
         ),
       } as unknown as MaterializedLiveType<T>)
-    ) as InferLiveObject<T>;
+    ) as Partial<InferLiveObject<T>>;
   }
 
   public abstract transaction<T>(
