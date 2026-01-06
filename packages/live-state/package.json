@@ -27,9 +27,11 @@
     "typecheck": "tsc --noEmit --project . && tsc --noEmit --project src/client",
     "test": "vitest run",
     "test:watch": "vitest",
-    "benchmark": "tsx benchmark/benchmark.ts"
+    "benchmark": "tsx benchmark/benchmark.ts",
+    "bench": "vitest bench --run"
   },
   "devDependencies": {
+    "@codspeed/vitest-plugin": "5.0.1",
     "@repo/typescript-config": "workspace:*",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
