@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { bench, describe, beforeAll, afterAll } from "vitest";
 import {
   setupBenchmarkInfrastructure,
   teardownBenchmarkInfrastructure,
@@ -10,6 +10,17 @@ import type { BenchmarkInfrastructure } from "./utils";
 let infra: BenchmarkInfrastructure | null = null;
 
 describe("live-state query benchmarks", () => {
+  beforeAll(async () => {
+    infra = await setupBenchmarkInfrastructure();
+    await primeDatabase(infra, 50); // Use 50 records for benchmarks
+  });
+
+  afterAll(async () => {
+    if (infra) {
+      await teardownBenchmarkInfrastructure(infra);
+      infra = null;
+    }
+  });
   bench(
     "nested include query - orgs with posts, comments, and authors",
     async () => {
@@ -26,14 +37,13 @@ describe("live-state query benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50); // Use 50 records for benchmarks
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50); // Use 50 records for benchmarks
+        }
       },
       teardown: async () => {
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
@@ -45,14 +55,13 @@ describe("live-state query benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50); // Use 50 records for benchmarks
+        }
       },
       teardown: async () => {
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
@@ -68,14 +77,13 @@ describe("live-state query benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50); // Use 50 records for benchmarks
+        }
       },
       teardown: async () => {
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );

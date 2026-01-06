@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { bench, describe, beforeAll, afterAll } from "vitest";
 import {
   setupBenchmarkInfrastructure,
   teardownBenchmarkInfrastructure,
@@ -92,10 +92,47 @@ function measureMutationLatency(
 }
 
 describe("live-state mutation broadcast latency benchmarks", () => {
+  beforeAll(async () => {
+    infra = await setupBenchmarkInfrastructure();
+    await primeDatabase(infra, 50);
+  });
+
+  afterAll(async () => {
+    if (infra) {
+      await teardownBenchmarkInfrastructure(infra);
+      infra = null;
+    }
+    // Clean up any remaining setup data
+    if (simpleCommentSetup) {
+      simpleCommentSetup.sender.client.ws.disconnect();
+      simpleCommentSetup.receiver.client.ws.disconnect();
+      simpleCommentSetup = null;
+    }
+    if (postUpdateSetup) {
+      postUpdateSetup.sender.client.ws.disconnect();
+      postUpdateSetup.receiver.client.ws.disconnect();
+      postUpdateSetup = null;
+    }
+    if (commentWithRelationsSetup) {
+      commentWithRelationsSetup.sender.client.ws.disconnect();
+      commentWithRelationsSetup.receiver.client.ws.disconnect();
+      commentWithRelationsSetup = null;
+    }
+    if (concurrentMutationsSetup) {
+      concurrentMutationsSetup.sender.client.ws.disconnect();
+      concurrentMutationsSetup.receiver.client.ws.disconnect();
+      concurrentMutationsSetup = null;
+    }
+    if (deepNestedQuerySetup) {
+      deepNestedQuerySetup.sender.client.ws.disconnect();
+      deepNestedQuerySetup.receiver.client.ws.disconnect();
+      deepNestedQuerySetup = null;
+    }
+  });
+
   bench(
     "insert mutation broadcast latency - simple comment insert",
     async () => {
-      // console.log("simpleCommentSetup", simpleCommentSetup);
       const { sender, receiver, postId, authorId } = simpleCommentSetup!;
 
       const commentId = generateId();
@@ -116,9 +153,10 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     },
     {
       setup: async () => {
-        console.log("setting up simple comment setup");
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50);
+        }
 
         const sender = await createWSClientAndWait(infra.serverPort);
         const receiver = await createWSClientAndWait(infra.serverPort);
@@ -134,7 +172,6 @@ describe("live-state mutation broadcast latency benchmarks", () => {
         const users = await infra.fetchClient!.query.users.get();
 
         if (posts.length === 0 || users.length === 0) {
-          console.log("failed to get posts or users");
           throw new Error("Database must be primed with data");
         }
 
@@ -144,7 +181,6 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           postId: posts[0].id,
           authorId: users[0].id,
         };
-        console.log("end of simpleCommentSetup", simpleCommentSetup);
       },
       teardown: async () => {
         if (simpleCommentSetup) {
@@ -152,10 +188,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           simpleCommentSetup.receiver.client.ws.disconnect();
           simpleCommentSetup = null;
         }
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
@@ -179,8 +212,10 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50);
+        }
 
         const sender = await createWSClientAndWait(infra.serverPort);
         const receiver = await createWSClientAndWait(infra.serverPort);
@@ -210,10 +245,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           postUpdateSetup.receiver.client.ws.disconnect();
           postUpdateSetup = null;
         }
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
@@ -241,8 +273,10 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50);
+        }
 
         const sender = await createWSClientAndWait(infra.serverPort);
         const receiver = await createWSClientAndWait(infra.serverPort);
@@ -281,10 +315,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           commentWithRelationsSetup.receiver.client.ws.disconnect();
           commentWithRelationsSetup = null;
         }
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
@@ -325,8 +356,10 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50);
+        }
 
         const sender = await createWSClientAndWait(infra.serverPort);
         const receiver = await createWSClientAndWait(infra.serverPort);
@@ -359,10 +392,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           concurrentMutationsSetup.receiver.client.ws.disconnect();
           concurrentMutationsSetup = null;
         }
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
@@ -390,8 +420,10 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     },
     {
       setup: async () => {
-        infra = await setupBenchmarkInfrastructure();
-        await primeDatabase(infra, 50);
+        if (!infra) {
+          infra = await setupBenchmarkInfrastructure();
+          await primeDatabase(infra, 50);
+        }
 
         const sender = await createWSClientAndWait(infra.serverPort);
         const receiver = await createWSClientAndWait(infra.serverPort);
@@ -434,10 +466,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           deepNestedQuerySetup.receiver.client.ws.disconnect();
           deepNestedQuerySetup = null;
         }
-        if (infra) {
-          await teardownBenchmarkInfrastructure(infra);
-          infra = null;
-        }
+        // Don't tear down infra here - let afterAll handle it
       },
     }
   );
