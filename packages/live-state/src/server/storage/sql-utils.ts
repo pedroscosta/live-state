@@ -1,12 +1,17 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
-import type { Expression, ExpressionBuilder, SelectQueryBuilder } from "kysely";
-import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/postgres";
+import type {
+  Expression,
+  ExpressionBuilder,
+  Kysely,
+  SelectQueryBuilder,
+} from "kysely";
 import type {
   IncludeClause,
   LiveObjectAny,
   Schema,
   WhereClause,
 } from "../../schema";
+import { type DialectHelpers, detectDialect } from "./dialect-helpers";
 
 function innerApplyWhere<T extends LiveObjectAny>(
   schema: Schema<any>,
@@ -68,7 +73,6 @@ function innerApplyWhere<T extends LiveObjectAny>(
                 } else if (val?.$lte !== undefined) {
                   return eb(`${resource}.${key}`, "<=", val.$lte);
                 } else {
-                  // Fallback to simple field equality
                   return eb(
                     `${resource}.${key}`,
                     val === null ? "is" : "=",
@@ -169,11 +173,57 @@ export function applyWhere<T extends LiveObjectAny>(
   return query.where((eb) => innerApplyWhere(schema, resource, eb, where));
 }
 
+function selectMetaColumns(
+  eb: any,
+  schema: Schema<any>,
+  resourceName: string,
+  metaTableName: string,
+  db: Kysely<any>
+): any {
+  const dialect = detectDialect(db);
+  const entity = schema[resourceName];
+
+  if (dialect === "sqlite" && entity?.fields) {
+    const fieldNames = Object.keys(entity.fields);
+    let query = eb.selectFrom(metaTableName);
+    for (const fieldName of fieldNames) {
+      query = query.select(`${metaTableName}.${fieldName}`);
+    }
+    return query;
+  }
+
+  return eb.selectFrom(metaTableName).selectAll(metaTableName);
+}
+
+function selectMainColumns(
+  eb: any,
+  schema: Schema<any>,
+  resourceName: string,
+  tableName: string,
+  db: Kysely<any>
+): any {
+  const dialect = detectDialect(db);
+  const entity = schema[resourceName];
+
+  if (dialect === "sqlite" && entity?.fields) {
+    const fieldNames = Object.keys(entity.fields);
+    let query = eb.selectFrom(tableName);
+    for (const fieldName of fieldNames) {
+      query = query.select(`${tableName}.${fieldName}`);
+    }
+    return query;
+  }
+
+  return eb.selectFrom(tableName).selectAll(tableName);
+}
+
 export function applyInclude<T extends LiveObjectAny>(
   schema: Schema<any>,
   resource: string,
   query: SelectQueryBuilder<any, any, any>,
-  include?: IncludeClause<T>
+  include: IncludeClause<T> | undefined,
+  dialectHelpers: DialectHelpers,
+  db: Kysely<any>
 ) {
   if (!include) return query;
 
@@ -182,6 +232,8 @@ export function applyInclude<T extends LiveObjectAny>(
   const resourceSchema = schema[resource];
 
   if (!resourceSchema) throw new Error(`Resource not found: ${resource}`);
+
+  const { jsonObjectFrom, jsonArrayFrom } = dialectHelpers;
 
   for (const key of Object.keys(include)) {
     if (!resourceSchema.relations[key])
@@ -203,9 +255,14 @@ export function applyInclude<T extends LiveObjectAny>(
       typeof includeValue === "object" && includeValue !== null;
 
     query = query.select((eb) => {
-      let subQuery = eb
-        .selectFrom(otherresource)
-        .selectAll(otherresource)
+      const metaTableName = `${otherresource}_meta`;
+      let subQuery = selectMainColumns(
+        eb,
+        schema,
+        otherresource,
+        otherresource,
+        db
+      )
         .whereRef(
           `${otherresource}.${otherColumnName}`,
           "=",
@@ -213,15 +270,25 @@ export function applyInclude<T extends LiveObjectAny>(
         )
         .select((eb: any) =>
           jsonObjectFrom(
-            eb
-              .selectFrom(`${otherresource}_meta`)
-              .selectAll(`${otherresource}_meta`)
-              .whereRef(`${otherresource}_meta.id`, "=", `${otherresource}.id`)
+            selectMetaColumns(
+              eb,
+              schema,
+              otherresource,
+              metaTableName,
+              db
+            ).whereRef(`${metaTableName}.id`, "=", `${otherresource}.id`)
           ).as("_meta")
         );
 
       if (isNestedInclude) {
-        subQuery = applyInclude(schema, otherresource, subQuery, includeValue);
+        subQuery = applyInclude(
+          schema,
+          otherresource,
+          subQuery,
+          includeValue,
+          dialectHelpers,
+          db
+        );
       }
 
       return (aggFunc(subQuery) as ReturnType<typeof jsonObjectFrom>).as(key);
