@@ -95,7 +95,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
   bench(
     "insert mutation broadcast latency - simple comment insert",
     async () => {
-      console.log("simpleCommentSetup", simpleCommentSetup);
+      // console.log("simpleCommentSetup", simpleCommentSetup);
       const { sender, receiver, postId, authorId } = simpleCommentSetup!;
 
       const commentId = generateId();
@@ -116,6 +116,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     },
     {
       setup: async () => {
+        console.log("setting up simple comment setup");
         infra = await setupBenchmarkInfrastructure();
         await primeDatabase(infra, 50);
 
@@ -133,6 +134,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
         const users = await infra.fetchClient!.query.users.get();
 
         if (posts.length === 0 || users.length === 0) {
+          console.log("failed to get posts or users");
           throw new Error("Database must be primed with data");
         }
 
@@ -142,7 +144,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           postId: posts[0].id,
           authorId: users[0].id,
         };
-        console.log("simpleCommentSetup", simpleCommentSetup);
+        console.log("end of simpleCommentSetup", simpleCommentSetup);
       },
       teardown: async () => {
         if (simpleCommentSetup) {
