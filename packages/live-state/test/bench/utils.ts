@@ -19,6 +19,7 @@ import {
 import { SQLStorage } from "../../src/server/storage";
 import { generateId } from "../../src/core/utils";
 import { createClient as createFetchClient } from "../../src/client/fetch";
+import { createClient as createWSClient } from "../../src/client/websocket/client";
 import type { Server as HttpServer } from "http";
 import { LogLevel } from "../../src/utils";
 
@@ -105,6 +106,49 @@ export type BenchmarkInfrastructure = {
 		typeof createFetchClient<typeof benchmarkRouter>
 	> | null;
 };
+
+export type WSClient = ReturnType<
+	typeof createWSClient<typeof benchmarkRouter>
+>;
+
+/**
+ * Helper function to create a WebSocket client and wait for connection
+ */
+export async function createWSClientAndWait(
+	serverPort: number,
+): Promise<WSClient> {
+	const wsClient = createWSClient({
+		url: `ws://localhost:${serverPort}/ws`,
+		schema: benchmarkSchema,
+		storage: false,
+		connection: {
+			autoConnect: true,
+			autoReconnect: false,
+		},
+	});
+
+	// Wait for connection
+	await new Promise<void>((resolve) => {
+		if (wsClient.client.ws.connected()) {
+			resolve();
+			return;
+		}
+
+		const listener = () => {
+			if (wsClient.client.ws.connected()) {
+				wsClient.client.ws.removeEventListener(
+					"connectionChange",
+					listener,
+				);
+				resolve();
+			}
+		};
+
+		wsClient.client.ws.addEventListener("connectionChange", listener);
+	});
+
+	return wsClient;
+}
 
 // Mutex to prevent concurrent setup/teardown
 let setupTeardownLock: Promise<void> = Promise.resolve();
