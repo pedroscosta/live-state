@@ -36,7 +36,7 @@ export type RouteRecord = Record<string, AnyRoute>;
 
 export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
-  private readonly hooksRegistry: Map<string, Hooks<any>> = new Map();
+  readonly hooksRegistry: Map<string, Hooks<any>> = new Map();
 
   private constructor(opts: { routes: TRoutes }) {
     this.routes = opts.routes;
