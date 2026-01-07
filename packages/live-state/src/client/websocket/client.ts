@@ -11,7 +11,6 @@ import {
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
 import type { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
-import type { AnyRouter } from "../../server";
 import {
   createLogger,
   hash,
@@ -21,7 +20,7 @@ import {
 } from "../../utils";
 import type { ClientOptions } from "..";
 import { QueryBuilder, type QueryExecutor } from "../query";
-import type { Client as ClientType } from "../types";
+import type { ClientRouterConstraint, Client as ClientType } from "../types";
 import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
@@ -286,7 +285,7 @@ class InnerClient implements QueryExecutor {
   }
 }
 
-export type Client<TRouter extends AnyRouter> = {
+export type Client<TRouter extends ClientRouterConstraint> = {
   client: {
     ws: WebSocketClient;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
@@ -295,7 +294,7 @@ export type Client<TRouter extends AnyRouter> = {
   store: ClientType<TRouter>;
 };
 
-export const createClient = <TRouter extends AnyRouter>(
+export const createClient = <TRouter extends ClientRouterConstraint>(
   opts: WebSocketClientOptions
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);

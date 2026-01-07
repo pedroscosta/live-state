@@ -5,10 +5,9 @@ import {
   type LiveObjectAny,
   type LiveObjectMutationInput,
 } from "../../schema";
-import type { AnyRouter } from "../../server";
 import type { ClientOptions } from "..";
 import { QueryBuilder, type QueryExecutor } from "../query";
-import type { Client } from "../types";
+import type { Client, ClientRouterConstraint } from "../types";
 import { createObservable } from "../utils";
 
 export type FetchClientOptions = Omit<ClientOptions, "storage"> & {
@@ -89,7 +88,7 @@ const serializeNullValues = (value: any): any => {
   return value;
 };
 
-export const createClient = <TRouter extends AnyRouter>(
+export const createClient = <TRouter extends ClientRouterConstraint>(
   opts: FetchClientOptions
 ): Client<TRouter, true> => {
   const queryExecutor: QueryExecutor = {

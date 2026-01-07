@@ -32,26 +32,32 @@ export abstract class Storage implements DataSource {
     include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined>;
 
-  public abstract findOne<T extends LiveObjectAny>(
+  public abstract findOne<
+    T extends LiveObjectAny,
+    TInclude extends IncludeClause<T> | undefined = undefined,
+  >(
     resource: T,
     id: string,
     options?: {
-      include?: IncludeClause<T>;
+      include?: TInclude;
     }
-  ): Promise<InferLiveObject<T> | undefined>;
+  ): Promise<InferLiveObject<T, TInclude> | undefined>;
 
   /** @internal */
   public abstract get(query: RawQueryRequest): PromiseOrSync<any[]>;
 
-  public abstract find<T extends LiveObjectAny>(
+  public abstract find<
+    T extends LiveObjectAny,
+    TInclude extends IncludeClause<T> | undefined = undefined,
+  >(
     resource: T,
     options?: {
       where?: WhereClause<T>;
-      include?: IncludeClause<T>;
+      include?: TInclude;
       limit?: number;
       sort?: { key: string; direction: "asc" | "desc" }[];
     }
-  ): Promise<InferLiveObject<T>[]>;
+  ): Promise<InferLiveObject<T, TInclude>[]>;
 
   /** @internal */
   public abstract rawInsert<T extends LiveObjectAny>(

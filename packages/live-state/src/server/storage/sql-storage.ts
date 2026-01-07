@@ -153,13 +153,16 @@ export class SQLStorage extends Storage {
     return this.convertToMaterializedLiveType(parsedValue);
   }
 
-  public async findOne<T extends LiveObjectAny>(
+  public async findOne<
+    T extends LiveObjectAny,
+    TInclude extends IncludeClause<T> | undefined = undefined,
+  >(
     resource: T,
     id: string,
     options?: {
-      include?: IncludeClause<T>;
+      include?: TInclude;
     }
-  ): Promise<InferLiveObject<T> | undefined> {
+  ): Promise<InferLiveObject<T, TInclude> | undefined> {
     const rawValue = await this.rawFindById(
       resource.name,
       id,
@@ -168,7 +171,7 @@ export class SQLStorage extends Storage {
 
     if (!rawValue) return;
 
-    return inferValue(rawValue) as InferLiveObject<T>;
+    return inferValue(rawValue) as InferLiveObject<T, TInclude>;
   }
 
   /** @internal */
@@ -224,15 +227,18 @@ export class SQLStorage extends Storage {
     });
   }
 
-  public async find<T extends LiveObjectAny>(
+  public async find<
+    T extends LiveObjectAny,
+    TInclude extends IncludeClause<T> | undefined = undefined,
+  >(
     resource: T,
     options?: {
       where?: WhereClause<T>;
-      include?: IncludeClause<T>;
+      include?: TInclude;
       limit?: number;
       sort?: { key: string; direction: "asc" | "desc" }[];
     }
-  ): Promise<InferLiveObject<T>[]> {
+  ): Promise<InferLiveObject<T, TInclude>[]> {
     const materializedResults = await this.get({
       resource: resource.name,
       where: options?.where,
@@ -242,7 +248,7 @@ export class SQLStorage extends Storage {
     });
 
     return materializedResults.map(
-      (value) => inferValue(value) as InferLiveObject<T>
+      (value) => inferValue(value) as InferLiveObject<T, TInclude>
     );
   }
 

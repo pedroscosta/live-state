@@ -1,8 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { AnyRouter } from '../server';
 import { hash } from '../utils';
 import type { Client } from '.';
 import type { QueryBuilder } from './query';
+import type { ClientRouterConstraint } from './types';
 
 class Store {
 	private subscriptions: Map<
@@ -66,7 +66,7 @@ export const useLiveQuery = <
 };
 
 export const useLoadData = (
-	client: Client<AnyRouter>['client'],
+	client: Client<ClientRouterConstraint>['client'],
 	query: QueryBuilder<any, any>,
 ) => {
 	useEffect(() => {

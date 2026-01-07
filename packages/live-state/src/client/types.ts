@@ -1,12 +1,38 @@
-import type { z } from "zod";
 import type { ConditionalPromise, Promisify } from "../core/utils";
-import type { InferInsert, InferUpdate } from "../schema";
-import type { AnyRouter } from "../server";
+import type { InferInsert, InferUpdate, LiveObjectAny } from "../schema";
 import type { Simplify } from "../utils";
 import type { QueryBuilder } from "./query";
 
+/**
+ * Extracts the output type from a zod-like schema (mirrors z.infer behavior).
+ * TODO: Use StandardSchema instead
+ */
+type InferableSchema = { _output: unknown };
+type InferSchema<T extends InferableSchema> = T["_output"];
+
+/**
+ * Simplified router constraint for client-side usage.
+ * This avoids importing server-internal types like Storage and Hooks,
+ * which can cause type incompatibilities when the package is bundled.
+ */
+export type ClientRouterConstraint = {
+  routes: Record<
+    string,
+    {
+      resourceSchema: LiveObjectAny;
+      customMutations: Record<
+        string,
+        {
+          inputValidator: InferableSchema;
+          handler: (...args: any[]) => any;
+        }
+      >;
+    }
+  >;
+};
+
 export type Client<
-  TRouter extends AnyRouter,
+  TRouter extends ClientRouterConstraint,
   TShouldAwait extends boolean = false,
 > = {
   query: {
@@ -28,7 +54,7 @@ export type Client<
       ) => ConditionalPromise<void, TShouldAwait>;
     } & {
       [K2 in keyof TRouter["routes"][K]["customMutations"]]: (
-        input: z.infer<
+        input: InferSchema<
           TRouter["routes"][K]["customMutations"][K2]["inputValidator"]
         >
       ) => Promisify<

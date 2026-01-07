@@ -3,6 +3,7 @@ import type { Schema } from "../schema";
 import type { LogLevel } from "../utils";
 
 export * from "./react";
+export type { ClientRouterConstraint } from "./types";
 export * from "./websocket/client";
 
 export type ClientOptions = {
