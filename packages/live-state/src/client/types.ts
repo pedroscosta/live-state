@@ -11,9 +11,11 @@ type InferSchema<T> = T extends { _output: infer U } ? U : never;
 
 /**
  * Helper type for custom mutation functions.
- * When the input type is `never`, the function has no parameters.
+ * When the input type is `never` or `undefined`, the function has no parameters.
  */
-type CustomMutationFunction<TInput, TOutput> = [TInput] extends [never]
+type CustomMutationFunction<TInput, TOutput> = [TInput] extends
+  | [never]
+  | [undefined]
   ? () => Promisify<TOutput>
   : (input: TInput) => Promisify<TOutput>;
 

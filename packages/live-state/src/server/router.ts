@@ -97,8 +97,11 @@ type MutationCreator = {
   // Overload for no validator (no input required)
   (): {
     handler: <TOutput>(
-      handler: (opts: { req: MutationRequest<never>; db: Storage }) => TOutput
-    ) => Mutation<z.ZodNever, TOutput>;
+      handler: (opts: {
+        req: MutationRequest<undefined>;
+        db: Storage;
+      }) => TOutput
+    ) => Mutation<z.ZodUndefined, TOutput>;
   };
   // Overload for with validator
   <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
@@ -123,7 +126,7 @@ const mutationCreator = (<TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
       handler: THandler
     ) =>
       ({
-        inputValidator: validator ?? z.never(),
+        inputValidator: validator ?? z.undefined(),
         handler,
       }) as Mutation<TInputValidator, ReturnType<THandler>>,
   };
