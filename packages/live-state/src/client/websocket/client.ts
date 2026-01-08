@@ -44,7 +44,105 @@ export type MessageReceivedEvent = {
   message: ServerMessage;
 };
 
-export type ClientEvents = ConnectionStateChangeEvent | MessageReceivedEvent;
+export type ClientStorageLoadedEvent = {
+  type: "CLIENT_STORAGE_LOADED";
+  resource: string;
+  itemCount: number;
+};
+
+export type DataLoadRequestedEvent = {
+  type: "DATA_LOAD_REQUESTED";
+  query: RawQueryRequest;
+  subscriptionId: string;
+};
+
+export type DataLoadReplyEvent = {
+  type: "DATA_LOAD_REPLY";
+  resource: string;
+  itemCount: number;
+  subscriptionId?: string;
+};
+
+export type MutationSentEvent = {
+  type: "MUTATION_SENT";
+  mutationId: string;
+  resource: string;
+  resourceId: string;
+  procedure: string;
+  optimistic: boolean;
+};
+
+export type MutationReceivedEvent = {
+  type: "MUTATION_RECEIVED";
+  mutationId: string;
+  resource: string;
+  resourceId: string;
+  procedure: string;
+};
+
+export type MutationRejectedEvent = {
+  type: "MUTATION_REJECTED";
+  mutationId: string;
+  resource: string;
+};
+
+export type SubscriptionCreatedEvent = {
+  type: "SUBSCRIPTION_CREATED";
+  query: RawQueryRequest;
+  subscriptionKey: string;
+  subscriberCount: number;
+};
+
+export type SubscriptionRemovedEvent = {
+  type: "SUBSCRIPTION_REMOVED";
+  query: RawQueryRequest;
+  subscriptionKey: string;
+};
+
+export type QueryExecutedEvent = {
+  type: "QUERY_EXECUTED";
+  query: RawQueryRequest;
+  resultCount: number;
+};
+
+export type StoreStateUpdatedEvent = {
+  type: "STORE_STATE_UPDATED";
+  resource: string;
+  itemCount: number;
+};
+
+export type OptimisticMutationAppliedEvent = {
+  type: "OPTIMISTIC_MUTATION_APPLIED";
+  mutationId: string;
+  resource: string;
+  resourceId: string;
+  procedure: string;
+  pendingMutations: number;
+};
+
+export type OptimisticMutationUndoneEvent = {
+  type: "OPTIMISTIC_MUTATION_UNDONE";
+  mutationId: string;
+  resource: string;
+  resourceId: string;
+  pendingMutations: number;
+};
+
+export type ClientEvents =
+  | ConnectionStateChangeEvent
+  | MessageReceivedEvent
+  | ClientStorageLoadedEvent
+  | DataLoadRequestedEvent
+  | DataLoadReplyEvent
+  | MutationSentEvent
+  | MutationReceivedEvent
+  | MutationRejectedEvent
+  | SubscriptionCreatedEvent
+  | SubscriptionRemovedEvent
+  | QueryExecutedEvent
+  | StoreStateUpdatedEvent
+  | OptimisticMutationAppliedEvent
+  | OptimisticMutationUndoneEvent;
 
 class InnerClient implements QueryExecutor {
   public readonly url: string;
@@ -80,6 +178,13 @@ class InnerClient implements QueryExecutor {
           ?.forEach((m) => {
             this.sendWsMessage(m);
           });
+      },
+      (resource, itemCount) => {
+        this.emitEvent({
+          type: "CLIENT_STORAGE_LOADED",
+          resource,
+          itemCount,
+        });
       }
     );
 
@@ -115,6 +220,14 @@ class InnerClient implements QueryExecutor {
           (mutations) => {
             if (mutations)
               mutations.forEach((m) => {
+                this.emitEvent({
+                  type: "MUTATION_SENT",
+                  mutationId: m.id,
+                  resource: m.resource,
+                  resourceId: m.resourceId,
+                  procedure: m.procedure ?? "UNKNOWN",
+                  optimistic: true,
+                });
                 this.sendWsMessage(m);
               });
           }
@@ -124,7 +237,13 @@ class InnerClient implements QueryExecutor {
   }
 
   public get(query: RawQueryRequest) {
-    return this.store.get(query);
+    const result = this.store.get(query);
+    this.emitEvent({
+      type: "QUERY_EXECUTED",
+      query,
+      resultCount: Array.isArray(result) ? result.length : result ? 1 : 0,
+    });
+    return result;
   }
 
   public handleServerMessage(message: MessageEvent["data"]) {
@@ -140,7 +259,16 @@ class InnerClient implements QueryExecutor {
       });
 
       if (parsedMessage.type === "MUTATE") {
-        const { resource } = parsedMessage;
+        const { resource, id, resourceId, procedure } =
+          parsedMessage as DefaultMutationMessage;
+
+        this.emitEvent({
+          type: "MUTATION_RECEIVED",
+          mutationId: id,
+          resource,
+          resourceId,
+          procedure: procedure ?? "UNKNOWN",
+        });
 
         try {
           this.store.addMutation(
@@ -151,7 +279,31 @@ class InnerClient implements QueryExecutor {
           this.logger.error("Error merging mutation from the server:", e);
         }
       } else if (parsedMessage.type === "REJECT") {
+        const pendingMutations =
+          this.store.optimisticMutationStack[parsedMessage.resource]?.length ??
+          0;
+
+        const rejectedMutation = this.store.optimisticMutationStack[
+          parsedMessage.resource
+        ]?.find((m) => m.id === parsedMessage.id);
+
         this.store.undoMutation(parsedMessage.resource, parsedMessage.id);
+
+        this.emitEvent({
+          type: "MUTATION_REJECTED",
+          mutationId: parsedMessage.id,
+          resource: parsedMessage.resource,
+        });
+
+        if (rejectedMutation) {
+          this.emitEvent({
+            type: "OPTIMISTIC_MUTATION_UNDONE",
+            mutationId: parsedMessage.id,
+            resource: parsedMessage.resource,
+            resourceId: rejectedMutation.resourceId,
+            pendingMutations: pendingMutations - 1,
+          });
+        }
       } else if (parsedMessage.type === "REPLY") {
         const { id, data } = parsedMessage;
 
@@ -163,10 +315,22 @@ class InnerClient implements QueryExecutor {
 
         const parsedSyncData = syncReplyDataSchema.parse(data);
 
+        this.emitEvent({
+          type: "DATA_LOAD_REPLY",
+          resource: parsedSyncData.resource,
+          itemCount: parsedSyncData.data.length,
+        });
+
         this.store.loadConsolidatedState(
           parsedSyncData.resource,
           parsedSyncData.data
         );
+
+        this.emitEvent({
+          type: "STORE_STATE_UPDATED",
+          resource: parsedSyncData.resource,
+          itemCount: parsedSyncData.data.length,
+        });
       }
     } catch (e) {
       this.logger.error("Error parsing message from the server:", e);
@@ -174,13 +338,22 @@ class InnerClient implements QueryExecutor {
   }
 
   public load(query: RawQueryRequest) {
+    const subscriptionId = generateId();
+    const key = hash(query);
+
+    this.emitEvent({
+      type: "DATA_LOAD_REQUESTED",
+      query,
+      subscriptionId,
+    });
+
     this.sendWsMessage({
-      id: generateId(),
+      id: subscriptionId,
       type: "SUBSCRIBE",
       ...query,
     });
 
-    const key = hash(query);
+    const isNewSubscription = !this.remoteSubscriptions.has(key);
 
     if (this.remoteSubscriptions.has(key)) {
       // biome-ignore lint/style/noNonNullAssertion: false positive
@@ -189,10 +362,20 @@ class InnerClient implements QueryExecutor {
       this.remoteSubscriptions.set(key, { query, subCounter: 1 });
     }
 
+    if (isNewSubscription) {
+      this.emitEvent({
+        type: "SUBSCRIPTION_CREATED",
+        query,
+        subscriptionKey: key,
+        subscriberCount: 1,
+      });
+    }
+
     return () => {
       if (this.remoteSubscriptions.has(key)) {
         // biome-ignore lint/style/noNonNullAssertion: false positive
-        this.remoteSubscriptions.get(key)!.subCounter -= 1;
+        const subscription = this.remoteSubscriptions.get(key)!;
+        subscription.subCounter -= 1;
         // biome-ignore lint/style/noNonNullAssertion: false positive
         if (this.remoteSubscriptions.get(key)!.subCounter <= 0) {
           this.remoteSubscriptions.delete(key);
@@ -200,6 +383,12 @@ class InnerClient implements QueryExecutor {
             id: generateId(),
             type: "UNSUBSCRIBE",
             ...query,
+          });
+
+          this.emitEvent({
+            type: "SUBSCRIPTION_REMOVED",
+            query,
+            subscriptionKey: key,
           });
         }
       }
@@ -234,7 +423,28 @@ class InnerClient implements QueryExecutor {
       procedure,
     };
 
+    const pendingMutations =
+      (this.store.optimisticMutationStack[routeName]?.length ?? 0) + 1;
+
     this.store?.addMutation(routeName, mutationMessage, true);
+
+    this.emitEvent({
+      type: "OPTIMISTIC_MUTATION_APPLIED",
+      mutationId: mutationMessage.id,
+      resource: routeName,
+      resourceId,
+      procedure,
+      pendingMutations,
+    });
+
+    this.emitEvent({
+      type: "MUTATION_SENT",
+      mutationId: mutationMessage.id,
+      resource: routeName,
+      resourceId,
+      procedure,
+      optimistic: true,
+    });
 
     this.sendWsMessage(mutationMessage);
   }
@@ -250,6 +460,15 @@ class InnerClient implements QueryExecutor {
       procedure,
       payload,
     };
+
+    this.emitEvent({
+      type: "MUTATION_SENT",
+      mutationId: mutationMessage.id,
+      resource: routeName,
+      resourceId: "",
+      procedure,
+      optimistic: false,
+    });
 
     this.sendWsMessage(mutationMessage);
 
