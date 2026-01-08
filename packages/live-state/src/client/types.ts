@@ -7,8 +7,15 @@ import type { QueryBuilder } from "./query";
  * Extracts the output type from a zod-like schema (mirrors z.infer behavior).
  * TODO: Use StandardSchema instead
  */
-type InferableSchema = { _output: unknown };
-type InferSchema<T extends InferableSchema> = T["_output"];
+type InferSchema<T> = T extends { _output: infer U } ? U : never;
+
+/**
+ * Helper type for custom mutation functions.
+ * When the input type is `never`, the function has no parameters.
+ */
+type CustomMutationFunction<TInput, TOutput> = [TInput] extends [never]
+  ? () => Promisify<TOutput>
+  : (input: TInput) => Promisify<TOutput>;
 
 /**
  * Simplified router constraint for client-side usage.
@@ -23,7 +30,7 @@ export type ClientRouterConstraint = {
       customMutations: Record<
         string,
         {
-          inputValidator: InferableSchema;
+          inputValidator: any;
           handler: (...args: any[]) => any;
         }
       >;
@@ -53,11 +60,10 @@ export type Client<
         value: Simplify<InferUpdate<TRouter["routes"][K]["resourceSchema"]>>
       ) => ConditionalPromise<void, TShouldAwait>;
     } & {
-      [K2 in keyof TRouter["routes"][K]["customMutations"]]: (
-        input: InferSchema<
+      [K2 in keyof TRouter["routes"][K]["customMutations"]]: CustomMutationFunction<
+        InferSchema<
           TRouter["routes"][K]["customMutations"][K2]["inputValidator"]
-        >
-      ) => Promisify<
+        >,
         ReturnType<TRouter["routes"][K]["customMutations"][K2]["handler"]>
       >;
     };
