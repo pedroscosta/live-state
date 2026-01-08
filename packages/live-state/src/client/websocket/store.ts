@@ -45,7 +45,8 @@ export class OptimisticStore {
     public readonly schema: Schema<any>,
     storage: ClientOptions["storage"],
     logger: Logger,
-    afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void
+    afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void,
+    onStorageLoaded?: (resource: string, itemCount: number) => void
   ) {
     this.logger = logger;
     this.optimisticObjGraph = new ObjectGraph(logger);
@@ -63,8 +64,12 @@ export class OptimisticStore {
           .then(() => {
             Object.entries(this.schema).forEach(([k]) => {
               this.kvStorage.get(k).then((data) => {
-                if (!data || Object.keys(data).length === 0) return;
+                if (!data || Object.keys(data).length === 0) {
+                  onStorageLoaded?.(k, 0);
+                  return;
+                }
                 const dataArray = Object.values(data);
+                onStorageLoaded?.(k, dataArray.length);
                 this.loadConsolidatedState(k, dataArray);
               });
             });
