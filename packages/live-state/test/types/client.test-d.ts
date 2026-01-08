@@ -2020,8 +2020,8 @@ describe("custom mutations websocket client", () => {
   test("should infer no input mutation types", () => {
     const getStatsMutation = customMutationMutate.customMutationUsers.getStats;
 
-    // For mutations with no input, the parameter should be optional or undefined
-    expectTypeOf(getStatsMutation).parameter(0).toEqualTypeOf<unknown>();
+    // For mutations with no input, the function should have no parameters
+    expectTypeOf(getStatsMutation).parameters.toEqualTypeOf<[]>();
 
     expectTypeOf(getStatsMutation).returns.toEqualTypeOf<
       Promise<{
@@ -2192,8 +2192,8 @@ describe("custom mutations fetch client", () => {
     const getStatsMutation =
       customMutationFetchClient.mutate.customMutationUsers.getStats;
 
-    // For mutations with no input, the parameter should be optional or undefined
-    expectTypeOf(getStatsMutation).parameter(0).toEqualTypeOf<unknown>();
+    // For mutations with no input, the function should have no parameters
+    expectTypeOf(getStatsMutation).parameters.toEqualTypeOf<[]>();
 
     expectTypeOf(getStatsMutation).returns.toEqualTypeOf<
       Promise<{

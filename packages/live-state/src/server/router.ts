@@ -83,7 +83,7 @@ export type MutationResult<TShape extends LiveObjectAny> = {
 };
 
 export type Mutation<
-  TInputValidator extends z3.ZodTypeAny | z4.$ZodType, // TODO use StandardSchema instead
+  TInputValidator extends z3.ZodTypeAny | z4.$ZodType | never, // TODO use StandardSchema instead
   TOutput,
 > = {
   inputValidator: TInputValidator;
@@ -93,7 +93,32 @@ export type Mutation<
   }) => TOutput;
 };
 
-const mutationCreator = <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
+type MutationCreator = {
+  // Overload for no validator (no input required)
+  (): {
+    handler: <TOutput>(
+      handler: (opts: {
+        req: MutationRequest<undefined>;
+        db: Storage;
+      }) => TOutput
+    ) => Mutation<z.ZodUndefined, TOutput>;
+  };
+  // Overload for with validator
+  <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
+    validator: TInputValidator
+  ): {
+    handler: <
+      THandler extends (opts: {
+        req: MutationRequest<z.infer<TInputValidator>>;
+        db: Storage;
+      }) => any,
+    >(
+      handler: THandler
+    ) => Mutation<TInputValidator, ReturnType<THandler>>;
+  };
+};
+
+const mutationCreator = (<TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
   validator?: TInputValidator
 ) => {
   return {
@@ -105,7 +130,7 @@ const mutationCreator = <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
         handler,
       }) as Mutation<TInputValidator, ReturnType<THandler>>,
   };
-};
+}) as MutationCreator;
 
 export type ReadAuthorizationHandler<TShape extends LiveObjectAny> = (opts: {
   ctx: BaseRequest["context"];

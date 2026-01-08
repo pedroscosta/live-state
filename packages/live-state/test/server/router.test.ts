@@ -1887,19 +1887,21 @@ describe("Route Custom Mutations Advanced", () => {
   });
 
   test("should handle custom mutation with no input validator", async () => {
-    const customHandler = vi.fn().mockResolvedValue({ success: true });
-    const customMutations = {
-      noInputAction: {
-        inputValidator: z.undefined(),
-        handler: customHandler,
-      },
-    };
+    const route = new Route(mockResource).withMutations(({ mutation }) => ({
+      getUserStats: mutation().handler(async ({ req }) => {
+        // Simulate getting stats - no input needed
+        return {
+          totalUsers: 42,
+          activeUsers: 38,
+          timestamp: new Date().toISOString(),
+        };
+      }),
+    }));
 
-    const route = new Route(mockResource, customMutations);
     const mockRequest: MutationRequest = {
       type: "MUTATE",
       resource: "users",
-      procedure: "noInputAction",
+      procedure: "getUserStats",
       input: undefined,
       headers: {},
       cookies: {},
@@ -1913,13 +1915,12 @@ describe("Route Custom Mutations Advanced", () => {
       schema: mockSchema,
     });
 
-    expect(customHandler).toHaveBeenCalledWith({
-      req: expect.objectContaining({
-        input: undefined,
-      }),
-      db: mockStorage,
+    expect(result).toEqual({
+      totalUsers: 42,
+      activeUsers: 38,
+      timestamp: expect.any(String),
     });
-    expect(result).toEqual({ success: true });
+    expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
   test("should handle custom mutation that throws error", async () => {
