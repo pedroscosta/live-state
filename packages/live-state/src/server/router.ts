@@ -1,9 +1,8 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: false positive */
 /** biome-ignore-all lint/style/noNonNullAssertion: false positive */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
-import type * as z3 from "zod/v3";
-import type * as z4 from "zod/v4/core";
 import type { RawQueryRequest } from "../core/schemas/core-protocol";
 import {
   type InferLiveObjectWithRelationalIds,
@@ -83,12 +82,16 @@ export type MutationResult<TShape extends LiveObjectAny> = {
 };
 
 export type Mutation<
-  TInputValidator extends z3.ZodTypeAny | z4.$ZodType | never, // TODO use StandardSchema instead
+  TInputValidator extends StandardSchemaV1<any, any> | never,
   TOutput,
 > = {
   inputValidator: TInputValidator;
   handler: (opts: {
-    req: MutationRequest<z.infer<TInputValidator>>;
+    req: MutationRequest<
+      TInputValidator extends StandardSchemaV1<any, any>
+        ? StandardSchemaV1.InferOutput<TInputValidator>
+        : undefined
+    >;
     db: Storage;
   }) => TOutput;
 };
@@ -101,15 +104,15 @@ type MutationCreator = {
         req: MutationRequest<undefined>;
         db: Storage;
       }) => TOutput
-    ) => Mutation<z.ZodUndefined, TOutput>;
+    ) => Mutation<StandardSchemaV1<any, undefined>, TOutput>;
   };
   // Overload for with validator
-  <TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
+  <TInputValidator extends StandardSchemaV1<any, any>>(
     validator: TInputValidator
   ): {
     handler: <
       THandler extends (opts: {
-        req: MutationRequest<z.infer<TInputValidator>>;
+        req: MutationRequest<StandardSchemaV1.InferOutput<TInputValidator>>;
         db: Storage;
       }) => any,
     >(
@@ -118,7 +121,7 @@ type MutationCreator = {
   };
 };
 
-const mutationCreator = (<TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
+const mutationCreator = (<TInputValidator extends StandardSchemaV1<any, any>>(
   validator?: TInputValidator
 ) => {
   return {
@@ -126,7 +129,8 @@ const mutationCreator = (<TInputValidator extends z3.ZodTypeAny | z4.$ZodType>(
       handler: THandler
     ) =>
       ({
-        inputValidator: validator ?? z.undefined(),
+        inputValidator:
+          validator ?? (z.undefined() as StandardSchemaV1<any, undefined>),
         handler,
       }) as Mutation<TInputValidator, ReturnType<THandler>>,
   };
@@ -312,9 +316,38 @@ export class Route<
       const customProcedure = this.customMutations[req.procedure];
 
       if (customProcedure) {
-        const validInput = customProcedure.inputValidator.parse(req.input);
+        const validationResult = customProcedure.inputValidator[
+          "~standard"
+        ].validate(req.input);
 
-        req.input = validInput;
+        // Handle both sync and async validation
+        const result =
+          validationResult instanceof Promise
+            ? await validationResult
+            : validationResult;
+
+        if (result.issues) {
+          const errorMessage = result.issues
+            .map(
+              (issue: {
+                message: string;
+                path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+              }) => {
+                const path = issue.path
+                  ?.map((p) =>
+                    typeof p === "object" && "key" in p
+                      ? String(p.key)
+                      : String(p)
+                  )
+                  .join(".");
+                return path ? `${path}: ${issue.message}` : issue.message;
+              }
+            )
+            .join(", ");
+          throw new Error(`Validation failed: ${errorMessage}`);
+        }
+
+        req.input = result.value;
 
         return customProcedure.handler({
           req,

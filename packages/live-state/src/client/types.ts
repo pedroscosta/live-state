@@ -1,13 +1,20 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { ConditionalPromise, Promisify } from "../core/utils";
 import type { InferInsert, InferUpdate, LiveObjectAny } from "../schema";
 import type { Simplify } from "../utils";
 import type { QueryBuilder } from "./query";
 
 /**
- * Extracts the output type from a zod-like schema (mirrors z.infer behavior).
- * TODO: Use StandardSchema instead
+ * Extracts the output type from a Standard Schema validator.
+ * Supports Standard Schema (via ~standard property) and Zod schemas (via _output property for backward compatibility).
  */
-type InferSchema<T> = T extends { _output: infer U } ? U : never;
+type InferSchema<T> = T extends { "~standard": { types?: { output: infer U } } }
+  ? U
+  : T extends StandardSchemaV1<any, any>
+    ? StandardSchemaV1.InferOutput<T>
+    : T extends { _output: infer U }
+      ? U
+      : never;
 
 /**
  * Helper type for custom mutation functions.
@@ -32,7 +39,7 @@ export type ClientRouterConstraint = {
       customMutations: Record<
         string,
         {
-          inputValidator: any;
+          inputValidator: StandardSchemaV1<any, any>;
           handler: (...args: any[]) => any;
         }
       >;
