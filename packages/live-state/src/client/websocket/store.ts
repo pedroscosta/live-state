@@ -68,7 +68,12 @@ export class OptimisticStore {
                   onStorageLoaded?.(k, 0);
                   return;
                 }
-                const dataArray = Object.values(data);
+
+                const dataArray = Object.entries(data).map(([k, v]) => ({
+                  ...v,
+                  id: { value: k },
+                }));
+
                 onStorageLoaded?.(k, dataArray.length);
                 this.loadConsolidatedState(k, dataArray);
               });
