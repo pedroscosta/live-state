@@ -1,6 +1,6 @@
 {
   "name": "@live-state/sync",
-  "version": "0.0.6-beta-1",
+  "version": "0.0.6-beta-2",
   "private": false,
   "publishConfig": {
     "access": "public"
