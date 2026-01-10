@@ -263,11 +263,22 @@ export class SQLStorage extends Storage {
     const hooks = this.server?.router?.getHooks(resourceName);
 
     let processedValue = value;
+    const rawValueWithId = {
+      ...processedValue,
+      value: {
+        ...processedValue.value,
+        id: { value: resourceId },
+      },
+    };
 
     if (hooks?.beforeInsert) {
+      const inferredValue = inferValue(rawValueWithId) as any;
+      (inferredValue as any).id = resourceId;
+
       const hookResult = await hooks.beforeInsert({
         ctx: context,
-        value: processedValue,
+        value: inferredValue as any,
+        rawValue: rawValueWithId,
         db: this,
       });
 
@@ -310,9 +321,20 @@ export class SQLStorage extends Storage {
     }
 
     if (hooks?.afterInsert) {
+      const finalRawValue = {
+        ...processedValue,
+        value: {
+          ...processedValue.value,
+          id: { value: resourceId },
+        },
+      };
+      const inferredValue = inferValue(finalRawValue) as any;
+      (inferredValue as any).id = resourceId;
+
       await hooks.afterInsert({
         ctx: context,
-        value: processedValue,
+        value: inferredValue as any,
+        rawValue: finalRawValue,
         db: this,
       });
     }
@@ -330,17 +352,43 @@ export class SQLStorage extends Storage {
   ): Promise<MaterializedLiveType<T>> {
     const hooks = this.server?.router?.getHooks(resourceName);
 
-    let previousValue: MaterializedLiveType<T> | undefined;
+    let previousRawValue: MaterializedLiveType<T> | undefined;
     if (hooks?.beforeUpdate || hooks?.afterUpdate) {
-      previousValue = await this.rawFindById<T>(resourceName, resourceId);
+      previousRawValue = await this.rawFindById<T>(resourceName, resourceId);
     }
 
     let processedValue = value;
+    const rawValueWithId = {
+      ...processedValue,
+      value: {
+        ...processedValue.value,
+        id: { value: resourceId },
+      },
+    };
+
     if (hooks?.beforeUpdate) {
+      const inferredValue = inferValue(rawValueWithId) as any;
+      (inferredValue as any).id = resourceId;
+
+      let previousInferredValue: any | undefined;
+      if (previousRawValue) {
+        const previousRawValueWithId = {
+          ...previousRawValue,
+          value: {
+            ...previousRawValue.value,
+            id: { value: resourceId },
+          },
+        };
+        previousInferredValue = inferValue(previousRawValueWithId) as any;
+        (previousInferredValue as any).id = resourceId;
+      }
+
       const hookResult = await hooks.beforeUpdate({
         ctx: context,
-        value: processedValue,
-        previousValue,
+        value: inferredValue as any,
+        rawValue: rawValueWithId,
+        previousValue: previousInferredValue,
+        previousRawValue,
         db: this,
       });
 
@@ -389,12 +437,40 @@ export class SQLStorage extends Storage {
     }
 
     if (hooks?.afterUpdate) {
-      const updatedValue = await this.rawFindById<T>(resourceName, resourceId);
-      if (updatedValue) {
+      const updatedRawValue = await this.rawFindById<T>(
+        resourceName,
+        resourceId
+      );
+      if (updatedRawValue) {
+        const updatedRawValueWithId = {
+          ...updatedRawValue,
+          value: {
+            ...updatedRawValue.value,
+            id: { value: resourceId },
+          },
+        };
+        const inferredValue = inferValue(updatedRawValueWithId) as any;
+        (inferredValue as any).id = resourceId;
+
+        let previousInferredValue: any | undefined;
+        if (previousRawValue) {
+          const previousRawValueWithId = {
+            ...previousRawValue,
+            value: {
+              ...previousRawValue.value,
+              id: { value: resourceId },
+            },
+          };
+          previousInferredValue = inferValue(previousRawValueWithId) as any;
+          (previousInferredValue as any).id = resourceId;
+        }
+
         await hooks.afterUpdate({
           ctx: context,
-          value: updatedValue,
-          previousValue,
+          value: inferredValue as any,
+          rawValue: updatedRawValueWithId,
+          previousValue: previousInferredValue,
+          previousRawValue,
           db: this,
         });
       }

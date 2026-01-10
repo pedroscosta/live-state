@@ -158,7 +158,8 @@ export type Authorization<TShape extends LiveObjectAny> = {
 // Lifecycle Hook Types
 export type BeforeInsertHook<TShape extends LiveObjectAny> = (opts: {
   ctx?: Record<string, any>;
-  value: MaterializedLiveType<TShape>;
+  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+  rawValue: MaterializedLiveType<TShape>;
   db: Storage;
 }) =>
   | Promise<MaterializedLiveType<TShape> | void>
@@ -167,14 +168,19 @@ export type BeforeInsertHook<TShape extends LiveObjectAny> = (opts: {
 
 export type AfterInsertHook<TShape extends LiveObjectAny> = (opts: {
   ctx?: Record<string, any>;
-  value: MaterializedLiveType<TShape>;
+  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+  rawValue: MaterializedLiveType<TShape>;
   db: Storage;
 }) => Promise<void> | void;
 
 export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
   ctx?: Record<string, any>;
-  value: MaterializedLiveType<TShape>;
-  previousValue?: MaterializedLiveType<TShape>;
+  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+  rawValue: MaterializedLiveType<TShape>;
+  previousValue?: Simplify<InferLiveObjectWithRelationalIds<TShape>> & {
+    id: string;
+  };
+  previousRawValue?: MaterializedLiveType<TShape>;
   db: Storage;
 }) =>
   | Promise<MaterializedLiveType<TShape> | void>
@@ -183,8 +189,12 @@ export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
 
 export type AfterUpdateHook<TShape extends LiveObjectAny> = (opts: {
   ctx?: Record<string, any>;
-  value: MaterializedLiveType<TShape>;
-  previousValue?: MaterializedLiveType<TShape>;
+  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+  rawValue: MaterializedLiveType<TShape>;
+  previousValue?: Simplify<InferLiveObjectWithRelationalIds<TShape>> & {
+    id: string;
+  };
+  previousRawValue?: MaterializedLiveType<TShape>;
   db: Storage;
 }) => Promise<void> | void;
 
