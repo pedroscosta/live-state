@@ -105,6 +105,11 @@ export type QueryExecutedEvent = {
   resultCount: number;
 };
 
+export type QuerySubscriptionTriggeredEvent = {
+  type: "QUERY_SUBSCRIPTION_TRIGGERED";
+  query: RawQueryRequest;
+};
+
 export type StoreStateUpdatedEvent = {
   type: "STORE_STATE_UPDATED";
   resource: string;
@@ -140,6 +145,7 @@ export type ClientEvents =
   | SubscriptionCreatedEvent
   | SubscriptionRemovedEvent
   | QueryExecutedEvent
+  | QuerySubscriptionTriggeredEvent
   | StoreStateUpdatedEvent
   | OptimisticMutationAppliedEvent
   | OptimisticMutationUndoneEvent;
@@ -184,6 +190,12 @@ class InnerClient implements QueryExecutor {
           type: "CLIENT_STORAGE_LOADED",
           resource,
           itemCount,
+        });
+      },
+      (query) => {
+        this.emitEvent({
+          type: "QUERY_SUBSCRIPTION_TRIGGERED",
+          query,
         });
       }
     );

@@ -28,6 +28,7 @@ export class OptimisticStore {
   private optimisticObjGraph: ObjectGraph;
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
   private logger: Logger;
+  private onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void;
 
   private collectionSubscriptions: Map<
     string,
@@ -46,11 +47,13 @@ export class OptimisticStore {
     storage: ClientOptions["storage"],
     logger: Logger,
     afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void,
-    onStorageLoaded?: (resource: string, itemCount: number) => void
+    onStorageLoaded?: (resource: string, itemCount: number) => void,
+    onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void
   ) {
     this.logger = logger;
     this.optimisticObjGraph = new ObjectGraph(logger);
     this.kvStorage = new KVStorage();
+    this.onQuerySubscriptionTriggered = onQuerySubscriptionTriggered;
 
     if (storage !== false) {
       this.kvStorage.init(this.schema, storage.name).then(() => {
@@ -569,7 +572,7 @@ export class OptimisticStore {
     this.collectionSubscriptions.forEach((s) => {
       if (
         s.query.resource === collection ||
-        (s.flatInclude && s.flatInclude.includes(collection))
+        s.flatInclude?.includes(collection)
       ) {
         // TODO implement incremental computing
         const queryHash = hash(s.query);
@@ -579,6 +582,8 @@ export class OptimisticStore {
         if (fastDeepEqual(newResult, oldResult)) return;
 
         this.querySnapshots[queryHash] = newResult;
+
+        this.onQuerySubscriptionTriggered?.(s.query);
 
         s.callbacks.forEach((cb) => {
           cb(newResult);

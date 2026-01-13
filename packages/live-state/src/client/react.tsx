@@ -10,40 +10,53 @@ class Store {
 		{
 			subscribe: (cb: () => void) => () => void;
 			callbacks: Set<() => void>;
+			unsubscribe?: () => void;
 		}
 	> = new Map();
 
 	getOrStoreSubscription(
 		builder: QueryBuilder<any>,
 	): (cb: () => void) => () => void {
-		const key = hash(builder);
+		const queryRequest = builder.buildQueryRequest();
+		const key = hash(queryRequest) as string;
 
 		if (this.subscriptions.has(key))
 			return this.subscriptions.get(key)!.subscribe;
 
-		this.subscriptions.set(key, {
+		const entry = {
 			subscribe: (cb: () => void) => {
-				this.subscriptions.get(key)?.callbacks.add(cb);
+				const subscriptionEntry = this.subscriptions.get(key)!;
+				subscriptionEntry.callbacks.add(cb);
 
-				const unsub = builder.subscribe(() => {
-					this.subscriptions.get(key)?.callbacks.forEach((cb) => {
-						cb();
+				if (!subscriptionEntry.unsubscribe) {
+					subscriptionEntry.unsubscribe = () => {
+						// Temporary placeholder to prevent concurrent subscriptions
+					};
+
+					subscriptionEntry.unsubscribe = builder.subscribe(() => {
+						subscriptionEntry.callbacks.forEach((cb) => {
+							cb();
+						});
 					});
-				});
+				}
 
 				return () => {
 					this.subscriptions.get(key)?.callbacks.delete(cb);
 
 					setTimeout(() => {
-						if (this.subscriptions.get(key)?.callbacks.size === 0) {
+						const subscriptionEntry = this.subscriptions.get(key);
+						if (subscriptionEntry && subscriptionEntry.callbacks.size === 0) {
+							subscriptionEntry.unsubscribe?.();
 							this.subscriptions.delete(key);
-							unsub();
 						}
 					}, 10);
 				};
 			},
-			callbacks: new Set(),
-		});
+			callbacks: new Set<() => void>(),
+			unsubscribe: undefined as (() => void) | undefined,
+		};
+
+		this.subscriptions.set(key, entry);
 
 		return this.subscriptions.get(key)!.subscribe;
 	}
