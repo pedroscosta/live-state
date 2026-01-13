@@ -12,3 +12,4 @@ server/dist
 public/dist
 .pg-data
 todo.md
+.local-docs
