@@ -13,20 +13,6 @@ import { useLiveQuery, useLoadData } from "../../src/client/react";
 import { Client } from "../../src/client/websocket/client";
 import { AnyRouter } from "../../src/server";
 
-// Custom matcher for Vitest
-expect.extend({
-  toBeInTheDocument(received) {
-    const pass = received != null;
-    return {
-      message: () =>
-        `expected element ${pass ? "not " : ""}to be in the document`,
-      pass,
-    };
-  },
-});
-
-let i = 0;
-
 describe("useLiveQuery", () => {
   let mockQueryBuilder: QueryBuilder<any, any>;
   let mockSubscribe: Mock;
@@ -43,18 +29,16 @@ describe("useLiveQuery", () => {
     mockQueryBuilder = {
       get: mockGet,
       subscribe: mockSubscribe,
-      toJSON: vi.fn(() => ({
+      buildQueryRequest: vi.fn(() => ({
         resource: "users" + random,
         where: {},
         include: {},
       })),
     } as unknown as QueryBuilder<any, any>;
-    console.log(i++);
   });
 
   afterEach(async () => {
     vi.clearAllMocks();
-    console.log(i);
   });
 
   test("should initialize with query result", () => {
@@ -122,7 +106,7 @@ describe("useLiveQuery", () => {
     const newMockQueryBuilder = {
       get: vi.fn(() => getResult),
       subscribe: vi.fn(() => vi.fn()),
-      toJSON: vi.fn(() => ({
+      buildQueryRequest: vi.fn(() => ({
         resource: "users",
         where: { active: true },
         include: {},
@@ -193,7 +177,7 @@ describe("useLiveQuery", () => {
     const stringQueryBuilder = {
       get: vi.fn(() => getResult),
       subscribe: vi.fn(() => vi.fn()),
-      toJSON: vi.fn(() => ({ resource: "strings", where: {}, include: {} })),
+      buildQueryRequest: vi.fn(() => ({ resource: "strings", where: {}, include: {} })),
     } as unknown as QueryBuilder<any, any>;
 
     const { result } = renderHook(() => useLiveQuery(stringQueryBuilder));
@@ -208,7 +192,7 @@ describe("useLiveQuery", () => {
     const arrayQueryBuilder = {
       get: vi.fn(() => getResult),
       subscribe: vi.fn(() => vi.fn()),
-      toJSON: vi.fn(() => ({ resource: "numbers", where: {}, include: {} })),
+      buildQueryRequest: vi.fn(() => ({ resource: "numbers", where: {}, include: {} })),
     } as unknown as QueryBuilder<any, any>;
 
     const { result } = renderHook(() => useLiveQuery(arrayQueryBuilder));
