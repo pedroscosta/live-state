@@ -2619,7 +2619,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
       2,
       "users",
       "user1",
-      { posts: { comments: true } }
+      { posts: { include: { comments: true } } }
     );
   });
 

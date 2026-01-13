@@ -217,6 +217,19 @@ function selectMainColumns(
   return eb.selectFrom(tableName).selectAll(tableName);
 }
 
+function isSubQueryInclude(value: unknown): value is {
+  where?: Record<string, any>;
+  limit?: number;
+  orderBy?: { key: string; direction: "asc" | "desc" }[];
+  include?: Record<string, any>;
+} {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  return "where" in obj || "limit" in obj || "orderBy" in obj || "include" in obj;
+}
+
 export function applyInclude<T extends LiveObjectAny>(
   schema: Schema<any>,
   resource: string,
@@ -251,8 +264,9 @@ export function applyInclude<T extends LiveObjectAny>(
 
     const aggFunc = relation.type === "one" ? jsonObjectFrom : jsonArrayFrom;
 
-    const isNestedInclude =
-      typeof includeValue === "object" && includeValue !== null;
+    // Extract sub-query options if this is a sub-query include
+    const subQueryOptions = isSubQueryInclude(includeValue) ? includeValue : null;
+    const nestedInclude = subQueryOptions?.include;
 
     query = query.select((eb) => {
       const metaTableName = `${otherresource}_meta`;
@@ -280,12 +294,38 @@ export function applyInclude<T extends LiveObjectAny>(
           ).as("_meta")
         );
 
-      if (isNestedInclude) {
+      // Apply sub-query where clause
+      if (subQueryOptions?.where) {
+        subQuery = applyWhere(
+          schema,
+          otherresource,
+          subQuery,
+          subQueryOptions.where
+        );
+      }
+
+      // Apply sub-query orderBy
+      if (subQueryOptions?.orderBy) {
+        for (const order of subQueryOptions.orderBy) {
+          subQuery = subQuery.orderBy(
+            `${otherresource}.${order.key}`,
+            order.direction
+          );
+        }
+      }
+
+      // Apply sub-query limit
+      if (subQueryOptions?.limit !== undefined) {
+        subQuery = subQuery.limit(subQueryOptions.limit);
+      }
+
+      // Apply nested includes (recursive)
+      if (nestedInclude && Object.keys(nestedInclude).length > 0) {
         subQuery = applyInclude(
           schema,
           otherresource,
           subQuery,
-          includeValue,
+          nestedInclude,
           dialectHelpers,
           db
         );

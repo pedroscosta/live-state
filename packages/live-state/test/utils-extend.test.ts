@@ -204,7 +204,9 @@ describe("extractIncludeFromWhere", () => {
 
     expect(result).toEqual({
       posts: {
-        comments: true,
+        include: {
+          comments: true,
+        },
       },
     });
   });
@@ -278,8 +280,12 @@ describe("extractIncludeFromWhere", () => {
 
     expect(result).toEqual({
       posts: {
-        comments: {
-          reactions: true,
+        include: {
+          comments: {
+            include: {
+              reactions: true,
+            },
+          },
         },
       },
     });
@@ -397,7 +403,9 @@ describe("extractIncludeFromWhere", () => {
 
     expect(result).toEqual({
       posts: {
-        comments: true,
+        include: {
+          comments: true,
+        },
       },
     });
   });

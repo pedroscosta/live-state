@@ -21,6 +21,7 @@ export const hash = (value: unknown) => {
 
 /**
  * Extracts include clauses from a where clause by finding all relation references
+ * Uses the new sub-query include format: { relation: { include: { nested: true } } }
  */
 export const extractIncludeFromWhere = (
   where: WhereClause<any>,
@@ -57,7 +58,8 @@ export const extractIncludeFromWhere = (
             );
 
             if (Object.keys(nestedInclude).length > 0) {
-              include[key] = nestedInclude;
+              // Use sub-query include format for nested includes
+              include[key] = { include: nestedInclude };
             }
           }
         }
