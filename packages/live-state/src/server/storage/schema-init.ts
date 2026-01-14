@@ -281,10 +281,10 @@ async function addForeignKeyConstraint(
 
   try {
     await sql`
-      ALTER TABLE ${sql.raw(tableName)}
-      ADD CONSTRAINT ${sql.raw(constraintName)}
-      FOREIGN KEY (${sql.raw(columnName)})
-      REFERENCES ${sql.raw(refTable)} (${sql.raw(refColumn)})
+      ALTER TABLE ${sql.id(tableName)}
+      ADD CONSTRAINT ${sql.id(constraintName)}
+      FOREIGN KEY (${sql.id(columnName)})
+      REFERENCES ${sql.id(refTable)} (${sql.id(refColumn)})
     `.execute(db);
   } catch (e: any) {
     if (!isDuplicateError(e)) {
