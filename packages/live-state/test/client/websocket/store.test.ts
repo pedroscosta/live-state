@@ -1307,6 +1307,199 @@ describe("OptimisticStore", () => {
       );
     });
 
+    test("should handle where clause with $in on id", () => {
+      const mockData = {
+        user1: {
+          value: {
+            id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+        user2: {
+          value: {
+            id: { value: "user2", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "Jane", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+        user3: {
+          value: {
+            id: { value: "user3", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "Bob", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+      };
+
+      mockObjectGraph.getNode.mockImplementation((id: string) => {
+        if (id === "user1" || id === "user3") {
+          return {
+            id,
+            type: "users",
+            references: new Map(),
+            referencedBy: new Map(),
+          };
+        }
+        return undefined;
+      });
+
+      store["optimisticRawObjPool"] = { users: mockData };
+
+      const result = store.get({
+        resource: "users",
+        where: { id: { $in: ["user1", "user3"] } },
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result).toEqual([
+        { id: "user1", name: "John" },
+        { id: "user3", name: "Bob" },
+      ]);
+      // Should only call getNode for the IDs specified in $in
+      expect(mockObjectGraph.getNode).toHaveBeenCalledWith("user1");
+      expect(mockObjectGraph.getNode).toHaveBeenCalledWith("user3");
+      expect(mockObjectGraph.getNode).not.toHaveBeenCalledWith("user2");
+    });
+
+    test("should handle where clause with $in on id with non-existent ids", () => {
+      const mockData = {
+        user1: {
+          value: {
+            id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+      };
+
+      mockObjectGraph.getNode.mockImplementation((id: string) => {
+        if (id === "user1") {
+          return {
+            id,
+            type: "users",
+            references: new Map(),
+            referencedBy: new Map(),
+          };
+        }
+        return undefined;
+      });
+
+      store["optimisticRawObjPool"] = { users: mockData };
+
+      const result = store.get({
+        resource: "users",
+        where: { id: { $in: ["user1", "nonexistent"] } },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result).toEqual([{ id: "user1", name: "John" }]);
+    });
+
+    test("should handle where clause with empty $in array", () => {
+      const mockData = {
+        user1: {
+          value: {
+            id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+      };
+
+      store["optimisticRawObjPool"] = { users: mockData };
+
+      const result = store.get({
+        resource: "users",
+        where: { id: { $in: [] } },
+      });
+
+      expect(result).toHaveLength(0);
+      expect(mockObjectGraph.getNode).not.toHaveBeenCalled();
+    });
+
+    test("should handle where clause with $eq on id", () => {
+      const mockData = {
+        user1: {
+          value: {
+            id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+        user2: {
+          value: {
+            id: { value: "user2", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "Jane", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+      };
+
+      mockObjectGraph.getNode.mockImplementation((id: string) => {
+        if (id === "user1") {
+          return {
+            id,
+            type: "users",
+            references: new Map(),
+            referencedBy: new Map(),
+          };
+        }
+        return undefined;
+      });
+
+      store["optimisticRawObjPool"] = { users: mockData };
+
+      const result = store.get({
+        resource: "users",
+        where: { id: { $eq: "user1" } },
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result).toEqual([{ id: "user1", name: "John" }]);
+      // Should only call getNode for the ID specified in $eq
+      expect(mockObjectGraph.getNode).toHaveBeenCalledWith("user1");
+      expect(mockObjectGraph.getNode).not.toHaveBeenCalledWith("user2");
+    });
+
+    test("should handle where clause with $not on id (falls back to filtering)", async () => {
+      const mockData = {
+        user1: {
+          value: {
+            id: { value: "user1", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "John", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+        user2: {
+          value: {
+            id: { value: "user2", _meta: { timestamp: "2023-01-01" } },
+            name: { value: "Jane", _meta: { timestamp: "2023-01-01" } },
+          },
+        },
+      };
+
+      mockObjectGraph.getNode.mockImplementation((id: string) => ({
+        id,
+        type: "users",
+        references: new Map(),
+        referencedBy: new Map(),
+      }));
+
+      store["optimisticRawObjPool"] = { users: mockData };
+
+      // Mock applyWhere to filter out user1
+      const { applyWhere } = await import("../../../src/utils");
+      vi.mocked(applyWhere).mockImplementation((obj: any, where: any) => {
+        // $not: "user1" means id !== "user1"
+        if (where.id?.$not) {
+          return obj.id !== where.id.$not;
+        }
+        return true;
+      });
+
+      const result = store.get({
+        resource: "users",
+        where: { id: { $not: "user1" } },
+      });
+
+      // Should call getNode for both users since $not falls back to filtering
+      expect(mockObjectGraph.getNode).toHaveBeenCalledWith("user1");
+      expect(mockObjectGraph.getNode).toHaveBeenCalledWith("user2");
+    });
+
     test("should handle where clause with id", () => {
       const mockData = {
         user1: {
