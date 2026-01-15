@@ -101,11 +101,28 @@ export class OptimisticStore {
       if (value) return value;
     }
 
-    let result = (
-      query.where?.id
-        ? [query.where.id]
-        : Object.keys(this.optimisticRawObjPool[query.resource] ?? {})
-    ).flatMap((k) => {
+    let idsToFetch: string[];
+    const whereId = query.where?.id;
+
+    if (whereId === undefined) {
+      idsToFetch = Object.keys(this.optimisticRawObjPool[query.resource] ?? {});
+    } else if (typeof whereId === "string") {
+      idsToFetch = [whereId];
+    } else if (typeof whereId === "object" && whereId !== null) {
+      if ("$in" in whereId && Array.isArray(whereId.$in)) {
+        idsToFetch = whereId.$in as string[];
+      } else if ("$eq" in whereId && typeof whereId.$eq === "string") {
+        idsToFetch = [whereId.$eq];
+      } else {
+        idsToFetch = Object.keys(
+          this.optimisticRawObjPool[query.resource] ?? {}
+        );
+      }
+    } else {
+      idsToFetch = Object.keys(this.optimisticRawObjPool[query.resource] ?? {});
+    }
+
+    let result = idsToFetch.flatMap((k) => {
       const value = inferValue(
         this.materializeOneWithInclude(k, query.include)
       );

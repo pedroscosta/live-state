@@ -435,6 +435,304 @@ describe("extractIncludeFromWhere", () => {
   });
 });
 
+describe("applyWhere with $eq operator", () => {
+  test("should match when value equals $eq value", () => {
+    const obj = { id: "user1", name: "John" };
+
+    const where = {
+      id: { $eq: "user1" },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true);
+  });
+
+  test("should not match when value does not equal $eq value", () => {
+    const obj = { id: "user1", name: "John" };
+
+    const where = {
+      id: { $eq: "user2" },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false);
+  });
+
+  test("should handle $not with $eq operator", () => {
+    const obj = { id: "user1", name: "John" };
+
+    const where = {
+      id: { $not: { $eq: "user2" } },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true); // user1 !== user2
+  });
+
+  test("should handle $not with $eq when value matches", () => {
+    const obj = { id: "user1", name: "John" };
+
+    const where = {
+      id: { $not: { $eq: "user1" } },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false); // user1 === user1, so $not returns false
+  });
+});
+
+describe("applyWhere with comparison operators", () => {
+  test("should handle $gt operator", () => {
+    const obj = { id: "item1", price: 100 };
+
+    expect(applyWhere(obj, { price: { $gt: 50 } } as any)).toBe(true);
+    expect(applyWhere(obj, { price: { $gt: 100 } } as any)).toBe(false);
+    expect(applyWhere(obj, { price: { $gt: 150 } } as any)).toBe(false);
+  });
+
+  test("should handle $gte operator", () => {
+    const obj = { id: "item1", price: 100 };
+
+    expect(applyWhere(obj, { price: { $gte: 50 } } as any)).toBe(true);
+    expect(applyWhere(obj, { price: { $gte: 100 } } as any)).toBe(true);
+    expect(applyWhere(obj, { price: { $gte: 150 } } as any)).toBe(false);
+  });
+
+  test("should handle $lt operator", () => {
+    const obj = { id: "item1", price: 100 };
+
+    expect(applyWhere(obj, { price: { $lt: 150 } } as any)).toBe(true);
+    expect(applyWhere(obj, { price: { $lt: 100 } } as any)).toBe(false);
+    expect(applyWhere(obj, { price: { $lt: 50 } } as any)).toBe(false);
+  });
+
+  test("should handle $lte operator", () => {
+    const obj = { id: "item1", price: 100 };
+
+    expect(applyWhere(obj, { price: { $lte: 150 } } as any)).toBe(true);
+    expect(applyWhere(obj, { price: { $lte: 100 } } as any)).toBe(true);
+    expect(applyWhere(obj, { price: { $lte: 50 } } as any)).toBe(false);
+  });
+
+  test("should handle $not with $gt operator", () => {
+    const obj = { id: "item1", price: 100 };
+
+    // $not $gt 50 means price <= 50
+    expect(applyWhere(obj, { price: { $not: { $gt: 50 } } } as any)).toBe(false); // 100 > 50, so $not is false
+    expect(applyWhere(obj, { price: { $not: { $gt: 100 } } } as any)).toBe(true); // 100 is not > 100
+    expect(applyWhere(obj, { price: { $not: { $gt: 150 } } } as any)).toBe(true); // 100 is not > 150
+  });
+
+  test("should handle $not with $lt operator", () => {
+    const obj = { id: "item1", price: 100 };
+
+    // $not $lt 150 means price >= 150
+    expect(applyWhere(obj, { price: { $not: { $lt: 150 } } } as any)).toBe(false); // 100 < 150, so $not is false
+    expect(applyWhere(obj, { price: { $not: { $lt: 100 } } } as any)).toBe(true); // 100 is not < 100
+    expect(applyWhere(obj, { price: { $not: { $lt: 50 } } } as any)).toBe(true); // 100 is not < 50
+  });
+
+  test("should return false for non-numeric values with comparison operators", () => {
+    const obj = { id: "item1", name: "Test" };
+
+    expect(applyWhere(obj, { name: { $gt: 50 } } as any)).toBe(false);
+    expect(applyWhere(obj, { name: { $gte: 50 } } as any)).toBe(false);
+    expect(applyWhere(obj, { name: { $lt: 50 } } as any)).toBe(false);
+    expect(applyWhere(obj, { name: { $lte: 50 } } as any)).toBe(false);
+  });
+
+  test("should handle combined comparison operators", () => {
+    const obj = { id: "item1", price: 100 };
+
+    // price > 50 AND price < 150
+    const where = {
+      $and: [{ price: { $gt: 50 } }, { price: { $lt: 150 } }],
+    };
+
+    expect(applyWhere(obj, where as any)).toBe(true);
+  });
+
+  test("should handle range with $gte and $lte", () => {
+    const objInRange = { id: "item1", price: 100 };
+    const objOutOfRange = { id: "item2", price: 200 };
+
+    const where = {
+      $and: [{ price: { $gte: 50 } }, { price: { $lte: 150 } }],
+    };
+
+    expect(applyWhere(objInRange, where as any)).toBe(true);
+    expect(applyWhere(objOutOfRange, where as any)).toBe(false);
+  });
+});
+
+describe("applyWhere with $not operator", () => {
+  test("should negate simple equality", () => {
+    const obj = { id: "user1", status: "active" };
+
+    const where = {
+      status: { $not: "inactive" },
+    };
+
+    expect(applyWhere(obj, where as any)).toBe(true); // "active" !== "inactive"
+  });
+
+  test("should negate when value matches", () => {
+    const obj = { id: "user1", status: "active" };
+
+    const where = {
+      status: { $not: "active" },
+    };
+
+    expect(applyWhere(obj, where as any)).toBe(false); // "active" === "active"
+  });
+
+  test("should handle nested $not with $in", () => {
+    const obj = { id: "user1", role: "viewer" };
+
+    const where = {
+      role: { $not: { $in: ["admin", "moderator"] } },
+    };
+
+    expect(applyWhere(obj, where as any)).toBe(true); // "viewer" not in ["admin", "moderator"]
+  });
+});
+
+describe("applyWhere with $in operator", () => {
+  test("should match when value is in $in array", () => {
+    const obj = { id: "user1", name: "John", status: "active" };
+
+    const where = {
+      status: { $in: ["active", "pending"] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true);
+  });
+
+  test("should not match when value is not in $in array", () => {
+    const obj = { id: "user1", name: "John", status: "inactive" };
+
+    const where = {
+      status: { $in: ["active", "pending"] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false);
+  });
+
+  test("should handle $in with id field", () => {
+    const obj = { id: "user1", name: "John" };
+
+    const where = {
+      id: { $in: ["user1", "user2", "user3"] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true);
+  });
+
+  test("should handle $in with numeric values", () => {
+    const obj = { id: "item1", quantity: 5 };
+
+    const where = {
+      quantity: { $in: [1, 5, 10] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true);
+  });
+
+  test("should handle $not with $in operator", () => {
+    const obj = { id: "user1", status: "deleted" };
+
+    const where = {
+      status: { $not: { $in: ["active", "pending"] } },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true); // "deleted" is not in ["active", "pending"]
+  });
+
+  test("should handle $not with $in operator when value is in array", () => {
+    const obj = { id: "user1", status: "active" };
+
+    const where = {
+      status: { $not: { $in: ["active", "pending"] } },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false); // "active" is in ["active", "pending"]
+  });
+
+  test("should handle $in with empty array", () => {
+    const obj = { id: "user1", status: "active" };
+
+    const where = {
+      status: { $in: [] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false); // Nothing can match an empty array
+  });
+
+  test("should handle $in with undefined field", () => {
+    const obj = { id: "user1", name: "John" };
+
+    const where = {
+      status: { $in: ["active", "pending"] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false); // Field is undefined
+  });
+
+  test("should handle multiple $in conditions", () => {
+    const obj = { id: "user1", status: "active", role: "admin" };
+
+    const where = {
+      status: { $in: ["active", "pending"] },
+      role: { $in: ["admin", "moderator"] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true);
+  });
+
+  test("should handle multiple $in conditions with one not matching", () => {
+    const obj = { id: "user1", status: "active", role: "user" };
+
+    const where = {
+      status: { $in: ["active", "pending"] },
+      role: { $in: ["admin", "moderator"] },
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(false); // "user" is not in ["admin", "moderator"]
+  });
+
+  test("should handle $in with $and operator", () => {
+    const obj = { id: "user1", status: "active", name: "John" };
+
+    const where = {
+      $and: [{ status: { $in: ["active", "pending"] } }, { name: "John" }],
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true);
+  });
+
+  test("should handle $in with $or operator", () => {
+    const obj = { id: "user1", status: "inactive", name: "John" };
+
+    const where = {
+      $or: [{ status: { $in: ["active", "pending"] } }, { name: "John" }],
+    };
+
+    const result = applyWhere(obj, where as any);
+    expect(result).toBe(true); // name: "John" matches
+  });
+});
+
 describe("applyWhere with arrays", () => {
   test("should match where clause against array elements", () => {
     const obj = {

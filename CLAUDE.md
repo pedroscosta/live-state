@@ -78,6 +78,7 @@ The main package exports multiple entry points:
 - **Type imports**: Use `import type` for type-only imports
 - **Type parameters**: Prefix with `T` (e.g., `TSchema`, `TRouter`)
 - **Files**: kebab-case (e.g., `sql-storage.ts`)
+- **Comments**: Only write comments that add context beyond what the code already expresses. Avoid redundant comments that merely describe what the code does (e.g., `// increment counter` before `counter++`). Good comments explain *why*, not *what*.
 
 ### Biome Ignores
 
