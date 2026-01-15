@@ -1,16 +1,32 @@
-import type { MaterializedLiveType } from ".";
 import {
+  type AtomicMeta,
   LiveType,
   type LiveTypeAny,
-  type LiveTypeMeta,
+  type MaterializedLiveType,
   type MutationType,
   type StorageFieldType,
-} from "./live-type";
+} from "./types";
 
-export class NullableLiveType<T extends LiveTypeAny> extends LiveType<
+/**
+ * Helper type to extract Value type from LiveAtomicType
+ */
+type ExtractValue<T> = T extends LiveAtomicType<infer V, any, any> ? V : never;
+
+/**
+ * Helper type to extract Meta type from LiveAtomicType
+ */
+type ExtractMeta<T> = T extends LiveAtomicType<any, any, infer M> ? M : AtomicMeta;
+
+/**
+ * Wraps a LiveAtomicType to allow null values.
+ * Supports chainable modifiers like `.default()`, `.unique()`, `.index()`, `.primary()`.
+ */
+export class NullableLiveType<
+  T extends LiveAtomicType<any, any, any>,
+> extends LiveType<
   T["_value"] | null,
   T["_meta"],
-  T["_encodeInput"],
+  T["_encodeInput"] | null,
   T["_decodeInput"]
 > {
   readonly inner: T;
@@ -75,18 +91,72 @@ export class NullableLiveType<T extends LiveTypeAny> extends LiveType<
       nullable: true,
     };
   }
+
+  /**
+   * Returns a new nullable type with a unique constraint.
+   */
+  unique(): NullableLiveType<
+    LiveAtomicType<ExtractValue<T>, undefined, ExtractMeta<T>>
+  > {
+    return new NullableLiveType(this.inner.unique());
+  }
+
+  /**
+   * Returns a new nullable type with an index.
+   */
+  index(): NullableLiveType<
+    LiveAtomicType<ExtractValue<T>, undefined, ExtractMeta<T>>
+  > {
+    return new NullableLiveType(this.inner.index());
+  }
+
+  /**
+   * Returns a new nullable type with a default value.
+   * Can be the value type or null.
+   */
+  default(
+    value: ExtractValue<T> | null
+  ): NullableLiveType<
+    LiveAtomicType<ExtractValue<T>, ExtractValue<T> | null, ExtractMeta<T>>
+  > {
+    const newInner = new LiveAtomicType<
+      ExtractValue<T>,
+      ExtractValue<T> | null,
+      ExtractMeta<T>
+    >(
+      this.inner.storageType,
+      this.inner.convertFunc,
+      this.inner.isIndex,
+      this.inner.isUnique,
+      value,
+      this.inner.foreignReference,
+      this.inner.isPrimary
+    );
+    return new NullableLiveType(newInner);
+  }
+
+  /**
+   * Returns a new nullable type marked as primary key.
+   */
+  primary(): NullableLiveType<
+    LiveAtomicType<ExtractValue<T>, undefined, ExtractMeta<T>>
+  > {
+    return new NullableLiveType(this.inner.primary());
+  }
 }
 
-type LiveAtomicTypeMeta = {
-  timestamp: string | null;
-} & LiveTypeMeta;
-
-export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
+/**
+ * Base class for atomic (scalar) live types.
+ *
+ * @template Value - The value type (string, number, boolean, Date)
+ * @template DefaultValue - The default value type (undefined if no default)
+ * @template Meta - Metadata type for sync resolution
+ */
+export class LiveAtomicType<
   Value,
-  LiveAtomicTypeMeta,
-  Value,
-  { value: Value; _meta: LiveAtomicTypeMeta }
-> {
+  DefaultValue = undefined,
+  Meta extends AtomicMeta = AtomicMeta,
+> extends LiveType<Value, Meta, Value, { value: Value; _meta: Meta }> {
   readonly storageType: string;
   readonly convertFunc?: (value: any) => Value;
   readonly isIndex: boolean;
@@ -118,12 +188,12 @@ export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
     mutationType: MutationType,
     input: Value,
     timestamp: string
-  ): { value: Value; _meta: LiveAtomicTypeMeta } {
+  ): { value: Value; _meta: Meta } {
     return {
       value: input,
       _meta: {
         timestamp,
-      },
+      } as Meta,
     };
   }
 
@@ -131,26 +201,26 @@ export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
     mutationType: MutationType,
     encodedMutation: {
       value: Value;
-      _meta: LiveAtomicTypeMeta;
+      _meta: Meta;
     },
     materializedShape?: MaterializedLiveType<
       LiveType<
         Value,
-        LiveAtomicTypeMeta,
+        Meta,
         Value | Partial<Value>,
-        { value: Value; _meta: LiveAtomicTypeMeta }
+        { value: Value; _meta: Meta }
       >
     >
   ): [
     MaterializedLiveType<
       LiveType<
         Value,
-        LiveAtomicTypeMeta,
+        Meta,
         Value | Partial<Value>,
-        { value: Value; _meta: LiveAtomicTypeMeta }
+        { value: Value; _meta: Meta }
       >
     >,
-    { value: Value; _meta: LiveAtomicTypeMeta } | null,
+    { value: Value; _meta: Meta } | null,
   ] {
     if (
       materializedShape &&
@@ -169,9 +239,9 @@ export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
           : encodedMutation.value) as MaterializedLiveType<
           LiveType<
             Value,
-            LiveAtomicTypeMeta,
+            Meta,
             Value | Partial<Value>,
-            { value: Value; _meta: LiveAtomicTypeMeta }
+            { value: Value; _meta: Meta }
           >
         >["value"],
         _meta: encodedMutation._meta,
@@ -192,32 +262,41 @@ export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
     };
   }
 
+  /**
+   * Returns a new atomic type with a unique constraint.
+   */
   unique() {
-    return new LiveAtomicType<Value>(
+    return new LiveAtomicType<Value, undefined, Meta>(
       this.storageType,
       this.convertFunc,
       this.isIndex,
       true,
-      this.defaultValue as undefined,
+      undefined,
       this.foreignReference,
       this.isPrimary
     );
   }
 
+  /**
+   * Returns a new atomic type with an index.
+   */
   index() {
-    return new LiveAtomicType<Value>(
+    return new LiveAtomicType<Value, undefined, Meta>(
       this.storageType,
       this.convertFunc,
       true,
       this.isUnique,
-      this.defaultValue as undefined,
+      undefined,
       this.foreignReference,
       this.isPrimary
     );
   }
 
+  /**
+   * Returns a new atomic type with a default value.
+   */
   default(value: Value) {
-    return new LiveAtomicType<Value, Value>(
+    return new LiveAtomicType<Value, Value, Meta>(
       this.storageType,
       this.convertFunc,
       this.isIndex,
@@ -228,23 +307,77 @@ export class LiveAtomicType<Value, DefaultValue = undefined> extends LiveType<
     );
   }
 
+  /**
+   * Returns a new atomic type marked as primary key.
+   */
   primary() {
-    return new LiveAtomicType<Value>(
+    return new LiveAtomicType<Value, undefined, Meta>(
       this.storageType,
       this.convertFunc,
       this.isIndex,
       this.isUnique,
-      this.defaultValue as undefined,
+      undefined,
       this.foreignReference,
       true
     );
   }
 
-  nullable(): NullableLiveType<this> {
-    return new NullableLiveType<this>(this);
+  /**
+   * Returns a nullable version of this type.
+   * If no default value was set, defaults to null.
+   */
+  nullable(): NullableLiveType<
+    LiveAtomicType<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+  > {
+    // If no default was set, create a new inner with null as default
+    if (this.defaultValue === undefined) {
+      const innerWithNullDefault = new LiveAtomicType<Value, null, Meta>(
+        this.storageType,
+        this.convertFunc,
+        this.isIndex,
+        this.isUnique,
+        null,
+        this.foreignReference,
+        this.isPrimary
+      );
+      return new NullableLiveType(innerWithNullDefault) as NullableLiveType<
+        LiveAtomicType<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+      >;
+    }
+    return new NullableLiveType(this) as NullableLiveType<
+      LiveAtomicType<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+    >;
+  }
+
+  /**
+   * Returns a new atomic type with custom metadata type for advanced sync strategies.
+   *
+   * @example
+   * ```ts
+   * type VectorClockMeta = AtomicMeta & { vectorClock: Record<string, number> };
+   * const content = string().withMeta<VectorClockMeta>();
+   * ```
+   */
+  withMeta<TMeta extends AtomicMeta>(): LiveAtomicType<
+    Value,
+    DefaultValue,
+    TMeta
+  > {
+    return new LiveAtomicType<Value, DefaultValue, TMeta>(
+      this.storageType,
+      this.convertFunc,
+      this.isIndex,
+      this.isUnique,
+      this.defaultValue,
+      this.foreignReference,
+      this.isPrimary
+    );
   }
 }
 
+/**
+ * Live number type.
+ */
 export class LiveNumber extends LiveAtomicType<number> {
   private constructor() {
     super("integer", (value) => Number(value));
@@ -256,6 +389,10 @@ export class LiveNumber extends LiveAtomicType<number> {
 }
 
 export const number = LiveNumber.create;
+
+/**
+ * Live string type.
+ */
 export class LiveString extends LiveAtomicType<string> {
   private constructor(reference?: string) {
     super("varchar", undefined, undefined, undefined, undefined, reference);
@@ -279,6 +416,9 @@ export const id = LiveString.createId;
 export const reference = LiveString.createReference;
 // TODO add enum support
 
+/**
+ * Live boolean type.
+ */
 export class LiveBoolean extends LiveAtomicType<boolean> {
   private constructor() {
     super("boolean", (value) => {
@@ -297,6 +437,9 @@ export class LiveBoolean extends LiveAtomicType<boolean> {
 
 export const boolean = LiveBoolean.create;
 
+/**
+ * Live timestamp type (maps to Date).
+ */
 export class LiveTimestamp extends LiveAtomicType<Date> {
   private constructor() {
     super("timestamp", (value) => {

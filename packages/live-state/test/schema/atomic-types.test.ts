@@ -10,7 +10,7 @@ import {
   reference,
   string,
   timestamp,
-} from "../../src/schema/atomic-types";
+} from "../../src/schema/atomic";
 
 describe("LiveNumber", () => {
   test("should create a LiveNumber instance", () => {
