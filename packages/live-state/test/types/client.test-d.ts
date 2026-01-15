@@ -151,6 +151,49 @@ describe("websocket client", () => {
     >();
   });
 
+  test("should only allow relation fields as include keys", () => {
+    // Valid: relation fields
+    query.users.include({ posts: true });
+    query.users.include({ comments: true });
+    query.posts.include({ user: true });
+    query.posts.include({ comments: true });
+
+    // Valid: sub-query include with nested relations
+    query.users.include({
+      posts: {
+        include: {
+          user: true,
+          comments: true,
+        },
+      },
+    });
+
+    // @ts-expect-error - 'id' is a field, not a relation
+    query.users.include({ id: true });
+
+    // @ts-expect-error - 'name' is a field, not a relation
+    query.users.include({ name: true });
+
+    // @ts-expect-error - 'title' is a field, not a relation
+    query.posts.include({ title: true });
+
+    // @ts-expect-error - 'authorId' is a field, not a relation
+    query.posts.include({ authorId: true });
+
+    // @ts-expect-error - 'nonExistent' does not exist
+    query.users.include({ nonExistent: true });
+
+    // nested include with invalid field key
+    query.users.include({
+      posts: {
+        include: {
+          // @ts-expect-error - 'title' is a field, not a relation
+          title: true,
+        },
+      },
+    });
+  });
+
   test("should infer insert types", () => {
     const userMutate = mutate.users.insert;
     const postMutate = mutate.posts.insert;
@@ -486,35 +529,53 @@ describe("complex websocket client", () => {
   test("should infer deep nested includes", () => {
     const userQuery = complexQuery.complexUsers.include({
       posts: {
-        author: true,
-        comments: {
+        include: {
           author: true,
+          comments: {
+            include: {
+              author: true,
+            },
+          },
         },
       },
     }).get;
 
     const postQuery = complexQuery.complexPosts.include({
       author: {
-        posts: true,
-      },
-      comments: {
-        author: {
+        include: {
           posts: true,
         },
-        post: true,
+      },
+      comments: {
+        include: {
+          author: {
+            include: {
+              posts: true,
+            },
+          },
+          post: true,
+        },
       },
     }).get;
 
     const commentQuery = complexQuery.complexComments.include({
       post: {
-        author: {
-          posts: true,
+        include: {
+          author: {
+            include: {
+              posts: true,
+            },
+          },
+          comments: true,
         },
-        comments: true,
       },
       author: {
-        posts: {
-          comments: true,
+        include: {
+          posts: {
+            include: {
+              comments: true,
+            },
+          },
         },
       },
     }).get;
@@ -1369,35 +1430,53 @@ describe("complex fetch client", () => {
   test("should infer deep nested includes for fetch client", () => {
     const userQuery = complexFetchClient.query.complexUsers.include({
       posts: {
-        author: true,
-        comments: {
+        include: {
           author: true,
+          comments: {
+            include: {
+              author: true,
+            },
+          },
         },
       },
     }).get;
 
     const postQuery = complexFetchClient.query.complexPosts.include({
       author: {
-        posts: true,
-      },
-      comments: {
-        author: {
+        include: {
           posts: true,
         },
-        post: true,
+      },
+      comments: {
+        include: {
+          author: {
+            include: {
+              posts: true,
+            },
+          },
+          post: true,
+        },
       },
     }).get;
 
     const commentQuery = complexFetchClient.query.complexComments.include({
       post: {
-        author: {
-          posts: true,
+        include: {
+          author: {
+            include: {
+              posts: true,
+            },
+          },
+          comments: true,
         },
-        comments: true,
       },
       author: {
-        posts: {
-          comments: true,
+        include: {
+          posts: {
+            include: {
+              comments: true,
+            },
+          },
         },
       },
     }).get;

@@ -352,10 +352,14 @@ class BenchmarkRunner {
       const start = performance.now();
       await this.fetchClient!.query.orgs.include({
         posts: {
-          comments: {
+          include: {
+            comments: {
+              include: {
+                author: true,
+              },
+            },
             author: true,
           },
-          author: true,
         },
       }).get();
       const end = performance.now();
@@ -386,10 +390,14 @@ class BenchmarkRunner {
       this.wsClient?.store.query.orgs
         .include({
           posts: {
-            comments: {
+            include: {
+              comments: {
+                include: {
+                  author: true,
+                },
+              },
               author: true,
             },
-            author: true,
           },
         })
         .buildQueryRequest()

@@ -9,6 +9,7 @@ import {
   type LiveTypeAny,
   type MaterializedLiveType,
   type Schema,
+  type SubQueryInclude,
   type WhereClause,
 } from "../../schema";
 import { applyWhere, hash, type Logger } from "../../utils";
@@ -532,8 +533,8 @@ export class OptimisticStore {
         return acc;
       },
       [[], []] as [
-        Array<[string, string, boolean | IncludeClause<any>]>,
-        Array<[string, string, boolean | IncludeClause<any>]>,
+        Array<[string, string, boolean | SubQueryInclude<any>]>,
+        Array<[string, string, boolean | SubQueryInclude<any>]>,
       ]
     );
 

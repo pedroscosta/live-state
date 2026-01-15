@@ -29,7 +29,7 @@ export type InferLiveObject<
     ? {
         [K in keyof T["relations"] as Include[K] extends
           | true
-          | IncludeClause<T["relations"][K]["entity"]>
+          | SubQueryInclude<T["relations"][K]["entity"]>
           ? K
           : never]: Include[K] extends true
           ? T["relations"][K]["type"] extends "one"
@@ -40,7 +40,7 @@ export type InferLiveObject<
               ? InferLiveObject<T["relations"][K]["entity"]> | null
               : InferLiveObject<T["relations"][K]["entity"]>
             : InferLiveObject<T["relations"][K]["entity"]>[]
-          : Include[K] extends IncludeClause<T["relations"][K]["entity"]>
+          : Include[K] extends SubQueryInclude<T["relations"][K]["entity"]>
             ? T["relations"][K]["type"] extends "one"
               ? T["fields"][Exclude<
                   T["relations"][K]["relationalColumn"],
@@ -48,10 +48,16 @@ export type InferLiveObject<
                 >] extends NullableLiveType<any>
                 ? InferLiveObject<
                     T["relations"][K]["entity"],
-                    Include[K]
+                    Include[K]["include"]
                   > | null
-                : InferLiveObject<T["relations"][K]["entity"], Include[K]>
-              : InferLiveObject<T["relations"][K]["entity"], Include[K]>[]
+                : InferLiveObject<
+                    T["relations"][K]["entity"],
+                    Include[K]["include"]
+                  >
+              : InferLiveObject<
+                  T["relations"][K]["entity"],
+                  Include[K]["include"]
+                >[]
             : never;
       }
     : {});
@@ -500,10 +506,17 @@ export type WhereClause<T extends LiveObjectAny> =
       $or?: WhereClause<T>[];
     };
 
+export type SubQueryInclude<T extends LiveObjectAny> = {
+  where?: WhereClause<T>;
+  limit?: number;
+  orderBy?: { key: keyof T["fields"] & string; direction: "asc" | "desc" }[];
+  include?: IncludeClause<T>;
+};
+
 export type IncludeClause<T extends LiveObjectAny> = {
   [K in keyof T["relations"]]?:
     | boolean
-    | IncludeClause<T["relations"][K]["entity"]>;
+    | SubQueryInclude<T["relations"][K]["entity"]>;
 };
 
 type GetFieldType<T> = T extends NullableLiveType<any> ? T["inner"] : T;

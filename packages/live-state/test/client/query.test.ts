@@ -148,8 +148,10 @@ describe("QueryBuilder", () => {
       posts: true,
       comments: true,
       profile: {
-        avatar: true,
-        settings: true,
+        include: {
+          avatar: true,
+          settings: true,
+        },
       },
     };
 
