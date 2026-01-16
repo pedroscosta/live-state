@@ -1,19 +1,18 @@
 import { describe, expect, test, vi } from "vitest";
-import { LiveType, LiveTypeMeta, MutationType, StorageFieldType } from "../../src/schema/live-type";
-import { MaterializedLiveType } from "../../src/schema";
+import { LiveType, BaseMeta, MutationType, StorageFieldType, MaterializedLiveType } from "../../src/schema/types";
 
 // Create a concrete implementation of LiveType for testing
 class TestLiveType extends LiveType<
   string,
-  LiveTypeMeta & { timestamp: string | null },
+  BaseMeta & { timestamp: string | null },
   string,
-  { value: string; _meta: LiveTypeMeta & { timestamp: string | null } }
+  { value: string; _meta: BaseMeta & { timestamp: string | null } }
 > {
   encodeMutation(
     mutationType: MutationType,
     input: string,
     timestamp: string
-  ): { value: string; _meta: LiveTypeMeta & { timestamp: string | null } } {
+  ): { value: string; _meta: BaseMeta & { timestamp: string | null } } {
     return {
       value: input,
       _meta: {
@@ -24,11 +23,11 @@ class TestLiveType extends LiveType<
 
   mergeMutation(
     mutationType: MutationType,
-    encodedMutation: { value: string; _meta: LiveTypeMeta & { timestamp: string | null } },
-    materializedShape?: MaterializedLiveType<LiveType<string, LiveTypeMeta & { timestamp: string | null }>>
+    encodedMutation: { value: string; _meta: BaseMeta & { timestamp: string | null } },
+    materializedShape?: MaterializedLiveType<LiveType<string, BaseMeta & { timestamp: string | null }>>
   ): [
-    MaterializedLiveType<LiveType<string, LiveTypeMeta & { timestamp: string | null }>>,
-    { value: string; _meta: LiveTypeMeta & { timestamp: string | null } } | null
+    MaterializedLiveType<LiveType<string, BaseMeta & { timestamp: string | null }>>,
+    { value: string; _meta: BaseMeta & { timestamp: string | null } } | null
   ] {
     if (
       materializedShape &&

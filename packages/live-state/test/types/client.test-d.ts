@@ -838,13 +838,14 @@ describe("complex websocket client", () => {
     const postMutate = complexMutate.complexPosts.insert;
     const commentMutate = complexMutate.complexComments.insert;
 
+    // Nullable fields without explicit default now default to null, making them optional
     expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
       id: string;
       name: string;
-      email: string | null;
-      age: number | null;
-      updatedAt: Date | null;
-      tags: string | null;
+      email?: string | null | undefined;
+      age?: number | null | undefined;
+      updatedAt?: Date | null | undefined;
+      tags?: string | null | undefined;
       isActive?: boolean | undefined;
       score?: number | undefined;
       createdAt?: Date | undefined;
@@ -854,12 +855,12 @@ describe("complex websocket client", () => {
     expectTypeOf(postMutate).parameter(0).toEqualTypeOf<{
       id: string;
       title: string;
-      content: string | null;
+      content?: string | null | undefined;
       authorId: string;
-      rating: number | null;
-      publishedAt: Date | null;
-      updatedAt: Date | null;
-      metadata: string | null;
+      rating?: number | null | undefined;
+      publishedAt?: Date | null | undefined;
+      updatedAt?: Date | null | undefined;
+      metadata?: string | null | undefined;
       published?: boolean | undefined;
       views?: number | undefined;
       createdAt?: Date | undefined;
@@ -870,8 +871,8 @@ describe("complex websocket client", () => {
       content: string;
       postId: string;
       authorId: string;
-      updatedAt: Date | null;
-      parentId: string | null;
+      updatedAt?: Date | null | undefined;
+      parentId?: string | null | undefined;
       isApproved?: boolean | undefined;
       likes?: number | undefined;
       createdAt?: Date | undefined;
@@ -989,12 +990,13 @@ describe("edge cases and combinations", () => {
   test("should handle insert types with mixed nullable and default fields", () => {
     const userMutate = edgeCaseMutate.edgeCaseUsers.insert;
 
+    // Nullable fields without explicit default now default to null, making them optional
     expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
       id: string;
       email: string;
-      phone: string | null;
-      score: number | null;
-      deletedAt: Date | null;
+      phone?: string | null | undefined;
+      score?: number | null | undefined;
+      deletedAt?: Date | null | undefined;
       nickname?: string | null | undefined;
       status?: string | undefined;
       priority?: number | undefined;
@@ -1748,28 +1750,28 @@ describe("complex fetch client", () => {
     expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
       id: string;
       name: string;
-      email: string | null;
-      age: number | null;
-      updatedAt: Date | null;
-      tags: string | null;
       isActive?: boolean | undefined;
       score?: number | undefined;
       createdAt?: Date | undefined;
+      email?: string | null | undefined;
+      age?: number | null | undefined;
+      updatedAt?: Date | null | undefined;
       bio?: string | null | undefined;
+      tags?: string | null | undefined;
     }>();
 
     expectTypeOf(postMutate).parameter(0).toEqualTypeOf<{
       id: string;
       title: string;
-      content: string | null;
       authorId: string;
-      rating: number | null;
-      publishedAt: Date | null;
-      updatedAt: Date | null;
-      metadata: string | null;
       published?: boolean | undefined;
       views?: number | undefined;
       createdAt?: Date | undefined;
+      content?: string | null | undefined;
+      rating?: number | null | undefined;
+      publishedAt?: Date | null | undefined;
+      updatedAt?: Date | null | undefined;
+      metadata?: string | null | undefined;
     }>();
 
     expectTypeOf(commentMutate).parameter(0).toEqualTypeOf<{
@@ -1777,11 +1779,11 @@ describe("complex fetch client", () => {
       content: string;
       postId: string;
       authorId: string;
-      updatedAt: Date | null;
-      parentId: string | null;
       isApproved?: boolean | undefined;
       likes?: number | undefined;
       createdAt?: Date | undefined;
+      updatedAt?: Date | null | undefined;
+      parentId?: string | null | undefined;
     }>();
   });
 
@@ -1863,12 +1865,13 @@ describe("edge cases fetch client", () => {
   test("should handle insert types with mixed nullable and default fields", () => {
     const userMutate = edgeCaseFetchClient.mutate.edgeCaseUsers.insert;
 
+    // Nullable fields without explicit default now default to null, making them optional
     expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
       id: string;
       email: string;
-      phone: string | null;
-      score: number | null;
-      deletedAt: Date | null;
+      phone?: string | null | undefined;
+      score?: number | null | undefined;
+      deletedAt?: Date | null | undefined;
       nickname?: string | null | undefined;
       status?: string | undefined;
       priority?: number | undefined;

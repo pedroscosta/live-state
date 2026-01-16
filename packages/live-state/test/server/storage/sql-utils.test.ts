@@ -6,7 +6,7 @@ import {
   number,
   id,
   reference,
-} from "../../../src/schema/atomic-types";
+} from "../../../src/schema/atomic";
 import {
   AndNode,
   BinaryOperationNode,
