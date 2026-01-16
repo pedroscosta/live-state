@@ -7,6 +7,6 @@
     "stripInternal": true,
     "rootDir": "../.."
   },
-  "include": ["."],
+  "include": [".", "../core/query.ts"],
   "exclude": ["node_modules", "dist"]
 }

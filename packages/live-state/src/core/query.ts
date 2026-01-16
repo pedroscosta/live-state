@@ -1,8 +1,5 @@
 /** biome-ignore-all lint/complexity/noBannedTypes: <explanation> */
 
-import type { DataSource } from "../core/query-engine/types";
-import type { RawQueryRequest } from "../core/schemas/core-protocol";
-import type { ConditionalPromise } from "../core/utils";
 import type {
   IncludeClause,
   InferLiveObject,
@@ -10,6 +7,9 @@ import type {
   WhereClause,
 } from "../schema";
 import type { Simplify } from "../utils";
+import type { DataSource } from "./query-engine/types";
+import type { RawQueryRequest } from "./schemas/core-protocol";
+import type { ConditionalPromise } from "./utils";
 
 export interface QueryExecutor extends DataSource {
   subscribe(

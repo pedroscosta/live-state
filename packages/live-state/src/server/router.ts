@@ -30,6 +30,7 @@ import type {
   Storage,
 } from ".";
 import type { Batcher } from "./storage/batcher";
+import { createServerDB, type ServerDB } from "./storage/server-query-builder";
 
 export type RouteRecord = Record<string, AnyRoute>;
 
@@ -92,7 +93,7 @@ export type Mutation<
         ? StandardSchemaV1.InferOutput<TInputValidator>
         : undefined
     >;
-    db: Storage;
+    db: ServerDB<any>;
   }) => TOutput;
 };
 
@@ -102,7 +103,7 @@ type MutationCreator = {
     handler: <TOutput>(
       handler: (opts: {
         req: MutationRequest<undefined>;
-        db: Storage;
+        db: ServerDB<any>;
       }) => TOutput
     ) => Mutation<StandardSchemaV1<any, undefined>, TOutput>;
   };
@@ -113,7 +114,7 @@ type MutationCreator = {
     handler: <
       THandler extends (opts: {
         req: MutationRequest<StandardSchemaV1.InferOutput<TInputValidator>>;
-        db: Storage;
+        db: ServerDB<any>;
       }) => any,
     >(
       handler: THandler
@@ -160,7 +161,7 @@ export type BeforeInsertHook<TShape extends LiveObjectAny> = (opts: {
   ctx?: Record<string, any>;
   value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
   rawValue: MaterializedLiveType<TShape>;
-  db: Storage;
+  db: ServerDB<any>;
 }) =>
   | Promise<MaterializedLiveType<TShape> | void>
   | MaterializedLiveType<TShape>
@@ -170,7 +171,7 @@ export type AfterInsertHook<TShape extends LiveObjectAny> = (opts: {
   ctx?: Record<string, any>;
   value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
   rawValue: MaterializedLiveType<TShape>;
-  db: Storage;
+  db: ServerDB<any>;
 }) => Promise<void> | void;
 
 export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
@@ -181,7 +182,7 @@ export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
     id: string;
   };
   previousRawValue?: MaterializedLiveType<TShape>;
-  db: Storage;
+  db: ServerDB<any>;
 }) =>
   | Promise<MaterializedLiveType<TShape> | void>
   | MaterializedLiveType<TShape>
@@ -195,7 +196,7 @@ export type AfterUpdateHook<TShape extends LiveObjectAny> = (opts: {
     id: string;
   };
   previousRawValue?: MaterializedLiveType<TShape>;
-  db: Storage;
+  db: ServerDB<any>;
 }) => Promise<void> | void;
 
 export type Hooks<TShape extends LiveObjectAny> = {
@@ -320,6 +321,8 @@ export class Route<
     db: Storage;
     schema: Schema<any>;
   }): Promise<any> => {
+    const serverDB = createServerDB(db, schema);
+
     return await this.wrapInMiddlewares(async (req: MutationRequest) => {
       if (!req.procedure)
         throw new Error("Procedure is required for mutations");
@@ -361,7 +364,7 @@ export class Route<
 
         return customProcedure.handler({
           req,
-          db,
+          db: serverDB,
         });
       } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
         return this.handleSet({

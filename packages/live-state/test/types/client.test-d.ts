@@ -8,12 +8,16 @@ import {
   number,
   boolean,
   timestamp,
+  enumType,
+  json,
 } from "../../src/schema";
+import type { InferLiveCollection, InferInsert } from "../../src/schema";
 import { createClient } from "../../src/client";
 import { createClient as createFetchClient } from "../../src/client/fetch";
 import { router as createRouter, routeFactory } from "../../src/server/router";
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
+import { Simplify } from "../../src/utils";
 
 /*
  * Basic schema and routes
@@ -2378,5 +2382,149 @@ describe("custom mutations fetch client", () => {
         };
       }>
     >();
+  });
+});
+
+/*
+ * Enum and JSON types tests
+ */
+
+describe("enum and json types", () => {
+  test("should infer enum type as union of literal values", () => {
+    const order = object("orders", {
+      id: id(),
+      status: enumType(["pending", "active", "completed"] as const),
+    });
+
+    type t = Simplify<InferLiveCollection<typeof order>>;
+
+    expectTypeOf<InferLiveCollection<typeof order>>().toEqualTypeOf<{
+      id: string;
+      status: "pending" | "active" | "completed";
+    }>();
+  });
+
+  test("should infer nullable enum type", () => {
+    const user = object("users", {
+      id: id(),
+      tier: enumType(["free", "pro", "enterprise"] as const).nullable(),
+    });
+
+    expectTypeOf<InferLiveCollection<typeof user>>().toEqualTypeOf<{
+      id: string;
+      tier: "free" | "pro" | "enterprise" | null;
+    }>();
+  });
+
+  test("should infer enum with default value", () => {
+    const task = object("tasks", {
+      id: id(),
+      priority: enumType(["low", "medium", "high"] as const).default("medium"),
+    });
+
+    expectTypeOf<InferLiveCollection<typeof task>>().toEqualTypeOf<{
+      id: string;
+      priority: "low" | "medium" | "high";
+    }>();
+
+    // Default makes it optional in insert
+    expectTypeOf<InferInsert<typeof task>>().toEqualTypeOf<{
+      id: string;
+      priority?: "low" | "medium" | "high" | undefined;
+    }>();
+  });
+
+  test("should infer json type with generic type", () => {
+    type Metadata = { tags: string[]; featured: boolean };
+
+    const product = object("products", {
+      id: id(),
+      meta: json<Metadata>(),
+    });
+
+    expectTypeOf<InferLiveCollection<typeof product>>().toEqualTypeOf<{
+      id: string;
+      meta: Metadata;
+    }>();
+  });
+
+  test("should infer nullable json type", () => {
+    type Settings = { theme: string; notifications: boolean };
+
+    const profile = object("profiles", {
+      id: id(),
+      settings: json<Settings>().nullable(),
+    });
+
+    expectTypeOf<InferLiveCollection<typeof profile>>().toEqualTypeOf<{
+      id: string;
+      settings: Settings | null;
+    }>();
+  });
+
+  test("should infer json with default value", () => {
+    type Config = { enabled: boolean; limit: number };
+
+    const feature = object("features", {
+      id: id(),
+      config: json<Config>().default({ enabled: false, limit: 10 }),
+    });
+
+    expectTypeOf<InferLiveCollection<typeof feature>>().toEqualTypeOf<{
+      id: string;
+      config: Config;
+    }>();
+
+    // Default makes it optional in insert
+    expectTypeOf<InferInsert<typeof feature>>().toEqualTypeOf<{
+      id: string;
+      config?: Config | undefined;
+    }>();
+  });
+
+  test("should infer complex json type with nested objects", () => {
+    type ComplexMeta = {
+      author: { name: string; id: number };
+      tags: string[];
+      metadata: Record<string, unknown>;
+    };
+
+    const article = object("articles", {
+      id: id(),
+      data: json<ComplexMeta>(),
+    });
+
+    expectTypeOf<InferLiveCollection<typeof article>>().toEqualTypeOf<{
+      id: string;
+      data: ComplexMeta;
+    }>();
+  });
+
+  test("should infer enum in insert types correctly", () => {
+    const order = object("orders", {
+      id: id(),
+      status: enumType(["pending", "active", "completed"] as const),
+      priority: enumType(["low", "medium", "high"] as const).default("low"),
+    });
+
+    // status is required (no default), priority is optional (has default)
+    expectTypeOf<InferInsert<typeof order>>().toEqualTypeOf<{
+      id: string;
+      status: "pending" | "active" | "completed";
+      priority?: "low" | "medium" | "high" | undefined;
+    }>();
+  });
+
+  test("should infer nullable enum in insert types correctly", () => {
+    const order = object("orders", {
+      id: id(),
+      status: enumType(["pending", "active", "completed"] as const).nullable(),
+    });
+
+    // nullable without explicit default now defaults to null, making it optional
+    expectTypeOf<InferInsert<typeof order>>().toEqualTypeOf<{
+      id: string;
+      status?: "pending" | "active" | "completed" | null | undefined;
+    }>();
   });
 });

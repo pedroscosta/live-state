@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
-import { QueryBuilder, type QueryExecutor } from "../../src/client/query";
+import { QueryBuilder, type QueryExecutor } from "../../src/core/query";
 import type { LiveObjectAny } from "../../src/schema";
 
 describe("QueryBuilder", () => {

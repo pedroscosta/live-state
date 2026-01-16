@@ -414,7 +414,6 @@ export class LiveString extends LiveAtomicType<string> {
 export const string = LiveString.create;
 export const id = LiveString.createId;
 export const reference = LiveString.createReference;
-// TODO add enum support
 
 /**
  * Live boolean type.
@@ -456,3 +455,214 @@ export class LiveTimestamp extends LiveAtomicType<Date> {
 }
 
 export const timestamp = LiveTimestamp.create;
+
+/**
+ * Live enum type.
+ * Maps to native enum in Postgres, varchar in MySQL/SQLite.
+ */
+export class LiveEnum<
+	Value extends string,
+	DefaultValue = undefined,
+	Meta extends AtomicMeta = AtomicMeta,
+> extends LiveAtomicType<Value, DefaultValue, Meta> {
+	readonly enumValues: readonly Value[];
+	readonly enumName: string;
+
+	constructor(
+		values: readonly Value[],
+		index?: boolean,
+		unique?: boolean,
+		defaultValue?: DefaultValue,
+		primary?: boolean
+	) {
+		super("varchar", undefined, index, unique, defaultValue, undefined, primary);
+		this.enumValues = values;
+		this.enumName = `enum_${values.slice(0, 5).join("_").slice(0, 50)}`;
+	}
+
+	getStorageFieldType(): StorageFieldType {
+		return {
+			type: "varchar",
+			nullable: false,
+			index: this.isIndex,
+			unique: this.isUnique,
+			default: this.defaultValue,
+			primary: this.isPrimary,
+			enumValues: this.enumValues as readonly string[],
+			enumName: this.enumName,
+		};
+	}
+
+	unique(): LiveEnum<Value, undefined, Meta> {
+		return new LiveEnum<Value, undefined, Meta>(
+			this.enumValues as readonly Value[],
+			this.isIndex,
+			true,
+			undefined,
+			this.isPrimary
+		);
+	}
+
+	index(): LiveEnum<Value, undefined, Meta> {
+		return new LiveEnum<Value, undefined, Meta>(
+			this.enumValues as readonly Value[],
+			true,
+			this.isUnique,
+			undefined,
+			this.isPrimary
+		);
+	}
+
+	default(value: Value): LiveEnum<Value, Value, Meta> {
+		return new LiveEnum<Value, Value, Meta>(
+			this.enumValues as readonly Value[],
+			this.isIndex,
+			this.isUnique,
+			value,
+			this.isPrimary
+		);
+	}
+
+	primary(): LiveEnum<Value, undefined, Meta> {
+		return new LiveEnum<Value, undefined, Meta>(
+			this.enumValues as readonly Value[],
+			this.isIndex,
+			this.isUnique,
+			undefined,
+			true
+		);
+	}
+
+	nullable(): NullableLiveType<
+		LiveEnum<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+	> {
+		if (this.defaultValue === undefined) {
+			const innerWithNullDefault = new LiveEnum<Value, null, Meta>(
+				this.enumValues as readonly Value[],
+				this.isIndex,
+				this.isUnique,
+				null,
+				this.isPrimary
+			);
+			return new NullableLiveType(innerWithNullDefault) as NullableLiveType<
+				LiveEnum<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+			>;
+		}
+		return new NullableLiveType(this) as NullableLiveType<
+			LiveEnum<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+		>;
+	}
+
+	static create<const T extends readonly string[]>(values: T): LiveEnum<T[number]> {
+		return new LiveEnum<T[number]>(values);
+	}
+}
+
+export const enumType = LiveEnum.create;
+
+/**
+ * Live JSON type.
+ * Maps to jsonb in Postgres, json in MySQL, text in SQLite.
+ */
+export class LiveJson<
+	Value,
+	DefaultValue = undefined,
+	Meta extends AtomicMeta = AtomicMeta,
+> extends LiveAtomicType<Value, DefaultValue, Meta> {
+	constructor(
+		index?: boolean,
+		unique?: boolean,
+		defaultValue?: DefaultValue,
+		primary?: boolean
+	) {
+		super(
+			"jsonb",
+			(value) => {
+				if (typeof value === "string") {
+					return JSON.parse(value);
+				}
+				return value;
+			},
+			index,
+			unique,
+			defaultValue,
+			undefined,
+			primary
+		);
+	}
+
+	getStorageFieldType(): StorageFieldType {
+		return {
+			type: "jsonb",
+			nullable: false,
+			index: this.isIndex,
+			unique: this.isUnique,
+			default:
+				this.defaultValue !== undefined
+					? JSON.stringify(this.defaultValue)
+					: undefined,
+			primary: this.isPrimary,
+		};
+	}
+
+	unique(): LiveJson<Value, undefined, Meta> {
+		return new LiveJson<Value, undefined, Meta>(
+			this.isIndex,
+			true,
+			undefined,
+			this.isPrimary
+		);
+	}
+
+	index(): LiveJson<Value, undefined, Meta> {
+		return new LiveJson<Value, undefined, Meta>(
+			true,
+			this.isUnique,
+			undefined,
+			this.isPrimary
+		);
+	}
+
+	default(value: Value): LiveJson<Value, Value, Meta> {
+		return new LiveJson<Value, Value, Meta>(
+			this.isIndex,
+			this.isUnique,
+			value,
+			this.isPrimary
+		);
+	}
+
+	primary(): LiveJson<Value, undefined, Meta> {
+		return new LiveJson<Value, undefined, Meta>(
+			this.isIndex,
+			this.isUnique,
+			undefined,
+			true
+		);
+	}
+
+	nullable(): NullableLiveType<
+		LiveJson<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+	> {
+		if (this.defaultValue === undefined) {
+			const innerWithNullDefault = new LiveJson<Value, null, Meta>(
+				this.isIndex,
+				this.isUnique,
+				null,
+				this.isPrimary
+			);
+			return new NullableLiveType(innerWithNullDefault) as NullableLiveType<
+				LiveJson<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+			>;
+		}
+		return new NullableLiveType(this) as NullableLiveType<
+			LiveJson<Value, DefaultValue extends undefined ? null : DefaultValue, Meta>
+		>;
+	}
+
+	static create<T>(): LiveJson<T> {
+		return new LiveJson<T>();
+	}
+}
+
+export const json = LiveJson.create;

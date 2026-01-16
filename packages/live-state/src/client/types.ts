@@ -1,8 +1,8 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { QueryBuilder } from "../core/query";
 import type { ConditionalPromise, Promisify } from "../core/utils";
 import type { InferInsert, InferUpdate, LiveObjectAny } from "../schema";
 import type { Simplify } from "../utils";
-import type { QueryBuilder } from "./query";
 
 /**
  * Extracts the output type from a Standard Schema validator.
