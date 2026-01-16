@@ -26,6 +26,8 @@ export type StorageFieldType = {
 	index?: boolean;
 	primary?: boolean;
 	references?: string;
+	enumValues?: readonly string[];
+	enumName?: string;
 };
 
 /**

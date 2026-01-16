@@ -2,8 +2,9 @@
 
 import type { Kysely, Selectable } from "kysely";
 import { sql } from "kysely";
-import type { LiveTypeAny, Schema } from "../../schema";
+import type { LiveTypeAny, Schema, StorageFieldType } from "../../schema";
 import type { Logger } from "../../utils";
+import { type SupportedDialect, detectDialect } from "./dialect-helpers";
 
 const POSTGRES_DUPLICATE_COLUMN_ERROR_CODE = "42701";
 
@@ -21,6 +22,75 @@ function isDuplicateError(error: any): boolean {
     message.includes("duplicate") ||
     message.includes("already defined")
   );
+}
+
+function resolveColumnType(
+  storageFieldType: StorageFieldType,
+  dialect: SupportedDialect
+): string {
+  const { type, enumValues, enumName } = storageFieldType;
+
+  if (enumValues && enumValues.length > 0) {
+    if (dialect === "postgres" && enumName) {
+      return enumName;
+    }
+    return "varchar";
+  }
+
+  if (type === "jsonb" || type === "json") {
+    switch (dialect) {
+      case "postgres":
+        return "jsonb";
+      case "mysql":
+        return "json";
+      case "sqlite":
+        return "text";
+    }
+  }
+
+  return type;
+}
+
+async function createEnumTypesIfNeeded(
+  db: Kysely<{ [x: string]: Selectable<any> }>,
+  schema: Schema<any>,
+  dialect: SupportedDialect,
+  logger?: Logger
+): Promise<void> {
+  if (dialect !== "postgres") return;
+
+  const enumTypes = new Map<
+    string,
+    { name: string; values: readonly string[] }
+  >();
+
+  for (const entity of Object.values(schema)) {
+    for (const field of Object.values(entity.fields)) {
+      const fieldType = (field as LiveTypeAny).getStorageFieldType();
+      if (fieldType.enumValues && fieldType.enumName) {
+        enumTypes.set(fieldType.enumName, {
+          name: fieldType.enumName,
+          values: fieldType.enumValues,
+        });
+      }
+    }
+  }
+
+  for (const enumType of Array.from(enumTypes.values())) {
+    const { name, values } = enumType;
+    try {
+      const valuesList = values.map((v: string) => `'${v}'`).join(", ");
+      await sql`
+        DO $$ BEGIN
+          CREATE TYPE ${sql.id(name)} AS ENUM (${sql.raw(valuesList)});
+        EXCEPTION
+          WHEN duplicate_object THEN null;
+        END $$;
+      `.execute(db);
+    } catch (e) {
+      logger?.warn("Could not create enum type", name, e);
+    }
+  }
 }
 
 type DeferredForeignKey = {
@@ -126,11 +196,24 @@ function collectColumnsToAdd(
   return columnsToAdd;
 }
 
+function isEnumColumn(
+  storageFieldType: StorageFieldType,
+  dialect: SupportedDialect
+): boolean {
+  return (
+    dialect === "postgres" &&
+    !!storageFieldType.enumValues &&
+    storageFieldType.enumValues.length > 0 &&
+    !!storageFieldType.enumName
+  );
+}
+
 async function createTableWithColumns(
   db: Kysely<{ [x: string]: Selectable<any> }>,
   tableName: string,
   columnsToAdd: ColumnToAdd[],
   tables: TableInfo[],
+  dialect: SupportedDialect,
   logger?: Logger
 ): Promise<void> {
   if (columnsToAdd.length === 0) return;
@@ -138,11 +221,19 @@ async function createTableWithColumns(
   let tableBuilder = db.schema.createTable(tableName);
 
   for (const { name, storageFieldType } of columnsToAdd) {
-    tableBuilder = tableBuilder.addColumn(
-      name,
-      storageFieldType.type as any,
-      (c) => buildColumnDefinition(c, storageFieldType, tables)
-    );
+    // For Postgres enum columns, use sql.raw() since Kysely doesn't recognize custom type names
+    if (isEnumColumn(storageFieldType, dialect)) {
+      tableBuilder = tableBuilder.addColumn(
+        name,
+        sql.raw(storageFieldType.enumName!) as any,
+        (c) => buildColumnDefinition(c, storageFieldType, tables)
+      );
+    } else {
+      const columnType = resolveColumnType(storageFieldType, dialect);
+      tableBuilder = tableBuilder.addColumn(name, columnType as any, (c) =>
+        buildColumnDefinition(c, storageFieldType, tables)
+      );
+    }
   }
 
   await tableBuilder.execute().catch((e) => {
@@ -159,6 +250,7 @@ async function addColumnsToTable(
   columnsToAdd: ColumnToAdd[],
   tables: TableInfo[],
   deferredForeignKeys: DeferredForeignKey[],
+  dialect: SupportedDialect,
   logger?: Logger
 ): Promise<void> {
   for (const { name, storageFieldType } of columnsToAdd) {
@@ -166,9 +258,14 @@ async function addColumnsToTable(
       ? referencedTableExists(tables, storageFieldType.references)
       : false;
 
+    // For Postgres enum columns, use sql.raw() since Kysely doesn't recognize custom type names
+    const columnType = isEnumColumn(storageFieldType, dialect)
+      ? sql.raw(storageFieldType.enumName!)
+      : resolveColumnType(storageFieldType, dialect);
+
     await db.schema
       .alterTable(tableName)
-      .addColumn(name, storageFieldType.type as any, (c) =>
+      .addColumn(name, columnType as any, (c) =>
         buildColumnDefinition(c, storageFieldType, tables, !refTableExists)
       )
       .execute()
@@ -362,8 +459,11 @@ export async function initializeSchema(
   opts: Schema<any>,
   logger?: Logger
 ): Promise<void> {
+  const dialect = detectDialect(db);
   const tables = await db.introspection.getTables();
   const deferredForeignKeys: DeferredForeignKey[] = [];
+
+  await createEnumTypesIfNeeded(db, opts, dialect, logger);
 
   for (const [resourceName, entity] of Object.entries(opts)) {
     const table = tables.find((t) => t.name === resourceName);
@@ -383,13 +483,14 @@ export async function initializeSchema(
           (col) => col.name === columnName
         );
         const storageFieldType = (column as LiveTypeAny).getStorageFieldType();
+        const expectedType = resolveColumnType(storageFieldType, dialect);
 
-        if (tableColumn && tableColumn.dataType !== storageFieldType.type) {
+        if (tableColumn && tableColumn.dataType !== expectedType) {
           logger?.warn(
             "Column type mismatch:",
             columnName,
             "expected to have type:",
-            storageFieldType.type,
+            expectedType,
             "but has type:",
             tableColumn.dataType
           );
@@ -403,6 +504,7 @@ export async function initializeSchema(
         resourceName,
         columnsToAdd,
         tables,
+        dialect,
         logger
       );
     } else if (table) {
@@ -412,6 +514,7 @@ export async function initializeSchema(
         columnsToAdd,
         tables,
         deferredForeignKeys,
+        dialect,
         logger
       );
     }

@@ -6,14 +6,7 @@ import type {
   WhereClause,
 } from "./schema";
 
-export type Simplify<T> =
-  T extends Record<string, unknown>
-    ? {
-        [K in keyof T]: Simplify<T[K]>;
-      }
-    : T extends Array<infer U>
-      ? Array<Simplify<U>>
-      : T;
+export type Simplify<T> = T extends object ? { [K in keyof T]: T[K] } : T;
 
 export const hash = (value: unknown) => {
   return xxHash32(JSON.stringify(value)).toString(32);
