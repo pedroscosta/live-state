@@ -18,7 +18,9 @@ import expressWs from "express-ws";
 import {
   createRelations,
   createSchema,
+  enumType,
   id,
+  json,
   number,
   object,
   reference,
@@ -1406,6 +1408,874 @@ describe("End-to-End Query Tests", () => {
           complexHttpServer?.close(() => resolve());
         });
       }
+    });
+  });
+
+  describe("Enum Field Tests", () => {
+    // Create a schema with enum fields for testing
+    const orderStatusEnum = enumType([
+      "pending",
+      "processing",
+      "shipped",
+      "delivered",
+      "cancelled",
+    ] as const);
+    const priorityEnum = enumType(["low", "medium", "high"] as const);
+
+    const order = object("orders", {
+      id: id(),
+      status: orderStatusEnum,
+      priority: priorityEnum.nullable(),
+      customerName: string(),
+    });
+
+    const orderSchema = createSchema({
+      orders: order,
+    });
+
+    const orderRoute = routeFactory();
+    const orderRouter = router({
+      schema: orderSchema,
+      routes: {
+        orders: orderRoute.collectionRoute(orderSchema.orders),
+      },
+    });
+
+    let orderStorage: SQLStorage;
+    let orderServer: ReturnType<typeof server>;
+    let orderHttpServer: HttpServer | null = null;
+    let orderServerPort: number;
+    let orderWsClient: ReturnType<typeof createClient<typeof orderRouter>>;
+    let orderFetchClient: ReturnType<
+      typeof createFetchClient<typeof orderRouter>
+    >;
+
+    beforeEach(async () => {
+      orderStorage = new SQLStorage(pool);
+
+      // Initialize storage to create tables and enum types
+      await orderStorage.init(orderSchema);
+
+      orderServer = server({
+        router: orderRouter,
+        storage: orderStorage,
+        schema: orderSchema,
+        logLevel: LogLevel.DEBUG,
+      });
+
+      // Clean up tables
+      try {
+        await pool.query(
+          "TRUNCATE TABLE orders, orders_meta RESTART IDENTITY CASCADE"
+        );
+      } catch (error) {
+        // Ignore errors if tables don't exist yet
+      }
+
+      const { app } = expressWs(express());
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: true }));
+
+      expressAdapter(app, orderServer);
+
+      orderServerPort = await new Promise<number>((resolve) => {
+        orderHttpServer = app.listen(0, () => {
+          const address = orderHttpServer?.address();
+          const port =
+            typeof address === "object" && address?.port ? address.port : 0;
+          resolve(port);
+        });
+      });
+
+      orderWsClient = createClient({
+        url: `ws://localhost:${orderServerPort}/ws`,
+        schema: orderSchema,
+        storage: false,
+        connection: {
+          autoConnect: true,
+          autoReconnect: false,
+        },
+      });
+
+      await orderWsClient.client.load(
+        orderWsClient.store.query.orders.buildQueryRequest()
+      );
+      await waitForConnection(orderWsClient);
+
+      orderFetchClient = createFetchClient({
+        url: `http://localhost:${orderServerPort}`,
+        schema: orderSchema,
+      });
+    });
+
+    afterEach(async () => {
+      if (orderWsClient?.client?.ws) {
+        orderWsClient.client.ws.disconnect();
+      }
+
+      if (orderHttpServer) {
+        await new Promise<void>((resolve) => {
+          orderHttpServer?.close(() => resolve());
+        });
+        orderHttpServer = null;
+      }
+
+      if (pool) {
+        try {
+          await pool.query(
+            "TRUNCATE TABLE orders, orders_meta RESTART IDENTITY CASCADE"
+          );
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
+      }
+    });
+
+    describe("Websocket Client - Enum Fields", () => {
+      test("should handle empty query with enum fields", async () => {
+        const result = await orderWsClient.store.query.orders.get();
+
+        expect(result).toBeDefined();
+        expect(Array.isArray(result)).toBe(true);
+        expect(result.length).toBe(0);
+      });
+
+      test("should handle query with enum field data", async () => {
+        const orderId = generateId();
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId,
+          status: "pending",
+          priority: "high",
+          customerName: "John Doe",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await orderWsClient.store.query.orders.get();
+
+        expect(result).toBeDefined();
+        expect(Array.isArray(result)).toBe(true);
+        expect(result.length).toBe(1);
+
+        const order = result[0];
+        expect(order).toBeDefined();
+        expect(order.id).toBe(orderId);
+        expect(order.status).toBe("pending");
+        expect(order.priority).toBe("high");
+        expect(order.customerName).toBe("John Doe");
+      });
+
+      test("should handle enum field with null value", async () => {
+        const orderId = generateId();
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId,
+          status: "processing",
+          priority: null,
+          customerName: "Jane Doe",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await orderWsClient.store.query.orders.get();
+
+        expect(result.length).toBe(1);
+        const order = result[0];
+        expect(order.status).toBe("processing");
+        expect(order.priority).toBeNull();
+      });
+
+      test("should handle enum field mutations (insert)", async () => {
+        const orderId = generateId();
+
+        orderWsClient.store.mutate.orders.insert({
+          id: orderId,
+          status: "shipped",
+          priority: "medium",
+          customerName: "Alice Smith",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        const result = await orderWsClient.store.query.orders.get();
+        const insertedOrder = result.find((o: any) => o.id === orderId);
+
+        expect(insertedOrder).toBeDefined();
+        expect(insertedOrder?.status).toBe("shipped");
+        expect(insertedOrder?.priority).toBe("medium");
+        expect(insertedOrder?.customerName).toBe("Alice Smith");
+      });
+
+      test("should handle enum field mutations (update)", async () => {
+        const orderId = generateId();
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId,
+          status: "pending",
+          priority: "low",
+          customerName: "Bob Johnson",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        orderWsClient.store.mutate.orders.update(orderId, {
+          status: "delivered",
+          priority: "high",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        const result = await orderWsClient.store.query.orders.get();
+        const updatedOrder = result.find((o: any) => o.id === orderId);
+
+        expect(updatedOrder).toBeDefined();
+        expect(updatedOrder?.status).toBe("delivered");
+        expect(updatedOrder?.priority).toBe("high");
+        expect(updatedOrder?.customerName).toBe("Bob Johnson");
+      });
+
+      test("should handle enum field with where clause", async () => {
+        const orderId1 = generateId();
+        const orderId2 = generateId();
+
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId1,
+          status: "pending",
+          priority: "high",
+          customerName: "Customer 1",
+        });
+
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId2,
+          status: "delivered",
+          priority: "low",
+          customerName: "Customer 2",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await orderWsClient.store.query.orders
+          .where({ status: "pending" })
+          .get();
+
+        expect(result.length).toBe(1);
+        expect(result[0].id).toBe(orderId1);
+        expect(result[0].status).toBe("pending");
+      });
+
+      test("should sync enum field mutations between clients", async () => {
+        const client1 = createClient({
+          url: `ws://localhost:${orderServerPort}/ws`,
+          schema: orderSchema,
+          storage: false,
+          connection: {
+            autoConnect: true,
+            autoReconnect: false,
+          },
+        });
+
+        await client1.client.load(
+          client1.store.query.orders.buildQueryRequest()
+        );
+        await waitForConnection(client1);
+
+        const client2 = createClient({
+          url: `ws://localhost:${orderServerPort}/ws`,
+          schema: orderSchema,
+          storage: false,
+          connection: {
+            autoConnect: true,
+            autoReconnect: false,
+          },
+        });
+
+        await client2.client.load(
+          client2.store.query.orders.buildQueryRequest()
+        );
+        await waitForConnection(client2);
+
+        const orderId = generateId();
+        const receivedUpdates: any[] = [];
+        const unsubscribe = client2.store.query.orders.subscribe((orders) => {
+          receivedUpdates.push(orders);
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        client1.store.mutate.orders.insert({
+          id: orderId,
+          status: "processing",
+          priority: "high",
+          customerName: "Sync Test",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        expect(receivedUpdates.length).toBeGreaterThan(0);
+        const latest = receivedUpdates[receivedUpdates.length - 1];
+        const syncedOrder = latest.find((o: any) => o.id === orderId);
+
+        expect(syncedOrder).toBeDefined();
+        expect(syncedOrder?.status).toBe("processing");
+        expect(syncedOrder?.priority).toBe("high");
+
+        unsubscribe();
+        client1.client.ws.disconnect();
+        client2.client.ws.disconnect();
+      });
+    });
+
+    describe("Fetch Client - Enum Fields", () => {
+      test("should handle empty query with enum fields", async () => {
+        const result = await orderFetchClient.query.orders.get();
+
+        expect(result).toBeDefined();
+        expect(Array.isArray(result)).toBe(true);
+        expect(result.length).toBe(0);
+      });
+
+      test("should handle query with enum field data", async () => {
+        const orderId = generateId();
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId,
+          status: "cancelled",
+          priority: "low",
+          customerName: "Test Customer",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await orderFetchClient.query.orders.get();
+
+        expect(result.length).toBe(1);
+        const order = result[0];
+        expect(order.status).toBe("cancelled");
+        expect(order.priority).toBe("low");
+      });
+
+      test("should handle enum field with where clause", async () => {
+        const orderId1 = generateId();
+        const orderId2 = generateId();
+
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId1,
+          status: "shipped",
+          priority: "medium",
+          customerName: "Customer A",
+        });
+
+        await orderStorage.insert(orderSchema.orders, {
+          id: orderId2,
+          status: "pending",
+          priority: "high",
+          customerName: "Customer B",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await orderFetchClient.query.orders
+          .where({ status: "shipped" })
+          .get();
+
+        expect(result.length).toBe(1);
+        expect(result[0].id).toBe(orderId1);
+        expect(result[0].status).toBe("shipped");
+      });
+    });
+  });
+
+  describe("JSON Field Tests", () => {
+    // Create a schema with JSON fields for testing
+    type OrderMetadata = {
+      tags: string[];
+      notes: string;
+      customFields: Record<string, unknown>;
+    };
+
+    type UserPreferences = {
+      theme: "light" | "dark";
+      notifications: boolean;
+      settings: {
+        language: string;
+        timezone: string;
+      };
+    };
+
+    const product = object("products", {
+      id: id(),
+      name: string(),
+      metadata: json<OrderMetadata>(),
+      preferences: json<UserPreferences>().nullable(),
+      price: number(),
+    });
+
+    const productSchema = createSchema({
+      products: product,
+    });
+
+    const productRoute = routeFactory();
+    const productRouter = router({
+      schema: productSchema,
+      routes: {
+        products: productRoute.collectionRoute(productSchema.products),
+      },
+    });
+
+    let productStorage: SQLStorage;
+    let productServer: ReturnType<typeof server>;
+    let productHttpServer: HttpServer | null = null;
+    let productServerPort: number;
+    let productWsClient: ReturnType<typeof createClient<typeof productRouter>>;
+    let productFetchClient: ReturnType<
+      typeof createFetchClient<typeof productRouter>
+    >;
+
+    beforeEach(async () => {
+      productStorage = new SQLStorage(pool);
+
+      // Initialize storage to create tables
+      await productStorage.init(productSchema);
+
+      productServer = server({
+        router: productRouter,
+        storage: productStorage,
+        schema: productSchema,
+        logLevel: LogLevel.DEBUG,
+      });
+
+      // Clean up tables
+      try {
+        await pool.query(
+          "TRUNCATE TABLE products, products_meta RESTART IDENTITY CASCADE"
+        );
+      } catch (error) {
+        // Ignore errors if tables don't exist yet
+      }
+
+      const { app } = expressWs(express());
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: true }));
+
+      expressAdapter(app, productServer);
+
+      productServerPort = await new Promise<number>((resolve) => {
+        productHttpServer = app.listen(0, () => {
+          const address = productHttpServer?.address();
+          const port =
+            typeof address === "object" && address?.port ? address.port : 0;
+          resolve(port);
+        });
+      });
+
+      productWsClient = createClient({
+        url: `ws://localhost:${productServerPort}/ws`,
+        schema: productSchema,
+        storage: false,
+        connection: {
+          autoConnect: true,
+          autoReconnect: false,
+        },
+      });
+
+      await productWsClient.client.load(
+        productWsClient.store.query.products.buildQueryRequest()
+      );
+      await waitForConnection(productWsClient);
+
+      productFetchClient = createFetchClient({
+        url: `http://localhost:${productServerPort}`,
+        schema: productSchema,
+      });
+    });
+
+    afterEach(async () => {
+      if (productWsClient?.client?.ws) {
+        productWsClient.client.ws.disconnect();
+      }
+
+      if (productHttpServer) {
+        await new Promise<void>((resolve) => {
+          productHttpServer?.close(() => resolve());
+        });
+        productHttpServer = null;
+      }
+
+      if (pool) {
+        try {
+          await pool.query(
+            "TRUNCATE TABLE products, products_meta RESTART IDENTITY CASCADE"
+          );
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
+      }
+    });
+
+    describe("Websocket Client - JSON Fields", () => {
+      test("should handle empty query with JSON fields", async () => {
+        const result = await productWsClient.store.query.products.get();
+
+        expect(result).toBeDefined();
+        expect(Array.isArray(result)).toBe(true);
+        expect(result.length).toBe(0);
+      });
+
+      test("should handle query with JSON field data", async () => {
+        const productId = generateId();
+        const metadata: OrderMetadata = {
+          tags: ["electronics", "gadget"],
+          notes: "High quality product",
+          customFields: {
+            warranty: "2 years",
+            rating: 4.5,
+          },
+        };
+
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Smartphone",
+          metadata,
+          preferences: null,
+          price: 999,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await productWsClient.store.query.products.get();
+
+        expect(result.length).toBe(1);
+        const product = result[0];
+        expect(product.id).toBe(productId);
+        expect(product.name).toBe("Smartphone");
+        expect(product.metadata).toBeDefined();
+        expect(product.metadata.tags).toEqual(["electronics", "gadget"]);
+        expect(product.metadata.notes).toBe("High quality product");
+        expect(product.metadata.customFields.warranty).toBe("2 years");
+        expect(product.metadata.customFields.rating).toBe(4.5);
+        expect(product.preferences).toBeNull();
+        expect(product.price).toBe(999);
+      });
+
+      test("should handle JSON field with nested objects", async () => {
+        const productId = generateId();
+        const preferences: UserPreferences = {
+          theme: "dark",
+          notifications: true,
+          settings: {
+            language: "en-US",
+            timezone: "UTC",
+          },
+        };
+
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Laptop",
+          metadata: {
+            tags: ["computers"],
+            notes: "",
+            customFields: {},
+          },
+          preferences,
+          price: 1299,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await productWsClient.store.query.products.get();
+
+        expect(result.length).toBe(1);
+        const product = result[0];
+        expect(product.preferences).toBeDefined();
+        expect(product.preferences?.theme).toBe("dark");
+        expect(product.preferences?.notifications).toBe(true);
+        expect(product.preferences?.settings.language).toBe("en-US");
+        expect(product.preferences?.settings.timezone).toBe("UTC");
+      });
+
+      test("should handle JSON field mutations (insert)", async () => {
+        const productId = generateId();
+        const metadata: OrderMetadata = {
+          tags: ["new", "featured"],
+          notes: "Just added",
+          customFields: {
+            featured: true,
+          },
+        };
+
+        productWsClient.store.mutate.products.insert({
+          id: productId,
+          name: "New Product",
+          metadata,
+          preferences: null,
+          price: 49,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        const result = await productWsClient.store.query.products.get();
+        const insertedProduct = result.find((p: any) => p.id === productId);
+
+        expect(insertedProduct).toBeDefined();
+        expect(insertedProduct?.name).toBe("New Product");
+        expect(insertedProduct?.metadata.tags).toEqual(["new", "featured"]);
+        expect(insertedProduct?.metadata.customFields.featured).toBe(true);
+      });
+
+      test("should handle JSON field mutations (update)", async () => {
+        const productId = generateId();
+        const initialMetadata: OrderMetadata = {
+          tags: ["old"],
+          notes: "Original",
+          customFields: {},
+        };
+
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Product",
+          metadata: initialMetadata,
+          preferences: null,
+          price: 100,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const updatedMetadata: OrderMetadata = {
+          tags: ["updated", "modified"],
+          notes: "Updated notes",
+          customFields: {
+            version: 2,
+          },
+        };
+
+        productWsClient.store.mutate.products.update(productId, {
+          metadata: updatedMetadata,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        const result = await productWsClient.store.query.products.get();
+        const updatedProduct = result.find((p: any) => p.id === productId);
+
+        expect(updatedProduct).toBeDefined();
+        expect(updatedProduct?.metadata.tags).toEqual(["updated", "modified"]);
+        expect(updatedProduct?.metadata.notes).toBe("Updated notes");
+        expect(updatedProduct?.metadata.customFields.version).toBe(2);
+      });
+
+      test("should handle JSON field with null value", async () => {
+        const productId = generateId();
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Simple Product",
+          metadata: {
+            tags: [],
+            notes: "",
+            customFields: {},
+          },
+          preferences: null,
+          price: 50,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await productWsClient.store.query.products.get();
+
+        expect(result.length).toBe(1);
+        const product = result[0];
+        expect(product.preferences).toBeNull();
+      });
+
+      test("should sync JSON field mutations between clients", async () => {
+        const client1 = createClient({
+          url: `ws://localhost:${productServerPort}/ws`,
+          schema: productSchema,
+          storage: false,
+          connection: {
+            autoConnect: true,
+            autoReconnect: false,
+          },
+        });
+
+        await client1.client.load(
+          client1.store.query.products.buildQueryRequest()
+        );
+        await waitForConnection(client1);
+
+        const client2 = createClient({
+          url: `ws://localhost:${productServerPort}/ws`,
+          schema: productSchema,
+          storage: false,
+          connection: {
+            autoConnect: true,
+            autoReconnect: false,
+          },
+        });
+
+        await client2.client.load(
+          client2.store.query.products.buildQueryRequest()
+        );
+        await waitForConnection(client2);
+
+        const productId = generateId();
+        const metadata: OrderMetadata = {
+          tags: ["sync", "test"],
+          notes: "Synced product",
+          customFields: {
+            synced: true,
+            timestamp: Date.now(),
+          },
+        };
+
+        const receivedUpdates: any[] = [];
+        const unsubscribe = client2.store.query.products.subscribe(
+          (products) => {
+            receivedUpdates.push(products);
+          }
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        client1.store.mutate.products.insert({
+          id: productId,
+          name: "Synced Product",
+          metadata,
+          preferences: null,
+          price: 199,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        expect(receivedUpdates.length).toBeGreaterThan(0);
+        const latest = receivedUpdates[receivedUpdates.length - 1];
+        const syncedProduct = latest.find((p: any) => p.id === productId);
+
+        expect(syncedProduct).toBeDefined();
+        expect(syncedProduct?.name).toBe("Synced Product");
+        expect(syncedProduct?.metadata.tags).toEqual(["sync", "test"]);
+        expect(syncedProduct?.metadata.customFields.synced).toBe(true);
+
+        unsubscribe();
+        client1.client.ws.disconnect();
+        client2.client.ws.disconnect();
+      });
+
+      test("should handle complex nested JSON structures", async () => {
+        const productId = generateId();
+        const complexMetadata: OrderMetadata = {
+          tags: ["complex", "nested", "structure"],
+          notes: "Complex JSON test",
+          customFields: {
+            level1: {
+              level2: {
+                level3: {
+                  value: "deep nested",
+                  array: [1, 2, 3],
+                  boolean: true,
+                },
+              },
+            },
+            array: [
+              { id: 1, name: "item1" },
+              { id: 2, name: "item2" },
+            ],
+          },
+        };
+
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Complex Product",
+          metadata: complexMetadata,
+          preferences: null,
+          price: 299,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await productWsClient.store.query.products.get();
+
+        expect(result.length).toBe(1);
+        const product = result[0];
+        expect(product.metadata.customFields.level1.level2.level3.value).toBe(
+          "deep nested"
+        );
+        expect(
+          product.metadata.customFields.level1.level2.level3.array
+        ).toEqual([1, 2, 3]);
+        expect(product.metadata.customFields.array).toHaveLength(2);
+        expect(product.metadata.customFields.array[0].name).toBe("item1");
+      });
+    });
+
+    describe("Fetch Client - JSON Fields", () => {
+      test("should handle empty query with JSON fields", async () => {
+        const result = await productFetchClient.query.products.get();
+
+        expect(result).toBeDefined();
+        expect(Array.isArray(result)).toBe(true);
+        expect(result.length).toBe(0);
+      });
+
+      test("should handle query with JSON field data", async () => {
+        const productId = generateId();
+        const metadata: OrderMetadata = {
+          tags: ["fetch", "test"],
+          notes: "Fetch client test",
+          customFields: {
+            test: true,
+          },
+        };
+
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Fetch Product",
+          metadata,
+          preferences: null,
+          price: 79,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await productFetchClient.query.products.get();
+
+        expect(result.length).toBe(1);
+        const product = result[0];
+        expect(product.metadata.tags).toEqual(["fetch", "test"]);
+        expect(product.metadata.customFields.test).toBe(true);
+      });
+
+      test("should handle JSON field with nested objects", async () => {
+        const productId = generateId();
+        const preferences: UserPreferences = {
+          theme: "light",
+          notifications: false,
+          settings: {
+            language: "pt-BR",
+            timezone: "America/Sao_Paulo",
+          },
+        };
+
+        await productStorage.insert(productSchema.products, {
+          id: productId,
+          name: "Localized Product",
+          metadata: {
+            tags: [],
+            notes: "",
+            customFields: {},
+          },
+          preferences,
+          price: 89,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const result = await productFetchClient.query.products.get();
+
+        expect(result.length).toBe(1);
+        const product = result[0];
+        expect(product.preferences?.theme).toBe("light");
+        expect(product.preferences?.settings.language).toBe("pt-BR");
+        expect(product.preferences?.settings.timezone).toBe(
+          "America/Sao_Paulo"
+        );
+      });
     });
   });
 });

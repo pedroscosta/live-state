@@ -150,7 +150,7 @@ export class SQLStorage extends Storage {
     if (!rawValue) return;
 
     const parsedValue = this.parseRelationalJsonStrings(rawValue, resourceName);
-    return this.convertToMaterializedLiveType(parsedValue);
+    return this.convertToMaterializedLiveType(parsedValue, resourceName);
   }
 
   public async findOne<
@@ -223,7 +223,7 @@ export class SQLStorage extends Storage {
 
     return rawResult.map((v) => {
       const parsedValue = this.parseRelationalJsonStrings(v, resourceName);
-      return this.convertToMaterializedLiveType(parsedValue);
+      return this.convertToMaterializedLiveType(parsedValue, resourceName);
     });
   }
 
@@ -289,11 +289,17 @@ export class SQLStorage extends Storage {
 
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
+    const entity = this.schema?.[resourceName];
 
     for (const [key, val] of Object.entries(processedValue.value)) {
       const metaVal = val._meta?.timestamp;
       if (!metaVal) continue;
-      values[key] = val.value;
+      const fieldType = (entity?.fields[key] as any)?.getStorageFieldType?.();
+      if (fieldType?.type === "jsonb" || fieldType?.type === "json") {
+        values[key] = JSON.stringify(val.value);
+      } else {
+        values[key] = val.value;
+      }
       metaValues[key] = metaVal;
     }
 
@@ -399,11 +405,17 @@ export class SQLStorage extends Storage {
 
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
+    const entity = this.schema?.[resourceName];
 
     for (const [key, val] of Object.entries(processedValue.value)) {
       const metaVal = val._meta?.timestamp;
       if (!metaVal) continue;
-      values[key] = val.value;
+      const fieldType = (entity?.fields[key] as any)?.getStorageFieldType?.();
+      if (fieldType?.type === "jsonb" || fieldType?.type === "json") {
+        values[key] = JSON.stringify(val.value);
+      } else {
+        values[key] = val.value;
+      }
       metaValues[key] = metaVal;
     }
 
@@ -748,19 +760,53 @@ export class SQLStorage extends Storage {
   }
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
-    value: Record<string, any>
+    value: Record<string, any>,
+    resourceName: string
   ): MaterializedLiveType<T> {
+    const entity = this.schema?.[resourceName];
+
     return {
       value: Object.entries(value).reduce((acc, [key, val]) => {
         if (key === "_meta") return acc;
 
+        const fieldType = (entity?.fields[key] as any)?.getStorageFieldType?.();
+        const isJsonField =
+          fieldType?.type === "jsonb" || fieldType?.type === "json";
+
+        const isRelation = entity?.relations && key in entity.relations;
+
         if (key === "id") {
+          acc[key] = { value: val };
+        } else if (isJsonField) {
           acc[key] = {
             value: val,
+            _meta: { timestamp: value?._meta?.[key] },
           };
+        } else if (isRelation) {
+          const relationEntity = (entity.relations[key] as any).entity;
+          const relationResourceName = relationEntity?.name ?? resourceName;
+
+          if (Array.isArray(val)) {
+            acc[key] = {
+              value: val.map((v) =>
+                this.convertToMaterializedLiveType(v, relationResourceName)
+              ),
+              _meta: { timestamp: value?._meta?.[key], relation: true },
+            };
+          } else if (val !== null && typeof val === "object") {
+            acc[key] = {
+              ...this.convertToMaterializedLiveType(val, relationResourceName),
+              _meta: { timestamp: value?._meta?.[key], relation: true },
+            };
+          } else {
+            acc[key] = {
+              value: val,
+              _meta: { timestamp: value?._meta?.[key], relation: true },
+            };
+          }
         } else if (Array.isArray(val)) {
           acc[key] = {
-            value: val.map((v) => this.convertToMaterializedLiveType(v)),
+            value: val,
             _meta: { timestamp: value?._meta?.[key] },
           };
         } else if (
@@ -769,7 +815,7 @@ export class SQLStorage extends Storage {
           !(val instanceof Date)
         ) {
           acc[key] = {
-            ...this.convertToMaterializedLiveType(val),
+            value: val,
             _meta: { timestamp: value?._meta?.[key] },
           };
         } else {

@@ -23,6 +23,8 @@ export {
 	LiveString,
 	LiveBoolean,
 	LiveTimestamp,
+	LiveEnum,
+	LiveJson,
 	// Factory functions
 	number,
 	string,
@@ -30,6 +32,8 @@ export {
 	timestamp,
 	id,
 	reference,
+	enumType,
+	json,
 } from "./atomic";
 
 // Relations

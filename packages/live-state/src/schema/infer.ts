@@ -1,4 +1,5 @@
-import type { LiveAtomicType, NullableLiveType } from "./atomic";
+import type { Simplify } from "../utils";
+import type { NullableLiveType } from "./atomic";
 import type { IncludeClause, SubQueryInclude } from "./clauses";
 import type {
   LiveCollectionAny,
@@ -46,74 +47,92 @@ export type InferLiveCollectionWithRelationalIds<T extends LiveCollectionAny> =
 export type InferLiveCollection<
   T extends LiveCollectionAny,
   Include extends IncludeClause<T> | undefined = undefined,
-> = InferLiveCollectionWithoutRelations<T> &
-  (Include extends IncludeClause<T>
-    ? {
-        [K in keyof T["relations"] as Include[K] extends
-          | true
-          | SubQueryInclude<T["relations"][K]["entity"]>
-          ? K
-          : never]: Include[K] extends true
-          ? T["relations"][K]["type"] extends "one"
-            ? T["fields"][Exclude<
-                T["relations"][K]["relationalColumn"],
-                undefined
-              >] extends NullableLiveType<any>
-              ? InferLiveCollection<T["relations"][K]["entity"]> | null
-              : InferLiveCollection<T["relations"][K]["entity"]>
-            : InferLiveCollection<T["relations"][K]["entity"]>[]
-          : Include[K] extends SubQueryInclude<T["relations"][K]["entity"]>
+> = Simplify<
+  InferLiveCollectionWithoutRelations<T> &
+    (Include extends IncludeClause<T>
+      ? {
+          [K in keyof T["relations"] as Include[K] extends
+            | true
+            | SubQueryInclude<T["relations"][K]["entity"]>
+            ? K
+            : never]: Include[K] extends true
             ? T["relations"][K]["type"] extends "one"
               ? T["fields"][Exclude<
                   T["relations"][K]["relationalColumn"],
                   undefined
                 >] extends NullableLiveType<any>
-                ? InferLiveCollection<
-                    T["relations"][K]["entity"],
-                    Include[K]["include"]
-                  > | null
+                ? InferLiveCollection<T["relations"][K]["entity"]> | null
+                : InferLiveCollection<T["relations"][K]["entity"]>
+              : InferLiveCollection<T["relations"][K]["entity"]>[]
+            : Include[K] extends SubQueryInclude<T["relations"][K]["entity"]>
+              ? T["relations"][K]["type"] extends "one"
+                ? T["fields"][Exclude<
+                    T["relations"][K]["relationalColumn"],
+                    undefined
+                  >] extends NullableLiveType<any>
+                  ? InferLiveCollection<
+                      T["relations"][K]["entity"],
+                      Include[K]["include"]
+                    > | null
+                  : InferLiveCollection<
+                      T["relations"][K]["entity"],
+                      Include[K]["include"]
+                    >
                 : InferLiveCollection<
                     T["relations"][K]["entity"],
                     Include[K]["include"]
-                  >
-              : InferLiveCollection<
-                  T["relations"][K]["entity"],
-                  Include[K]["include"]
-                >[]
-            : never;
-      }
-    : object);
+                  >[]
+              : never;
+        }
+      : object)
+>;
 
 type GetFieldType<T> = T extends NullableLiveType<any> ? T["inner"] : T;
-type HasDefaultValue<T> =
-  T extends LiveAtomicType<any, undefined, any> ? false : true;
+type HasDefaultValue<T> = T extends { defaultValue: undefined } ? false : true;
 
 /**
  * Infers the insert type for a collection.
  * Fields without defaults are required, fields with defaults are optional.
  */
-export type InferInsert<T extends LiveCollectionAny> = {
-  [K in keyof T["fields"] as HasDefaultValue<
-    GetFieldType<T["fields"][K]>
-  > extends true
-    ? never
-    : K]: InferLiveType<T["fields"][K]>;
-} & {
-  [K in keyof T["fields"] as HasDefaultValue<
-    GetFieldType<T["fields"][K]>
-  > extends false
-    ? never
-    : K]?: InferLiveType<T["fields"][K]>;
-};
+export type InferInsert<T extends LiveCollectionAny> = Simplify<
+  {
+    [K in keyof T["fields"] as HasDefaultValue<
+      GetFieldType<T["fields"][K]>
+    > extends true
+      ? never
+      : K]: InferLiveType<T["fields"][K]>;
+  } & {
+    [K in keyof T["fields"] as HasDefaultValue<
+      GetFieldType<T["fields"][K]>
+    > extends false
+      ? never
+      : K]?: InferLiveType<T["fields"][K]>;
+  }
+>;
 
 /**
  * Infers the update type for a collection.
  * All fields are optional except id which is excluded.
  */
-export type InferUpdate<T extends LiveCollectionAny> = Omit<
-  LiveCollectionMutationInput<T>,
-  "id"
+export type InferUpdate<T extends LiveCollectionAny> = Simplify<
+  Omit<LiveCollectionMutationInput<T>, "id">
 >;
+
+/**
+ * Checks if a value looks like a MaterializedLiveType (has `value` property).
+ * This is a runtime check used to distinguish between MaterializedLiveType wrappers
+ * and plain JSON values in JSON fields.
+ */
+const isMaterializedLiveType = (
+  val: unknown
+): val is MaterializedLiveType<LiveTypeAny> => {
+  return (
+    typeof val === "object" &&
+    val !== null &&
+    "value" in val &&
+    !Array.isArray(val)
+  );
+};
 
 /**
  * Extracts the value from a MaterializedLiveType at runtime.
@@ -123,8 +142,14 @@ export const inferValue = <T extends LiveTypeAny>(
 ): InferLiveType<T> | undefined => {
   if (!type) return undefined;
 
-  if (Array.isArray(type.value))
-    return (type.value as any[]).map((v) => inferValue(v)) as InferLiveType<T>;
+  if (Array.isArray(type.value)) {
+    return (type.value as any[]).map((v) => {
+      if (isMaterializedLiveType(v)) {
+        return inferValue(v);
+      }
+      return v;
+    }) as InferLiveType<T>;
+  }
 
   if (
     typeof type.value !== "object" ||
@@ -135,11 +160,21 @@ export const inferValue = <T extends LiveTypeAny>(
 
   const result = Object.fromEntries(
     Object.entries(type.value).map(([key, value]) => {
-      // If value is already a MaterializedLiveType array, process each element
       if (Array.isArray(value)) {
-        return [key, value.map((item) => inferValue(item as any))];
+        return [
+          key,
+          value.map((item) => {
+            if (isMaterializedLiveType(item)) {
+              return inferValue(item);
+            }
+            return item;
+          }),
+        ];
       }
-      return [key, inferValue(value as any)];
+      if (isMaterializedLiveType(value)) {
+        return [key, inferValue(value)];
+      }
+      return [key, value];
     })
   ) as InferLiveType<T>;
 
