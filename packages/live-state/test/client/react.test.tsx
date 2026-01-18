@@ -8,7 +8,7 @@ import {
   test,
   vi,
 } from "vitest";
-import { QueryBuilder } from "../../src/client/query";
+import { QueryBuilder } from "../../src/core/query";
 import { useLiveQuery, useLoadData } from "../../src/client/react";
 import { Client } from "../../src/client/websocket/client";
 import { AnyRouter } from "../../src/server";

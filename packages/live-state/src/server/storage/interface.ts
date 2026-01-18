@@ -32,6 +32,9 @@ export abstract class Storage implements DataSource {
     include?: IncludeClause<T>
   ): Promise<MaterializedLiveType<T> | undefined>;
 
+  /**
+   * @deprecated Use db.[collection].one(id).get() instead
+   */
   public abstract findOne<
     T extends LiveObjectAny,
     TInclude extends IncludeClause<T> | undefined = undefined,
@@ -46,6 +49,9 @@ export abstract class Storage implements DataSource {
   /** @internal */
   public abstract get(query: RawQueryRequest): PromiseOrSync<any[]>;
 
+  /**
+   * @deprecated Use db.[collection].where({...}).get() instead
+   */
   public abstract find<
     T extends LiveObjectAny,
     TInclude extends IncludeClause<T> | undefined = undefined,
@@ -77,6 +83,9 @@ export abstract class Storage implements DataSource {
     context?: Record<string, any>
   ): Promise<MaterializedLiveType<T>>;
 
+  /**
+   * @deprecated Use db.[collection].insert({...}) instead
+   */
   public async insert<T extends LiveObjectAny>(
     resource: T,
     value: Simplify<InferInsert<T>>
@@ -104,6 +113,9 @@ export abstract class Storage implements DataSource {
     ) as InferLiveObject<T>;
   }
 
+  /**
+   * @deprecated Use db.[collection].update(id, {...}) instead
+   */
   public async update<T extends LiveObjectAny>(
     resource: T,
     resourceId: string,

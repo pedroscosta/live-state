@@ -1,4 +1,5 @@
 import { stringify } from "qs";
+import { QueryBuilder, type QueryExecutor } from "../../core/query";
 import { consumeGeneratable } from "../../core/utils";
 import {
   inferValue,
@@ -6,7 +7,6 @@ import {
   type LiveObjectMutationInput,
 } from "../../schema";
 import type { ClientOptions } from "..";
-import { QueryBuilder, type QueryExecutor } from "../query";
 import type { Client, ClientRouterConstraint } from "../types";
 import { createObservable } from "../utils";
 

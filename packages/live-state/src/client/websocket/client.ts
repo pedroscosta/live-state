@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { QueryBuilder, type QueryExecutor } from "../../core/query";
 import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import {
   type ClientMessage,
@@ -19,7 +20,6 @@ import {
   type Simplify,
 } from "../../utils";
 import type { ClientOptions } from "..";
-import { QueryBuilder, type QueryExecutor } from "../query";
 import type { ClientRouterConstraint, Client as ClientType } from "../types";
 import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";

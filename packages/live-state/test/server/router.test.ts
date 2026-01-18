@@ -309,7 +309,7 @@ describe("Route", () => {
       req: expect.objectContaining({
         input: { data: "test" },
       }),
-      db: mockStorage,
+      db: expect.any(Object),
     });
     expect(result).toEqual({ success: true });
   });
@@ -1993,7 +1993,7 @@ describe("Route Custom Mutations Advanced", () => {
       req: expect.objectContaining({
         input: validInput,
       }),
-      db: mockStorage,
+      db: expect.any(Object),
     });
     expect(result).toEqual({ result: "processed" });
   });

@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import type { QueryBuilder } from '../core/query';
 import { hash } from '../utils';
 import type { Client } from '.';
-import type { QueryBuilder } from './query';
 import type { ClientRouterConstraint } from './types';
 
 class Store {
