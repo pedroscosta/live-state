@@ -307,7 +307,9 @@ describe("Custom Procedures End-to-End Tests", () => {
       const result = await wsClient.store.query.users.getUserCount();
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.count).toBe(2);
+      expect(typeof result.count).toBe("number");
     });
 
     test("should call custom query with input", async () => {
@@ -334,10 +336,13 @@ describe("Custom Procedures End-to-End Tests", () => {
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(2); // Alice and Amy
+      expect(result.every((u: any) => u.name?.toLowerCase().startsWith("a"))).toBe(true);
+      const names = result.map((u: any) => u.name);
+      expect(names).toContain("Alice Smith");
+      expect(names).toContain("Amy Wilson");
     });
 
-    // TODO: This test times out - needs investigation
-    test.skip("should call custom query with complex input", async () => {
+    test("should call custom query with complex input", async () => {
       await storage.insert(testSchema.users, {
         id: generateId(),
         name: "Alice Smith",
@@ -365,6 +370,10 @@ describe("Custom Procedures End-to-End Tests", () => {
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(1); // Only Alice
+      expect(result[0].name).toBe("Alice Smith");
+      expect(result[0].email).toBe("alice@company.com");
+      expect(result[0].id).toBeDefined();
+      expect(typeof result[0].id).toBe("string");
     });
   });
 
@@ -377,8 +386,11 @@ describe("Custom Procedures End-to-End Tests", () => {
       });
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.id).toBeDefined();
+      expect(typeof result.id).toBe("string");
       expect(result.role).toBe("admin");
+      expect(result.id.length).toBeGreaterThan(0);
 
       // Wait for sync
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -388,10 +400,11 @@ describe("Custom Procedures End-to-End Tests", () => {
       const createdUser = users.find((u) => u.id === result.id);
       expect(createdUser).toBeDefined();
       expect(createdUser?.name).toBe("[ADMIN] Admin User");
+      expect(createdUser?.email).toBe("admin@example.com");
+      expect(createdUser?.id).toBe(result.id);
     });
 
-    // TODO: This test times out - needs investigation
-    test.skip("should call custom mutation without input", async () => {
+    test("should call custom mutation without input", async () => {
       // Create some guest users
       await storage.insert(testSchema.users, {
         id: generateId(),
@@ -414,11 +427,12 @@ describe("Custom Procedures End-to-End Tests", () => {
       const result = await wsClient.store.mutate.users.countGuests();
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.guestCount).toBe(2);
+      expect(typeof result.guestCount).toBe("number");
     });
 
-    // TODO: This test times out - needs investigation
-    test.skip("should call custom mutation with complex return type", async () => {
+    test("should call custom mutation with complex return type", async () => {
       const userId1 = generateId();
       const userId2 = generateId();
       const userId3 = generateId();
@@ -447,17 +461,18 @@ describe("Custom Procedures End-to-End Tests", () => {
       });
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.count).toBe(2);
+      expect(typeof result.count).toBe("number");
+      expect(Array.isArray(result.updatedIds)).toBe(true);
+      expect(result.updatedIds.length).toBe(2);
       expect(result.updatedIds).toContain(userId1);
       expect(result.updatedIds).toContain(userId3);
       expect(result.updatedIds).not.toContain(userId2);
     });
   });
 
-  // TODO: These tests are skipped because the custom query returns raw storage data
-  // which has a different shape than what the fetch client's standard queries return.
-  // The data transformation needs to be aligned across all query paths.
-  describe.skip("Fetch Client - Custom Queries", () => {
+  describe("Fetch Client - Custom Queries", () => {
     test("should call custom query without input", async () => {
       await storage.insert(testSchema.users, {
         id: generateId(),
@@ -480,7 +495,9 @@ describe("Custom Procedures End-to-End Tests", () => {
       const result = await fetchClient.query.users.getUserCount();
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.count).toBe(3);
+      expect(typeof result.count).toBe("number");
     });
 
     test("should call custom query with input", async () => {
@@ -507,6 +524,10 @@ describe("Custom Procedures End-to-End Tests", () => {
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(1); // Only Alpha
+      expect(result[0].name).toBe("Alpha User");
+      expect(result[0].email).toBe("alpha@example.com");
+      expect(result[0].id).toBeDefined();
+      expect(typeof result[0].id).toBe("string");
     });
 
     test("should call custom query with complex input", async () => {
@@ -536,10 +557,14 @@ describe("Custom Procedures End-to-End Tests", () => {
       expect(result).toBeDefined();
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(1); // Only Alice Brown
+      expect(result[0].name).toBe("Alice Brown");
+      expect(result[0].email).toBe("alice@company.com");
+      expect(result[0].id).toBeDefined();
+      expect(typeof result[0].id).toBe("string");
     });
   });
 
-  describe.skip("Fetch Client - Custom Mutations", () => {
+  describe("Fetch Client - Custom Mutations", () => {
     test("should call custom mutation with input", async () => {
       const result = await fetchClient.mutate.users.createUserWithRole({
         name: "Guest User",
@@ -548,8 +573,11 @@ describe("Custom Procedures End-to-End Tests", () => {
       });
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.id).toBeDefined();
+      expect(typeof result.id).toBe("string");
       expect(result.role).toBe("guest");
+      expect(result.id.length).toBeGreaterThan(0);
 
       // Wait for sync
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -559,6 +587,8 @@ describe("Custom Procedures End-to-End Tests", () => {
       const createdUser = users.find((u: any) => u.id === result.id);
       expect(createdUser).toBeDefined();
       expect(createdUser?.name).toBe("[GUEST] Guest User");
+      expect(createdUser?.email).toBe("guest@example.com");
+      expect(createdUser?.id).toBe(result.id);
     });
 
     test("should call custom mutation without input", async () => {
@@ -578,7 +608,9 @@ describe("Custom Procedures End-to-End Tests", () => {
       const result = await fetchClient.mutate.users.countGuests();
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.guestCount).toBe(1);
+      expect(typeof result.guestCount).toBe("number");
     });
 
     test("should call custom mutation with complex return type", async () => {
@@ -604,12 +636,17 @@ describe("Custom Procedures End-to-End Tests", () => {
       });
 
       expect(result).toBeDefined();
+      expect(typeof result).toBe("object");
       expect(result.count).toBe(2);
+      expect(typeof result.count).toBe("number");
+      expect(Array.isArray(result.updatedIds)).toBe(true);
       expect(result.updatedIds.length).toBe(2);
+      expect(result.updatedIds).toContain(userId1);
+      expect(result.updatedIds).toContain(userId2);
     });
   });
 
-  describe.skip("Mixed Standard and Custom Operations", () => {
+  describe("Mixed Standard and Custom Operations", () => {
     test("should use both standard queries and custom queries", async () => {
       // Use custom mutation to create a user
       const createResult = await fetchClient.mutate.users.createUserWithRole({
@@ -618,18 +655,28 @@ describe("Custom Procedures End-to-End Tests", () => {
         role: "user",
       });
 
+      expect(createResult).toBeDefined();
       expect(createResult.id).toBeDefined();
+      expect(typeof createResult.id).toBe("string");
+      expect(createResult.role).toBe("user");
 
       // Wait for sync
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Use standard query to get all users
       const allUsers = await fetchClient.query.users.get();
+      expect(Array.isArray(allUsers)).toBe(true);
       expect(allUsers.length).toBe(1);
+      expect(allUsers[0].id).toBe(createResult.id);
+      expect(allUsers[0].name).toBe("[USER] Mixed Test User");
+      expect(allUsers[0].email).toBe("mixed@example.com");
 
       // Use custom query to get user count
       const countResult = await fetchClient.query.users.getUserCount();
+      expect(countResult).toBeDefined();
+      expect(typeof countResult).toBe("object");
       expect(countResult.count).toBe(1);
+      expect(typeof countResult.count).toBe("number");
 
       // Use standard insert
       await fetchClient.mutate.users.insert({
@@ -643,11 +690,16 @@ describe("Custom Procedures End-to-End Tests", () => {
 
       // Verify both users exist
       const finalCount = await fetchClient.query.users.getUserCount();
+      expect(finalCount).toBeDefined();
       expect(finalCount.count).toBe(2);
+      expect(typeof finalCount.count).toBe("number");
 
       // Use custom query with filter
       const prefixedUsers = await fetchClient.query.users.getUsersByNamePrefix({ prefix: "Standard" });
+      expect(Array.isArray(prefixedUsers)).toBe(true);
       expect(prefixedUsers.length).toBe(1);
+      expect(prefixedUsers[0].name).toBe("Standard Insert User");
+      expect(prefixedUsers[0].email).toBe("standard@example.com");
     });
 
     test("should chain standard query methods alongside custom queries", async () => {
@@ -668,14 +720,26 @@ describe("Custom Procedures End-to-End Tests", () => {
       const standardResult = await fetchClient.query.users
         .where({ name: "User Beta" })
         .get();
+      expect(Array.isArray(standardResult)).toBe(true);
       expect(standardResult.length).toBe(1);
+      expect(standardResult[0].name).toBe("User Beta");
+      expect(standardResult[0].email).toBe("beta@example.com");
+      expect(standardResult[0].id).toBeDefined();
+      expect(typeof standardResult[0].id).toBe("string");
 
       // Custom query achieving similar result
       const customResult = await fetchClient.query.users.getUsersByNamePrefix({ prefix: "User B" });
+      expect(Array.isArray(customResult)).toBe(true);
       expect(customResult.length).toBe(1);
+      expect(customResult[0].name).toBe("User Beta");
+      expect(customResult[0].email).toBe("beta@example.com");
+      expect(customResult[0].id).toBeDefined();
+      expect(typeof customResult[0].id).toBe("string");
 
       // Both should return the same user
       expect(standardResult[0].id).toBe(customResult[0].id);
+      expect(standardResult[0].name).toBe(customResult[0].name);
+      expect(standardResult[0].email).toBe(customResult[0].email);
     });
   });
 });
