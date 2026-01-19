@@ -122,8 +122,28 @@ export const httpTransportLayer = (
           const secondToLast = segments[segments.length - 2];
 
           if (secondToLast === "query") {
+            if (segments.length < 3) {
+              return Response.json(
+                {
+                  message: "Invalid path structure for custom query",
+                  code: "INVALID_PATH",
+                },
+                { status: 400 }
+              );
+            }
+
             const resource = segments[segments.length - 3];
             const rawBody = request.body ? await request.json() : {};
+
+            if (!resource || resource.trim() === "") {
+              return Response.json(
+                {
+                  message: "Invalid resource in path",
+                  code: "INVALID_RESOURCE",
+                },
+                { status: 400 }
+              );
+            }
 
             const result = await server.handleCustomQuery({
               req: {
