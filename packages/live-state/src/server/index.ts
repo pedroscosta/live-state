@@ -9,13 +9,15 @@ import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
 import type { Schema, WhereClause } from "../schema";
 import { createLogger, type Logger, LogLevel } from "../utils";
-import type { AnyRouter, QueryResult, Route } from "./router";
+import type { AnyRouter, QueryProcedureRequest, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import type { Batcher } from "./storage/batcher";
 
 export * from "./adapters/express";
 export * from "./router";
 export * from "./storage";
+
+export type { QueryProcedureRequest };
 
 export interface BaseRequest {
   headers: Record<string, string>;
@@ -38,7 +40,7 @@ export interface MutationRequest<TInput = any> extends BaseRequest {
   procedure: string;
 }
 
-export type Request = QueryRequest | MutationRequest;
+export type Request = QueryRequest | MutationRequest | QueryProcedureRequest;
 
 export type ContextProvider = (
   req: Omit<BaseRequest, "context"> & {
@@ -114,7 +116,7 @@ export class Server<TRouter extends AnyRouter> {
 
           const result = await (
             this.router.routes[query.resource] as
-              | Route<any, any, any>
+              | Route<any, any, any, any>
               | undefined
           )?.handleQuery({
             req,
@@ -126,7 +128,7 @@ export class Server<TRouter extends AnyRouter> {
         incrementQueryStep: (step: CoreQueryStep, context: any = {}) => {
           const authorizationClause = (
             this.router.routes[step.query.resource] as
-              | Route<any, any, any>
+              | Route<any, any, any, any>
               | undefined
           )?.getAuthorizationClause({
             ...step.query,
@@ -216,7 +218,7 @@ export class Server<TRouter extends AnyRouter> {
     const result = await this.wrapInMiddlewares(
       async (req: MutationRequest) => {
         const route = this.router.routes[req.resource] as
-          | Route<any, any, any>
+          | Route<any, any, any, any>
           | undefined;
 
         if (!route) {
@@ -224,6 +226,28 @@ export class Server<TRouter extends AnyRouter> {
         }
 
         return route.handleMutation({
+          req,
+          db: this.storage,
+          schema: this.schema,
+        });
+      }
+    )(opts.req);
+
+    return result;
+  }
+
+  public async handleCustomQuery(opts: { req: QueryProcedureRequest }): Promise<any> {
+    const result = await this.wrapInMiddlewares(
+      async (req: QueryProcedureRequest) => {
+        const route = this.router.routes[req.resource] as
+          | Route<any, any, any, any>
+          | undefined;
+
+        if (!route) {
+          throw new Error("Invalid resource");
+        }
+
+        return route.handleCustomQuery({
           req,
           db: this.storage,
           schema: this.schema,

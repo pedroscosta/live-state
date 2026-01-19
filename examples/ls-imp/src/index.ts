@@ -15,7 +15,7 @@ export const routerImpl = router({
   routes: {
     groups: publicRoute
       .collectionRoute(schema.groups)
-      .withMutations(({ mutation }) => ({
+      .withProcedures(({ mutation, query }) => ({
         hello: mutation(z.string()).handler(async ({ req }) => {
           return {
             message: `Hello ${req.input}`,
@@ -70,6 +70,51 @@ export const routerImpl = router({
               return "Transaction successful";
             }
           });
+        }),
+        getStats: query().handler(async ({ db }) => {
+          const allGroups = await db.find(schema.groups, {
+            include: {
+              cards: true,
+            },
+          });
+
+          const totalGroups = Object.keys(allGroups).length;
+          const totalCards = Object.values(allGroups).reduce(
+            (sum, group) =>
+              sum + (group.cards ? Object.keys(group.cards).length : 0),
+            0
+          );
+          const groupsWithCards = Object.values(allGroups).filter(
+            (group) => group.cards && Object.keys(group.cards).length > 0
+          ).length;
+
+          return {
+            totalGroups,
+            totalCards,
+            groupsWithCards,
+            averageCardsPerGroup:
+              totalGroups > 0 ? (totalCards / totalGroups).toFixed(2) : "0.00",
+          };
+        }),
+        searchByName: query(z.string().min(1)).handler(async ({ req, db }) => {
+          const allGroups = await db.find(schema.groups, {
+            include: {
+              cards: true,
+            },
+          });
+
+          const searchTerm = req.input!.toLowerCase();
+          const matchingGroups = Object.values(allGroups).filter((group) =>
+            group.name.toLowerCase().includes(searchTerm)
+          );
+
+          return matchingGroups.reduce(
+            (acc, group) => {
+              acc[group.id] = group;
+              return acc;
+            },
+            {} as Record<string, (typeof matchingGroups)[0]>
+          );
         }),
       })),
     cards: publicRoute.collectionRoute(schema.cards, {

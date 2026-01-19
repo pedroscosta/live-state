@@ -119,8 +119,28 @@ export const httpTransportLayer = (
       if (request.method === "POST") {
         try {
           const procedure = segments[segments.length - 1];
-          const resource = segments[segments.length - 2];
+          const secondToLast = segments[segments.length - 2];
 
+          if (secondToLast === "query") {
+            const resource = segments[segments.length - 3];
+            const rawBody = request.body ? await request.json() : {};
+
+            const result = await server.handleCustomQuery({
+              req: {
+                ...baseRequestData,
+                type: "CUSTOM_QUERY",
+                resource,
+                procedure,
+                input: rawBody.input,
+                context: initialContext,
+                queryParams: rawParsedQs,
+              },
+            });
+
+            return Response.json(result);
+          }
+
+          const resource = secondToLast;
           const rawBody = request.body ? await request.json() : {};
 
           let body: HttpMutation;

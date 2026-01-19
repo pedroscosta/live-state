@@ -135,26 +135,49 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
     },
   };
 
+  const wrapQueryBuilderWithCustomQueries = (
+    routeName: string,
+    queryBuilder: QueryBuilder<any, any, any, any>
+  ) => {
+    return new Proxy(queryBuilder, {
+      get(target, prop, receiver) {
+        if (prop in target) {
+          return Reflect.get(target, prop, receiver);
+        }
+        // If it's a string, it's a custom query method
+        if (typeof prop === "string") {
+          return async (input?: any) => {
+            const headers = (await consumeGeneratable(opts.credentials)) ?? {};
+            return await safeFetch(
+              `${opts.url}/${routeName}/query/${prop}`,
+              {
+                method: "POST",
+                headers: {
+                  ...headers,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ input }),
+              },
+              opts.fetchOptions
+            );
+          };
+        }
+        return undefined;
+      },
+    });
+  };
+
   return {
     query: Object.entries(opts.schema).reduce(
       (acc, [key, value]) => {
-        acc[key as keyof TRouter["routes"]] = QueryBuilder._init(
-          value,
-          queryExecutor,
-          true
+        acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
+          key,
+          QueryBuilder._init(value, queryExecutor, true)
         );
         return acc;
       },
-      {} as Record<
-        keyof TRouter["routes"],
-        QueryBuilder<
-          TRouter["routes"][keyof TRouter["routes"]]["resourceSchema"],
-          {},
-          false,
-          true
-        >
-      >
-    ),
+      {} as any
+    ) as Client<TRouter, true>["query"],
     mutate: createObservable(() => {}, {
       apply: async (_, path, argumentsList) => {
         if (path.length < 2) return;

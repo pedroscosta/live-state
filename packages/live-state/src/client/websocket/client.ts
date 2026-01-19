@@ -498,6 +498,34 @@ class InnerClient implements QueryExecutor {
     });
   }
 
+  public genericQuery(routeName: string, procedure: string, input?: any) {
+    if (!this.ws || !this.ws.connected())
+      throw new Error("WebSocket not connected");
+
+    const queryMessage = {
+      id: generateId(),
+      type: "CUSTOM_QUERY" as const,
+      resource: routeName,
+      procedure,
+      input,
+    };
+
+    this.sendWsMessage(queryMessage);
+
+    return new Promise((resolve, reject) => {
+      this.replyHandlers[queryMessage.id] = {
+        timeoutHandle: setTimeout(() => {
+          delete this.replyHandlers[queryMessage.id];
+          reject(new Error("Reply timeout"));
+        }, 5000),
+        handler: (data: any) => {
+          delete this.replyHandlers[queryMessage.id];
+          resolve(data);
+        },
+      };
+    });
+  }
+
   public addEventListener(listener: (event: ClientEvents) => void) {
     this.eventListeners.add(listener);
     return () => {
@@ -530,6 +558,24 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
 
+  const wrapQueryBuilderWithCustomQueries = (
+    routeName: string,
+    queryBuilder: QueryBuilder<any>
+  ) => {
+    return new Proxy(queryBuilder, {
+      get(target, prop, receiver) {
+        if (prop in target) {
+          return Reflect.get(target, prop, receiver);
+        }
+        // If it's a string, it's a custom query method
+        if (typeof prop === "string") {
+          return (input?: any) => ogClient.genericQuery(routeName, prop, input);
+        }
+        return undefined;
+      },
+    });
+  };
+
   return {
     client: {
       ws: ogClient.ws,
@@ -543,19 +589,14 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
     store: {
       query: Object.entries(opts.schema).reduce(
         (acc, [key, value]) => {
-          acc[key as keyof TRouter["routes"]] = QueryBuilder._init(
-            value,
-            ogClient
+          acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
+            key,
+            QueryBuilder._init(value, ogClient)
           );
           return acc;
         },
-        {} as Record<
-          keyof TRouter["routes"],
-          QueryBuilder<
-            TRouter["routes"][keyof TRouter["routes"]]["resourceSchema"]
-          >
-        >
-      ),
+        {} as any
+      ) as ClientType<TRouter>["query"],
       mutate: createObservable(() => {}, {
         apply: (_, path, argumentsList) => {
           if (path.length < 2) return;

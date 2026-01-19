@@ -64,7 +64,7 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Record<keyof TSchema, Route<any, any, any>>,
+  TRoutes extends Record<keyof TSchema, Route<any, any, any, any>>,
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
@@ -86,6 +86,7 @@ export type Mutation<
   TInputValidator extends StandardSchemaV1<any, any> | never,
   TOutput,
 > = {
+  _type: "mutation";
   inputValidator: TInputValidator;
   handler: (opts: {
     req: MutationRequest<
@@ -97,8 +98,76 @@ export type Mutation<
   }) => TOutput;
 };
 
+export interface QueryProcedureRequest<TInput = any> extends BaseRequest {
+  type: "CUSTOM_QUERY";
+  input: TInput;
+  resource: string;
+  procedure: string;
+}
+
+export type Query<
+  TInputValidator extends StandardSchemaV1<any, any> | never,
+  TOutput,
+> = {
+  _type: "query";
+  inputValidator: TInputValidator;
+  handler: (opts: {
+    req: QueryProcedureRequest<
+      TInputValidator extends StandardSchemaV1<any, any>
+        ? StandardSchemaV1.InferOutput<TInputValidator>
+        : undefined
+    >;
+    db: ServerDB<any>;
+  }) => TOutput;
+};
+
+export type Procedure<
+  TInputValidator extends StandardSchemaV1<any, any> | never,
+  TOutput,
+> = Mutation<TInputValidator, TOutput> | Query<TInputValidator, TOutput>;
+
+type QueryCreator = {
+  (): {
+    handler: <TOutput>(
+      handler: (opts: {
+        req: QueryProcedureRequest<undefined>;
+        db: ServerDB<any>;
+      }) => TOutput
+    ) => Query<StandardSchemaV1<any, undefined>, TOutput>;
+  };
+  <TInputValidator extends StandardSchemaV1<any, any>>(
+    validator: TInputValidator
+  ): {
+    handler: <
+      THandler extends (opts: {
+        req: QueryProcedureRequest<
+          StandardSchemaV1.InferOutput<TInputValidator>
+        >;
+        db: ServerDB<any>;
+      }) => any,
+    >(
+      handler: THandler
+    ) => Query<TInputValidator, ReturnType<THandler>>;
+  };
+};
+
+const queryCreator = (<TInputValidator extends StandardSchemaV1<any, any>>(
+  validator?: TInputValidator
+) => {
+  return {
+    handler: <THandler extends Query<TInputValidator, any>["handler"]>(
+      handler: THandler
+    ) =>
+      ({
+        _type: "query",
+        inputValidator:
+          validator ?? (z.undefined() as StandardSchemaV1<any, undefined>),
+        handler,
+      }) as Query<TInputValidator, ReturnType<THandler>>,
+  };
+}) as QueryCreator;
+
 type MutationCreator = {
-  // Overload for no validator (no input required)
   (): {
     handler: <TOutput>(
       handler: (opts: {
@@ -107,7 +176,6 @@ type MutationCreator = {
       }) => TOutput
     ) => Mutation<StandardSchemaV1<any, undefined>, TOutput>;
   };
-  // Overload for with validator
   <TInputValidator extends StandardSchemaV1<any, any>>(
     validator: TInputValidator
   ): {
@@ -130,6 +198,7 @@ const mutationCreator = (<TInputValidator extends StandardSchemaV1<any, any>>(
       handler: THandler
     ) =>
       ({
+        _type: "mutation",
         inputValidator:
           validator ?? (z.undefined() as StandardSchemaV1<any, undefined>),
         handler,
@@ -210,22 +279,26 @@ export class Route<
   TResourceSchema extends LiveObjectAny,
   TMiddleware extends Middleware<any>,
   TCustomMutations extends Record<string, Mutation<any, any>>,
+  TCustomQueries extends Record<string, Query<any, any>>,
 > {
   readonly resourceSchema: TResourceSchema;
   readonly middlewares: Set<TMiddleware>;
   readonly customMutations: TCustomMutations;
+  readonly customQueries: TCustomQueries;
   readonly authorization?: Authorization<TResourceSchema>;
   readonly hooks?: Hooks<TResourceSchema>;
 
   public constructor(
     resourceSchema: TResourceSchema,
     customMutations?: TCustomMutations,
+    customQueries?: TCustomQueries,
     authorization?: Authorization<TResourceSchema>,
     hooks?: Hooks<TResourceSchema>
   ) {
     this.resourceSchema = resourceSchema;
     this.middlewares = new Set();
     this.customMutations = customMutations ?? ({} as TCustomMutations);
+    this.customQueries = customQueries ?? ({} as TCustomQueries);
     this.authorization = authorization;
     this.hooks = hooks;
   }
@@ -237,21 +310,68 @@ export class Route<
     return this;
   }
 
-  public withMutations<T extends Record<string, Mutation<any, any>>>(
-    mutationFactory: (opts: { mutation: typeof mutationCreator }) => T
+  public withProcedures<T extends Record<string, Procedure<any, any>>>(
+    procedureFactory: (opts: {
+      mutation: typeof mutationCreator;
+      query: typeof queryCreator;
+    }) => T
   ) {
-    return new Route<TResourceSchema, TMiddleware, T>(
+    const procedures = procedureFactory({
+      mutation: mutationCreator,
+      query: queryCreator,
+    });
+
+    const mutations: Record<string, Mutation<any, any>> = {};
+    const queries: Record<string, Query<any, any>> = {};
+
+    for (const [key, procedure] of Object.entries(procedures)) {
+      if (procedure._type === "mutation") {
+        mutations[key] = procedure;
+      } else {
+        queries[key] = procedure;
+      }
+    }
+
+    type ExtractMutations<R> = {
+      [K in keyof R as R[K] extends Mutation<any, any> ? K : never]: R[K];
+    };
+    type ExtractQueries<R> = {
+      [K in keyof R as R[K] extends Query<any, any> ? K : never]: R[K];
+    };
+
+    return new Route<
+      TResourceSchema,
+      TMiddleware,
+      ExtractMutations<T> & Record<string, Mutation<any, any>>,
+      ExtractQueries<T> & Record<string, Query<any, any>>
+    >(
       this.resourceSchema,
-      mutationFactory({ mutation: mutationCreator }),
+      mutations as ExtractMutations<T> & Record<string, Mutation<any, any>>,
+      queries as ExtractQueries<T> & Record<string, Query<any, any>>,
       this.authorization,
       this.hooks
     );
   }
 
+  /**
+   * @deprecated Use `withProcedures` instead
+   */
+  public withMutations<T extends Record<string, Mutation<any, any>>>(
+    mutationFactory: (opts: { mutation: typeof mutationCreator }) => T
+  ) {
+    return this.withProcedures(({ mutation }) => mutationFactory({ mutation }));
+  }
+
   public withHooks(hooks: Hooks<TResourceSchema>) {
-    return new Route<TResourceSchema, TMiddleware, TCustomMutations>(
+    return new Route<
+      TResourceSchema,
+      TMiddleware,
+      TCustomMutations,
+      TCustomQueries
+    >(
       this.resourceSchema,
       this.customMutations,
+      this.customQueries,
       this.authorization,
       hooks
     );
@@ -376,6 +496,64 @@ export class Route<
       } else {
         throw new Error(`Unknown procedure: ${req.procedure}`);
       }
+    })(req);
+  };
+
+  /** @internal */
+  public handleCustomQuery = async ({
+    req,
+    db,
+    schema,
+  }: {
+    req: QueryProcedureRequest;
+    db: Storage;
+    schema: Schema<any>;
+  }): Promise<any> => {
+    const serverDB = createServerDB(db, schema);
+
+    return await this.wrapInMiddlewares(async (req: QueryProcedureRequest) => {
+      const customProcedure = this.customQueries[req.procedure];
+
+      if (!customProcedure) {
+        throw new Error(`Unknown query procedure: ${req.procedure}`);
+      }
+
+      const validationResult = customProcedure.inputValidator[
+        "~standard"
+      ].validate(req.input);
+
+      const result =
+        validationResult instanceof Promise
+          ? await validationResult
+          : validationResult;
+
+      if (result.issues) {
+        const errorMessage = result.issues
+          .map(
+            (issue: {
+              message: string;
+              path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+            }) => {
+              const path = issue.path
+                ?.map((p) =>
+                  typeof p === "object" && "key" in p
+                    ? String(p.key)
+                    : String(p)
+                )
+                .join(".");
+              return path ? `${path}: ${issue.message}` : issue.message;
+            }
+          )
+          .join(", ");
+        throw new Error(`Validation failed: ${errorMessage}`);
+      }
+
+      req.input = result.value;
+
+      return customProcedure.handler({
+        req,
+        db: serverDB,
+      });
     })(req);
   };
 
@@ -625,12 +803,14 @@ export class RouteFactory {
     shape: T,
     authorization?: Authorization<T>
   ) {
-    return new Route<T, Middleware<any>, Record<string, never>>(
-      shape,
-      undefined,
-      authorization,
-      undefined
-    ).use(...this.middlewares);
+    return new Route<
+      T,
+      Middleware<any>,
+      Record<string, never>,
+      Record<string, never>
+    >(shape, undefined, undefined, authorization, undefined).use(
+      ...this.middlewares
+    );
   }
 
   use(...middlewares: Middleware<any>[]) {
@@ -647,5 +827,6 @@ export const routeFactory = RouteFactory.create;
 export type AnyRoute = Route<
   LiveObjectAny,
   Middleware<any>,
+  Record<string, any>,
   Record<string, any>
 >;
