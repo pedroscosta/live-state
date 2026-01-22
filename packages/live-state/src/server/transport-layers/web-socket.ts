@@ -63,57 +63,113 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
           parsedMessage.type === "SUBSCRIBE" ||
           parsedMessage.type === "QUERY"
         ) {
-          const { type, id, ...query } = parsedMessage;
+          const { type, id, ...queryOrCustom } = parsedMessage;
           const isSubscribe = type === "SUBSCRIBE";
 
-          const result = await server.handleQuery({
-            req: {
-              ...requestContext,
-              ...query,
-              type: "QUERY",
-              context: (await initialContext) ?? {},
-              queryParams: parsedQs,
-            },
-            subscription: isSubscribe
-              ? (m) => {
-                  if (
-                    !m.resourceId ||
-                    !m.payload ||
-                    !Object.keys(m.payload).length
-                  )
-                    return;
+          if ("procedure" in queryOrCustom) {
+            const result = await server.handleCustomQuery({
+              req: {
+                ...requestContext,
+                type: "CUSTOM_QUERY",
+                resource: queryOrCustom.resource,
+                procedure: queryOrCustom.procedure,
+                input: queryOrCustom.input,
+                context: (await initialContext) ?? {},
+                queryParams: parsedQs,
+              },
+              subscription: isSubscribe
+                ? (m) => {
+                    if (
+                      !m.resourceId ||
+                      !m.payload ||
+                      !Object.keys(m.payload).length
+                    )
+                      return;
 
-                  connections[clientId]?.send(JSON.stringify(m));
-                }
-              : undefined,
-          });
+                    connections[clientId]?.send(JSON.stringify(m));
+                  }
+                : undefined,
+            });
 
-          if (!result || !result.data) {
-            throw new Error("Invalid resource");
+            if (isSubscribe) {
+              if (!result || !result.data || !result.query) {
+                throw new Error("Invalid resource");
+              }
+
+              if (result.unsubscribe) {
+                console.log("setting unsubscribe", hash(queryOrCustom), JSON.stringify(queryOrCustom));
+                subscriptions.set(hash(queryOrCustom), result.unsubscribe);
+              }
+
+              reply({
+                id: id,
+                type: "REPLY",
+                data: {
+                  resource: result.query.resource,
+                  data: (result.data ?? []).map(
+                    (v: MaterializedLiveType<LiveObjectAny>) => v.value
+                  ),
+                },
+              });
+            } else {
+              reply({
+                id: id,
+                type: "REPLY",
+                data: result,
+              });
+            }
+          } else {
+            const result = await server.handleQuery({
+              req: {
+                ...requestContext,
+                ...queryOrCustom,
+                type: "QUERY",
+                context: (await initialContext) ?? {},
+                queryParams: parsedQs,
+              },
+              subscription: isSubscribe
+                ? (m) => {
+                    if (
+                      !m.resourceId ||
+                      !m.payload ||
+                      !Object.keys(m.payload).length
+                    )
+                      return;
+
+                    connections[clientId]?.send(JSON.stringify(m));
+                  }
+                : undefined,
+            });
+
+            if (!result || !result.data) {
+              throw new Error("Invalid resource");
+            }
+
+            if (isSubscribe && result.unsubscribe) {
+              subscriptions.set(hash(queryOrCustom), result.unsubscribe);
+            }
+
+            reply({
+              id: id,
+              type: "REPLY",
+              data: {
+                resource: queryOrCustom.resource,
+                data: (result.data ?? []).map(
+                  (v: MaterializedLiveType<LiveObjectAny>) => v.value
+                ),
+              },
+            });
           }
-
-          if (isSubscribe && result.unsubscribe) {
-            subscriptions.set(hash(query), result.unsubscribe);
-          }
-
-          reply({
-            id: id,
-            type: "REPLY",
-            data: {
-              resource: query.resource,
-              data: (result.data ?? []).map(
-                (v: MaterializedLiveType<LiveObjectAny>) => v.value
-              ),
-            },
-          });
         } else if (parsedMessage.type === "UNSUBSCRIBE") {
-          const { type: _type, id: _id, ...query } = parsedMessage;
+          const { type: _type, id: _id, ...queryOrCustom } = parsedMessage;
 
-          const unsubscribe = subscriptions.get(hash(query));
+          console.log("unsubscribing", hash(queryOrCustom), JSON.stringify(queryOrCustom));
+
+          const unsubscribe = subscriptions.get(hash(queryOrCustom));
 
           if (unsubscribe) {
             unsubscribe();
-            subscriptions.delete(hash(query));
+            subscriptions.delete(hash(queryOrCustom));
           }
         } else if (parsedMessage.type === "CUSTOM_QUERY") {
           const { resource, procedure, input, id } = parsedMessage;

@@ -279,6 +279,27 @@ describe("useLoadData", () => {
     );
   });
 
+  test("should accept custom query requests", () => {
+    const customQuery = {
+      buildQueryRequest: vi.fn(() => ({
+        resource: "users",
+        procedure: "getActiveUsers",
+        input: { active: true },
+      })),
+    };
+
+    renderHook(() => useLoadData(mockClient as any, customQuery as any));
+
+    expect(mockClient.load).toHaveBeenCalledTimes(1);
+    expect(mockClient.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: "users",
+        procedure: "getActiveUsers",
+        input: { active: true },
+      })
+    );
+  });
+
   test("should unsubscribe on unmount", () => {
     const { unmount } = renderHook(() =>
       useLoadData(mockClient as any, mockQueryBuilder as any)

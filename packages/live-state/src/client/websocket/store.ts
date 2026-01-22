@@ -155,7 +155,9 @@ export class OptimisticStore {
       result = filterWithLimit(result, whereFunc, query.limit);
     }
 
-    if (!force) this.querySnapshots[queryKey] = result;
+    if (!force && this.collectionSubscriptions.has(queryKey)) {
+      this.querySnapshots[queryKey] = result;
+    }
 
     return result;
   }

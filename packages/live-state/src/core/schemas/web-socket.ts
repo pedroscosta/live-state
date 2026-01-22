@@ -1,10 +1,11 @@
-import { z } from "zod";
+import { z } from 'zod';
 import {
-  defaultMutationSchema,
-  genericMutationSchema,
-  queryPayloadSchema,
-  querySchema,
-} from "./core-protocol";
+	customQuerySchema,
+	defaultMutationSchema,
+	genericMutationSchema,
+	queryPayloadSchema,
+	querySchema,
+} from './core-protocol';
 
 export const msgId = z.string();
 
@@ -12,59 +13,67 @@ export const msgId = z.string();
  * Client messages
  */
 
-export const clSubscribeMsgSchema = querySchema.extend({
-  id: msgId,
-  type: z.literal("SUBSCRIBE"),
-});
+const queryRequestSchema = z.union([customQuerySchema, querySchema]);
 
-export const clUnsubscribeMsgSchema = querySchema.extend({
-  id: msgId,
-  type: z.literal("UNSUBSCRIBE"),
-});
+export const clSubscribeMsgSchema = z
+	.object({
+		id: msgId,
+		type: z.literal('SUBSCRIBE'),
+	})
+	.and(queryRequestSchema);
 
-export const clQueryMsgSchema = querySchema.extend({
-  id: msgId,
-  type: z.literal("QUERY"),
-});
+export const clUnsubscribeMsgSchema = z
+	.object({
+		id: msgId,
+		type: z.literal('UNSUBSCRIBE'),
+	})
+	.and(queryRequestSchema);
+
+export const clQueryMsgSchema = z
+	.object({
+		id: msgId,
+		type: z.literal('QUERY'),
+	})
+	.and(queryRequestSchema);
 
 export const clCustomQueryMsgSchema = z.object({
-  id: msgId,
-  type: z.literal("CUSTOM_QUERY"),
-  resource: z.string(),
-  procedure: z.string(),
-  input: z.any().optional(),
+	id: msgId,
+	type: z.literal('CUSTOM_QUERY'),
+	resource: z.string(),
+	procedure: z.string(),
+	input: z.any().optional(),
 });
 
 export type CustomQueryMessage = z.infer<typeof clCustomQueryMsgSchema>;
 
 export const defaultMutationMsgSchema = defaultMutationSchema.extend({
-  id: msgId,
+	id: msgId,
 });
 
 export type DefaultMutationMessage = Omit<
-  z.infer<typeof defaultMutationMsgSchema>,
-  "resourceId"
+	z.infer<typeof defaultMutationMsgSchema>,
+	'resourceId'
 > & {
-  resourceId: string;
+	resourceId: string;
 };
 
 export const genericMutationMsgSchema = genericMutationSchema.extend({
-  id: msgId,
+	id: msgId,
 });
 
 export const mutationMsgSchema = z.union([
-  genericMutationMsgSchema,
-  defaultMutationMsgSchema,
+	genericMutationMsgSchema,
+	defaultMutationMsgSchema,
 ]);
 
 export type MutationMessage = z.infer<typeof mutationMsgSchema>;
 
 export const clientMessageSchema = z.union([
-  clSubscribeMsgSchema,
-  clQueryMsgSchema,
-  clCustomQueryMsgSchema,
-  mutationMsgSchema,
-  clUnsubscribeMsgSchema,
+	clSubscribeMsgSchema,
+	clQueryMsgSchema,
+	clCustomQueryMsgSchema,
+	mutationMsgSchema,
+	clUnsubscribeMsgSchema,
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -74,27 +83,27 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
  */
 
 export const svRejectMsgSchema = z.object({
-  id: msgId,
-  type: z.literal("REJECT"),
-  resource: z.string(),
-  message: z.string().optional(),
+	id: msgId,
+	type: z.literal('REJECT'),
+	resource: z.string(),
+	message: z.string().optional(),
 });
 
 export const svReplyMsgSchema = z.object({
-  id: msgId,
-  type: z.literal("REPLY"),
-  data: z.any(),
+	id: msgId,
+	type: z.literal('REPLY'),
+	data: z.any(),
 });
 
 export const serverMessageSchema = z.union([
-  svRejectMsgSchema,
-  svReplyMsgSchema,
-  defaultMutationMsgSchema,
+	svRejectMsgSchema,
+	svReplyMsgSchema,
+	defaultMutationMsgSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 
 export const syncReplyDataSchema = z.object({
-  resource: z.string(),
-  data: z.array(queryPayloadSchema),
+	resource: z.string(),
+	data: z.array(queryPayloadSchema),
 });
