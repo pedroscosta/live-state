@@ -27,6 +27,16 @@ export const clQueryMsgSchema = querySchema.extend({
   type: z.literal("QUERY"),
 });
 
+export const clCustomQueryMsgSchema = z.object({
+  id: msgId,
+  type: z.literal("CUSTOM_QUERY"),
+  resource: z.string(),
+  procedure: z.string(),
+  input: z.any().optional(),
+});
+
+export type CustomQueryMessage = z.infer<typeof clCustomQueryMsgSchema>;
+
 export const defaultMutationMsgSchema = defaultMutationSchema.extend({
   id: msgId,
 });
@@ -52,6 +62,7 @@ export type MutationMessage = z.infer<typeof mutationMsgSchema>;
 export const clientMessageSchema = z.union([
   clSubscribeMsgSchema,
   clQueryMsgSchema,
+  clCustomQueryMsgSchema,
   mutationMsgSchema,
   clUnsubscribeMsgSchema,
 ]);

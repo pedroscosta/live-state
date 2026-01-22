@@ -517,7 +517,7 @@ describe("Route UPDATE Authorization", () => {
 
   test("should pass pre-mutation authorization for UPDATE operations", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
@@ -582,7 +582,7 @@ describe("Route UPDATE Authorization", () => {
 
   test("should fail pre-mutation authorization for UPDATE operations", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
@@ -633,7 +633,7 @@ describe("Route UPDATE Authorization", () => {
 
   test("should pass post-mutation authorization for UPDATE operations", async () => {
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
@@ -687,7 +687,7 @@ describe("Route UPDATE Authorization", () => {
 
   test("should fail post-mutation authorization for UPDATE operations", async () => {
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
@@ -740,7 +740,7 @@ describe("Route UPDATE Authorization", () => {
 
   test("should pass UPDATED values to post-mutation authorization handler", async () => {
     const postMutationAuth = vi.fn().mockReturnValue(true);
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
@@ -811,7 +811,7 @@ describe("Route UPDATE Authorization", () => {
   test("should work with both pre and post mutation authorization", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: {
         preMutation: preMutationAuth,
         postMutation: postMutationAuth,
@@ -889,7 +889,7 @@ describe("Route UPDATE Authorization", () => {
   test("should fail when pre-mutation passes but post-mutation fails", async () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: {
         preMutation: preMutationAuth,
         postMutation: postMutationAuth,
@@ -1007,7 +1007,7 @@ describe("Route UPDATE Authorization", () => {
     const preMutationAuth = vi.fn().mockReturnValue({
       $and: [{ userId: "123" }, { role: "admin" }],
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
@@ -1119,7 +1119,7 @@ describe("Route INSERT Authorization", () => {
 
   test("should pass INSERT authorization", async () => {
     const insertAuth = vi.fn().mockReturnValue({ userId: "123" });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -1182,7 +1182,7 @@ describe("Route INSERT Authorization", () => {
 
   test("should fail INSERT authorization", async () => {
     const insertAuth = vi.fn().mockReturnValue({ userId: "456" }); // Different user
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -1243,7 +1243,7 @@ describe("Route INSERT Authorization", () => {
 
   test("should handle INSERT authorization with boolean false", async () => {
     const insertAuth = vi.fn().mockReturnValue(false);
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -1295,7 +1295,7 @@ describe("Route INSERT Authorization", () => {
 
   test("should handle INSERT authorization with boolean true", async () => {
     const insertAuth = vi.fn().mockReturnValue(true);
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2097,7 +2097,7 @@ describe("Route Authorization Error Handling", () => {
     const insertAuth = vi.fn().mockImplementation(() => {
       throw new Error("Insert authorization error");
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2149,7 +2149,7 @@ describe("Route Authorization Error Handling", () => {
     const preMutationAuth = vi.fn().mockImplementation(() => {
       throw new Error("Pre-mutation authorization error");
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
@@ -2199,7 +2199,7 @@ describe("Route Authorization Error Handling", () => {
     const postMutationAuth = vi.fn().mockImplementation(() => {
       throw new Error("Post-mutation authorization error");
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
@@ -2291,7 +2291,7 @@ describe("Route Complex Authorization Scenarios", () => {
     const preMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
     const postMutationAuth = vi.fn().mockReturnValue({ userId: "123" });
 
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       read: readAuth,
       insert: insertAuth,
       update: {
@@ -2481,7 +2481,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
         published: true,
       },
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2566,7 +2566,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
         },
       },
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2625,7 +2625,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
 
   test("should fetch related data for UPDATE preMutation authorization", async () => {
     const preMutationAuth = vi.fn().mockReturnValue(true); // Use boolean true to simplify
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { preMutation: preMutationAuth },
     });
 
@@ -2659,7 +2659,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
 
   test("should fetch related data for UPDATE postMutation authorization", async () => {
     const postMutationAuth = vi.fn().mockReturnValue(true); // Use boolean true to simplify
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: { postMutation: postMutationAuth },
     });
 
@@ -2693,7 +2693,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
 
   test("should not fetch related data if authorization returns boolean", async () => {
     const insertAuth = vi.fn().mockReturnValue(true);
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2729,7 +2729,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
     const insertAuth = vi.fn().mockReturnValue({
       $and: [{ posts: { published: true } }, { profile: { verified: true } }],
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2782,7 +2782,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
     const insertAuth = vi.fn().mockReturnValue({
       $or: [{ posts: { published: true } }, { profile: { verified: true } }],
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2837,7 +2837,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
         published: true,
       },
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2883,7 +2883,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
     const insertAuth = vi.fn().mockReturnValue({
       name: "John",
     });
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       insert: insertAuth,
     });
 
@@ -2918,7 +2918,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
   test("should handle UPDATE with both preMutation and postMutation with relations", async () => {
     const preMutationAuth = vi.fn().mockReturnValue(true);
     const postMutationAuth = vi.fn().mockReturnValue(true);
-    const route = new Route(mockResource, undefined, {
+    const route = new Route(mockResource, undefined, undefined, {
       update: {
         preMutation: preMutationAuth,
         postMutation: postMutationAuth,

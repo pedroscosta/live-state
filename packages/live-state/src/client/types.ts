@@ -27,6 +27,16 @@ type CustomMutationFunction<TInput, TOutput> = [TInput] extends
   : (input: TInput) => Promisify<TOutput>;
 
 /**
+ * Helper type for custom query functions.
+ * When the input type is `never` or `undefined`, the function has no parameters.
+ */
+type CustomQueryFunction<TInput, TOutput> = [TInput] extends
+  | [never]
+  | [undefined]
+  ? () => Promisify<TOutput>
+  : (input: TInput) => Promisify<TOutput>;
+
+/**
  * Simplified router constraint for client-side usage.
  * This avoids importing server-internal types like Storage and Hooks,
  * which can cause type incompatibilities when the package is bundled.
@@ -39,6 +49,15 @@ export type ClientRouterConstraint = {
       customMutations: Record<
         string,
         {
+          _type: "mutation";
+          inputValidator: StandardSchemaV1<any, any>;
+          handler: (...args: any[]) => any;
+        }
+      >;
+      customQueries: Record<
+        string,
+        {
+          _type: "query";
           inputValidator: StandardSchemaV1<any, any>;
           handler: (...args: any[]) => any;
         }
@@ -57,7 +76,14 @@ export type Client<
       {},
       false,
       TShouldAwait
-    >;
+    > & {
+      [K2 in keyof TRouter["routes"][K]["customQueries"]]: CustomQueryFunction<
+        InferSchema<
+          TRouter["routes"][K]["customQueries"][K2]["inputValidator"]
+        >,
+        ReturnType<TRouter["routes"][K]["customQueries"][K2]["handler"]>
+      >;
+    };
   };
   mutate: {
     [K in keyof TRouter["routes"]]: {

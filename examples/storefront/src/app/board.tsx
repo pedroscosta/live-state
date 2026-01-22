@@ -79,6 +79,62 @@ export function Board(): JSX.Element {
         >
           Custom mutation (fetch)
         </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            client.query.groups.getStats().then((res) => {
+              console.log("Groups stats (fetch):", res);
+              alert(
+                `Stats:\nTotal Groups: ${res.totalGroups}\nTotal Cards: ${res.totalCards}\nGroups with Cards: ${res.groupsWithCards}\nAverage Cards per Group: ${res.averageCardsPerGroup}`
+              );
+            });
+          }}
+        >
+          Get Stats (fetch query)
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            store.query.groups.getStats().then((res) => {
+              console.log("Groups stats (ws):", res);
+              alert(
+                `Stats:\nTotal Groups: ${res.totalGroups}\nTotal Cards: ${res.totalCards}\nGroups with Cards: ${res.groupsWithCards}\nAverage Cards per Group: ${res.averageCardsPerGroup}`
+              );
+            });
+          }}
+        >
+          Get Stats (ws query)
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            const searchTerm = prompt("Enter search term:");
+            if (searchTerm) {
+              client.query.groups.searchByName(searchTerm).then((res) => {
+                console.log("Search results (fetch):", res);
+                const count = Object.keys(res).length;
+                alert(`Found ${count} group(s) matching "${searchTerm}"`);
+              });
+            }
+          }}
+        >
+          Search Groups (fetch query)
+        </Button>
+        <Button
+          className="w-sm"
+          onClick={() => {
+            const searchTerm = prompt("Enter search term:");
+            if (searchTerm) {
+              store.query.groups.searchByName(searchTerm).then((res) => {
+                console.log("Search results (ws):", res);
+                const count = Object.keys(res).length;
+                alert(`Found ${count} group(s) matching "${searchTerm}"`);
+              });
+            }
+          }}
+        >
+          Search Groups (ws query)
+        </Button>
       </div>
     </div>
   );

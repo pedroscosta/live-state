@@ -61,3 +61,11 @@ export const mutationSchema = z.union([
 ]);
 
 export type RawMutationRequest = z.infer<typeof mutationSchema>;
+
+export const customQuerySchema = z.object({
+  resource: z.string(),
+  procedure: z.string(),
+  input: z.any().optional(),
+});
+
+export type CustomQueryRequest = z.infer<typeof customQuerySchema>;

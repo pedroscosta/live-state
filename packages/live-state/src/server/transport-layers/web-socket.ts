@@ -115,6 +115,36 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
             unsubscribe();
             subscriptions.delete(hash(query));
           }
+        } else if (parsedMessage.type === "CUSTOM_QUERY") {
+          const { resource, procedure, input, id } = parsedMessage;
+          logger.debug("Received custom query from client:", parsedMessage);
+          try {
+            const result = await server.handleCustomQuery({
+              req: {
+                ...requestContext,
+                type: "CUSTOM_QUERY",
+                resource,
+                procedure,
+                input,
+                context: (await initialContext) ?? {},
+                queryParams: parsedQs,
+              },
+            });
+
+            reply({
+              id,
+              type: "REPLY",
+              data: result,
+            });
+          } catch (e) {
+            reply({
+              id,
+              type: "REJECT",
+              resource,
+              message: (e as Error).message,
+            });
+            logger.error("Error handling custom query from the client:", e);
+          }
         } else if (parsedMessage.type === "MUTATE") {
           const { resource } = parsedMessage;
           logger.debug("Received mutation from client:", parsedMessage);
