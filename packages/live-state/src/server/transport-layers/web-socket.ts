@@ -56,7 +56,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
         logger.debug("Message received from the client:", message);
 
         const parsedMessage = clientMessageSchema.parse(
-          JSON.parse(message.toString())
+          JSON.parse(message.toString()),
         );
 
         if (
@@ -97,7 +97,6 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               }
 
               if (result.unsubscribe) {
-                console.log("setting unsubscribe", hash(queryOrCustom), JSON.stringify(queryOrCustom));
                 subscriptions.set(hash(queryOrCustom), result.unsubscribe);
               }
 
@@ -107,7 +106,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 data: {
                   resource: result.query.resource,
                   data: (result.data ?? []).map(
-                    (v: MaterializedLiveType<LiveObjectAny>) => v.value
+                    (v: MaterializedLiveType<LiveObjectAny>) => v.value,
                   ),
                 },
               });
@@ -155,15 +154,13 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
               data: {
                 resource: queryOrCustom.resource,
                 data: (result.data ?? []).map(
-                  (v: MaterializedLiveType<LiveObjectAny>) => v.value
+                  (v: MaterializedLiveType<LiveObjectAny>) => v.value,
                 ),
               },
             });
           }
         } else if (parsedMessage.type === "UNSUBSCRIBE") {
           const { type: _type, id: _id, ...queryOrCustom } = parsedMessage;
-
-          console.log("unsubscribing", hash(queryOrCustom), JSON.stringify(queryOrCustom));
 
           const unsubscribe = subscriptions.get(hash(queryOrCustom));
 
