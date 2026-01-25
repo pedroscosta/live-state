@@ -4,9 +4,12 @@ packages:
   - docs
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
+  - better-sqlite3
   - esbuild
   - sharp
+  - tree-sitter
+  - tree-sitter-javascript
+  - tree-sitter-typescript
   - unrs-resolver
-  - better-sqlite3
 overrides:
   esbuild: ^0.27.2
