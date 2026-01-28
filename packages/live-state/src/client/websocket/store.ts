@@ -49,7 +49,7 @@ export class OptimisticStore {
     logger: Logger,
     afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void,
     onStorageLoaded?: (resource: string, itemCount: number) => void,
-    onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void
+    onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void,
   ) {
     this.logger = logger;
     this.optimisticObjGraph = new ObjectGraph(logger);
@@ -86,7 +86,7 @@ export class OptimisticStore {
           .catch((e) => {
             logger.debug(
               "Storage initialization failed (may not be available in this environment):",
-              e
+              e,
             );
           });
       });
@@ -115,7 +115,7 @@ export class OptimisticStore {
         idsToFetch = [whereId.$eq];
       } else {
         idsToFetch = Object.keys(
-          this.optimisticRawObjPool[query.resource] ?? {}
+          this.optimisticRawObjPool[query.resource] ?? {},
         );
       }
     } else {
@@ -124,7 +124,7 @@ export class OptimisticStore {
 
     let result = idsToFetch.flatMap((k) => {
       const value = inferValue(
-        this.materializeOneWithInclude(k, query.include)
+        this.materializeOneWithInclude(k, query.include),
       );
       if (!value) return [];
       return [value];
@@ -194,7 +194,7 @@ export class OptimisticStore {
   public addMutation(
     routeName: string,
     mutation: DefaultMutationMessage,
-    optimistic: boolean = false
+    optimistic: boolean = false,
   ) {
     const schema = this.schema[routeName];
 
@@ -212,7 +212,7 @@ export class OptimisticStore {
     } else {
       this.optimisticMutationStack[routeName] =
         this.optimisticMutationStack?.[routeName]?.filter(
-          (m) => m.id !== mutation.id
+          (m) => m.id !== mutation.id,
         ) ?? [];
 
       this.rawObjPool[routeName] ??= {};
@@ -226,7 +226,7 @@ export class OptimisticStore {
                 string,
                 MaterializedLiveType<LiveTypeAny>
               >,
-              this.rawObjPool[routeName][mutation.resourceId]
+              this.rawObjPool[routeName][mutation.resourceId],
             )[0] as MaterializedLiveType<LiveTypeAny>
           ).value,
           id: { value: mutation.resourceId },
@@ -248,7 +248,7 @@ export class OptimisticStore {
       routeName,
       mutation.resourceId,
       mutation.payload,
-      prevValue
+      prevValue,
     );
   }
 
@@ -256,7 +256,7 @@ export class OptimisticStore {
     if (!this.optimisticMutationStack[routeName]) return;
 
     const mutationIdx = this.optimisticMutationStack[routeName]?.findIndex(
-      (m) => m.id === mutationId
+      (m) => m.id === mutationId,
     );
 
     if (mutationIdx === -1) return;
@@ -278,15 +278,15 @@ export class OptimisticStore {
         Object.entries(mutation.payload).map(([k]) => [
           k,
           { value: null, _meta: {} },
-        ])
+        ]),
       ),
-      prevValue
+      prevValue,
     );
   }
 
   public loadConsolidatedState(
     resourceType: string,
-    data: DefaultMutationMessage["payload"][]
+    data: DefaultMutationMessage["payload"][],
   ) {
     data.forEach((payload) => {
       const id = payload.id?.value as string | undefined;
@@ -294,7 +294,7 @@ export class OptimisticStore {
 
       const { cleanedPayload, nestedMutations } = this.extractNestedRelations(
         resourceType,
-        payload
+        payload,
       );
 
       nestedMutations.forEach((mutation) => {
@@ -314,7 +314,7 @@ export class OptimisticStore {
 
   private extractNestedRelations(
     resourceType: string,
-    payload: DefaultMutationMessage["payload"]
+    payload: DefaultMutationMessage["payload"],
   ): {
     cleanedPayload: DefaultMutationMessage["payload"];
     nestedMutations: DefaultMutationMessage[];
@@ -409,7 +409,7 @@ export class OptimisticStore {
     routeName: string,
     resourceId: string,
     payload: DefaultMutationMessage["payload"],
-    prevValue?: MaterializedLiveType<LiveObjectAny>
+    prevValue?: MaterializedLiveType<LiveObjectAny>,
   ) {
     if (!this.schema[routeName]) return;
 
@@ -423,7 +423,7 @@ export class OptimisticStore {
       return this.schema[routeName].mergeMutation(
         "set",
         mut.payload as Record<string, MaterializedLiveType<LiveTypeAny>>,
-        acc
+        acc,
       )[0];
     }, rawValue);
 
@@ -447,16 +447,16 @@ export class OptimisticStore {
         resourceId,
         routeName as string,
         Object.values(this.schema[routeName].relations).flatMap((k) =>
-          k.type === "many" ? [k.entity.name] : []
-        )
+          k.type === "many" ? [k.entity.name] : [],
+        ),
       );
 
     if (Object.keys(this.schema[routeName].relations).length > 0) {
       // This maps the column name to the relation name (if it's a `one` relation)
       const schemaRelationalFields = Object.fromEntries(
         Object.entries(this.schema[routeName].relations).flatMap(([k, r]) =>
-          r.type === "one" ? [[r.relationalColumn as string, k]] : []
-        )
+          r.type === "one" ? [[r.relationalColumn as string, k]] : [],
+        ),
       );
 
       Object.entries(payload).forEach(([k, v]) => {
@@ -474,7 +474,7 @@ export class OptimisticStore {
             value: string;
             _meta: { timestamp: string };
           },
-          prevRelation
+          prevRelation,
         );
 
         if (!updatedRelation) return;
@@ -486,8 +486,8 @@ export class OptimisticStore {
             updatedRelation.value,
             otherNodeType,
             Object.values(this.schema[otherNodeType].relations).flatMap((r) =>
-              r.type === "many" ? [r.entity.name] : []
-            )
+              r.type === "many" ? [r.entity.name] : [],
+            ),
           );
         }
 
@@ -506,7 +506,7 @@ export class OptimisticStore {
 
   private materializeOneWithInclude(
     id?: string,
-    include: IncludeClause<LiveObjectAny> = {}
+    include: IncludeClause<LiveObjectAny> = {},
   ): MaterializedLiveType<LiveObjectAny> | undefined {
     if (!id) return;
 
@@ -521,7 +521,7 @@ export class OptimisticStore {
     if (!obj) return;
 
     const [referencesToInclude, referencedByToInclude] = Object.entries(
-      include
+      include,
     ).reduce(
       (acc, [k, includeValue]) => {
         const rel = this.schema[resourceType].relations[k];
@@ -537,7 +537,7 @@ export class OptimisticStore {
       [[], []] as [
         Array<[string, string, boolean | SubQueryInclude<any>]>,
         Array<[string, string, boolean | SubQueryInclude<any>]>,
-      ]
+      ],
     );
 
     return {
@@ -551,9 +551,9 @@ export class OptimisticStore {
               node.references.get(refName),
               typeof nestedInclude === "object" && nestedInclude !== null
                 ? (nestedInclude as IncludeClause<LiveObjectAny>)
-                : {}
+                : {},
             ),
-          ])
+          ]),
         ),
         // many relations
         ...Object.fromEntries(
@@ -571,18 +571,18 @@ export class OptimisticStore {
                         typeof nestedInclude === "object" &&
                           nestedInclude !== null
                           ? (nestedInclude as IncludeClause<LiveObjectAny>)
-                          : {}
-                      )
+                          : {},
+                      ),
                     ),
                   }
                 : this.materializeOneWithInclude(
                     referencedBy,
                     typeof nestedInclude === "object" && nestedInclude !== null
                       ? (nestedInclude as IncludeClause<LiveObjectAny>)
-                      : {}
+                      : {},
                   ),
             ];
-          })
+          }),
         ),
       },
     } as MaterializedLiveType<LiveObjectAny>;
@@ -614,7 +614,7 @@ export class OptimisticStore {
 
   private flattenIncludes(
     include: IncludeClause<LiveObjectAny>,
-    resourceType: string
+    resourceType: string,
   ): string[] {
     const result: string[] = [];
 
@@ -629,8 +629,8 @@ export class OptimisticStore {
         result.push(
           ...this.flattenIncludes(
             value as IncludeClause<LiveObjectAny>,
-            targetEntityName
-          )
+            targetEntityName,
+          ),
         );
       }
     });
