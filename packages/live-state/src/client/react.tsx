@@ -1,5 +1,9 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import type { QueryBuilder } from '../core/query';
+import type {
+	CustomQueryRequest,
+	RawQueryRequest,
+} from '../core/schemas/core-protocol';
 import { hash } from '../utils';
 import type { Client } from '.';
 import type { ClientRouterConstraint } from './types';
@@ -80,7 +84,9 @@ export const useLiveQuery = <
 
 export const useLoadData = (
 	client: Client<ClientRouterConstraint>['client'],
-	query: QueryBuilder<any, any>,
+	query: {
+		buildQueryRequest: () => RawQueryRequest | CustomQueryRequest;
+	},
 ) => {
 	useEffect(() => {
 		const unsub = client.load(query.buildQueryRequest());

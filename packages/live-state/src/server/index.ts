@@ -7,7 +7,7 @@ import type {
 } from "../core/schemas/core-protocol";
 import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
-import type { Schema, WhereClause } from "../schema";
+import { inferValue, type Schema, type WhereClause } from "../schema";
 import { createLogger, type Logger, LogLevel } from "../utils";
 import type { AnyRouter, QueryProcedureRequest, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
@@ -236,7 +236,10 @@ export class Server<TRouter extends AnyRouter> {
     return result;
   }
 
-  public async handleCustomQuery(opts: { req: QueryProcedureRequest }): Promise<any> {
+  public async handleCustomQuery(opts: {
+    req: QueryProcedureRequest;
+    subscription?: (mutation: DefaultMutation) => void;
+  }): Promise<any> {
     const result = await this.wrapInMiddlewares(
       async (req: QueryProcedureRequest) => {
         const route = this.router.routes[req.resource] as
@@ -255,7 +258,46 @@ export class Server<TRouter extends AnyRouter> {
       }
     )(opts.req);
 
-    return result;
+    const isQueryBuilder =
+      typeof result === "object" &&
+      result !== null &&
+      "buildQueryRequest" in result &&
+      typeof (result as { buildQueryRequest?: unknown }).buildQueryRequest ===
+        "function";
+
+    if (!isQueryBuilder) {
+      if (opts.subscription) {
+        throw new Error(
+          "Subscriptions require custom queries to return a QueryBuilder"
+        );
+      }
+      return result;
+    }
+
+    const { headers, cookies, queryParams, context } = opts.req;
+    const ctx = { headers, cookies, queryParams, context };
+    const rawQuery = (result as { buildQueryRequest: () => RawQueryRequest })
+      .buildQueryRequest();
+
+    const unsubscribe = opts.subscription
+      ? this.queryEngine.subscribe(
+          rawQuery,
+          (mutation) => {
+            opts.subscription?.(mutation);
+          },
+          ctx
+        )
+      : undefined;
+
+    const data = await this.queryEngine.get(rawQuery, {
+      context: ctx,
+    });
+
+    if (opts.subscription) {
+      return { data, unsubscribe, query: rawQuery };
+    }
+
+    return data.map((item) => inferValue(item));
   }
 
   public use(middleware: Middleware<any>) {

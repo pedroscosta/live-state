@@ -1,7 +1,13 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { QueryBuilder } from "../core/query";
+import type { CustomQueryRequest } from "../core/schemas/core-protocol";
 import type { ConditionalPromise, Promisify } from "../core/utils";
-import type { InferInsert, InferUpdate, LiveObjectAny } from "../schema";
+import type {
+  InferInsert,
+  InferLiveObject,
+  InferUpdate,
+  LiveObjectAny,
+} from "../schema";
 import type { Simplify } from "../utils";
 
 /**
@@ -30,11 +36,30 @@ type CustomMutationFunction<TInput, TOutput> = [TInput] extends
  * Helper type for custom query functions.
  * When the input type is `never` or `undefined`, the function has no parameters.
  */
+type UnwrapPromise<T> = T extends Promise<infer U> ? U : T;
+
+type CustomQueryLoadable<TOutput> = PromiseLike<TOutput> & {
+  buildQueryRequest: () => CustomQueryRequest;
+};
+
+type CustomQueryResult<TOutput> = UnwrapPromise<TOutput> extends QueryBuilder<
+  infer TCollection,
+  infer TInclude,
+  infer TSingle,
+  any
+>
+  ? TSingle extends true
+    ? CustomQueryLoadable<
+        Simplify<InferLiveObject<TCollection, TInclude>> | undefined
+      >
+    : CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInclude>>[]>
+  : Promisify<UnwrapPromise<TOutput>>;
+
 type CustomQueryFunction<TInput, TOutput> = [TInput] extends
   | [never]
   | [undefined]
-  ? () => Promisify<TOutput>
-  : (input: TInput) => Promisify<TOutput>;
+  ? () => CustomQueryResult<TOutput>
+  : (input: TInput) => CustomQueryResult<TOutput>;
 
 /**
  * Simplified router constraint for client-side usage.

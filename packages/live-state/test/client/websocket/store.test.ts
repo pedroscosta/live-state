@@ -123,7 +123,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     expect(store).toBeInstanceOf(OptimisticStore);
@@ -150,7 +150,7 @@ describe("OptimisticStore", () => {
       mockSchema,
       { name: "test-storage" },
       mockLogger,
-      afterLoadMutations
+      afterLoadMutations,
     );
 
     // Wait for async initialization
@@ -164,7 +164,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mockData = {
@@ -215,7 +215,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const result = store.get({ resource: "nonexistent" });
@@ -227,7 +227,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mockData = {
@@ -293,7 +293,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mockData = {
@@ -365,7 +365,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mockData = {
@@ -398,7 +398,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
     const listener = vi.fn();
 
@@ -423,7 +423,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mutation: DefaultMutationMessage = {
@@ -443,12 +443,12 @@ describe("OptimisticStore", () => {
     expect(store.optimisticMutationStack["users"]).toContain(mutation);
     expect(mockKVStorage.setMeta).toHaveBeenCalledWith(
       "mutationStack",
-      store.optimisticMutationStack
+      store.optimisticMutationStack,
     );
     expect(mockObjectGraph.createNode).toHaveBeenCalledWith(
       "user1",
       "users",
-      Object.values(mockSchema.users.relations).map((r) => r.entity.name)
+      Object.values(mockSchema.users.relations).map((r) => r.entity.name),
     );
   });
 
@@ -456,7 +456,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     // Add optimistic mutation first
@@ -498,7 +498,7 @@ describe("OptimisticStore", () => {
     store.addMutation("users", serverMutation, false);
 
     expect(store.optimisticMutationStack["users"]).not.toContain(
-      optimisticMutation
+      optimisticMutation,
     );
     expect(mockKVStorage.set).toHaveBeenCalled();
   });
@@ -507,7 +507,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mutation: DefaultMutationMessage = {
@@ -527,7 +527,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mutation: DefaultMutationMessage = {
@@ -557,7 +557,7 @@ describe("OptimisticStore", () => {
     expect(mockObjectGraph.createNode).toHaveBeenCalledWith(
       "post1",
       "posts",
-      []
+      [],
     );
     expect(mockObjectGraph.createNode).toHaveBeenCalledWith("user1", "users", [
       "posts",
@@ -569,7 +569,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const mutation: DefaultMutationMessage = {
@@ -615,7 +615,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const listener = vi.fn();
@@ -645,7 +645,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     const data = [
@@ -689,7 +689,7 @@ describe("OptimisticStore", () => {
       mockSchema,
       { name: "test-storage" },
       mockLogger,
-      afterLoadMutations
+      afterLoadMutations,
     );
 
     // Wait for async initialization
@@ -704,7 +704,7 @@ describe("OptimisticStore", () => {
     store = new OptimisticStore(
       mockSchema,
       { name: "test-storage" },
-      mockLogger
+      mockLogger,
     );
 
     // Wait for async initialization
@@ -720,7 +720,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
     });
 
@@ -896,7 +896,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
       (hash as any).mockReturnValue("test-hash");
     });
@@ -922,6 +922,7 @@ describe("OptimisticStore", () => {
       store["optimisticRawObjPool"] = { users: mockData };
 
       const query = { resource: "users" };
+      store.subscribe(query, () => {});
 
       // First call
       const result1 = store.get(query);
@@ -954,6 +955,7 @@ describe("OptimisticStore", () => {
       store["optimisticRawObjPool"] = { users: mockData };
 
       const query = { resource: "users" };
+      store.subscribe(query, () => {});
 
       // First call
       store.get(query);
@@ -966,6 +968,9 @@ describe("OptimisticStore", () => {
     });
 
     test("should use custom query key", () => {
+      const customKey = "custom-key";
+      (hash as any).mockReturnValue(customKey);
+
       const mockData = {
         user1: {
           value: {
@@ -986,7 +991,7 @@ describe("OptimisticStore", () => {
       store["optimisticRawObjPool"] = { users: mockData };
 
       const query = { resource: "users" };
-      const customKey = "custom-key";
+      store.subscribe(query, () => {});
 
       // First call with custom key
       const result1 = store.get(query, customKey);
@@ -1004,7 +1009,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
     });
 
@@ -1039,7 +1044,7 @@ describe("OptimisticStore", () => {
       expect(store.optimisticMutationStack["users"]).toHaveLength(0);
       expect(mockKVStorage.setMeta).toHaveBeenCalledWith(
         "mutationStack",
-        store.optimisticMutationStack
+        store.optimisticMutationStack,
       );
     });
 
@@ -1070,7 +1075,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
     });
 
@@ -1224,7 +1229,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
       (hash as any).mockReturnValue("test-hash");
     });
@@ -1255,7 +1260,7 @@ describe("OptimisticStore", () => {
 
       // Mock fast-deep-equal to return false (indicating change)
       const fastDeepEqual = vi.mocked(
-        (await import("fast-deep-equal")).default
+        (await import("fast-deep-equal")).default,
       );
       fastDeepEqual.mockReturnValue(false);
 
@@ -1283,7 +1288,7 @@ describe("OptimisticStore", () => {
 
       // Mock fast-deep-equal to return true (indicating no change)
       const fastDeepEqual = vi.mocked(
-        (await import("fast-deep-equal")).default
+        (await import("fast-deep-equal")).default,
       );
       fastDeepEqual.mockReturnValue(true);
 
@@ -1303,7 +1308,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
     });
 
@@ -1641,7 +1646,7 @@ describe("OptimisticStore", () => {
       store = new OptimisticStore(
         mockSchema,
         { name: "test-storage" },
-        mockLogger
+        mockLogger,
       );
     });
 
