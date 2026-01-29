@@ -1,6 +1,9 @@
 import type { z } from "zod";
 import { QueryBuilder, type QueryExecutor } from "../../core/query";
-import type { RawQueryRequest } from "../../core/schemas/core-protocol";
+import type {
+  CustomQueryRequest,
+  RawQueryRequest,
+} from "../../core/schemas/core-protocol";
 import {
   type ClientMessage,
   type clQueryMsgSchema,
@@ -52,7 +55,7 @@ export type ClientStorageLoadedEvent = {
 
 export type DataLoadRequestedEvent = {
   type: "DATA_LOAD_REQUESTED";
-  query: RawQueryRequest;
+  query: RawQueryRequest | CustomQueryRequest;
   subscriptionId: string;
 };
 
@@ -88,14 +91,14 @@ export type MutationRejectedEvent = {
 
 export type SubscriptionCreatedEvent = {
   type: "SUBSCRIPTION_CREATED";
-  query: RawQueryRequest;
+  query: RawQueryRequest | CustomQueryRequest;
   subscriptionKey: string;
   subscriberCount: number;
 };
 
 export type SubscriptionRemovedEvent = {
   type: "SUBSCRIPTION_REMOVED";
-  query: RawQueryRequest;
+  query: RawQueryRequest | CustomQueryRequest;
   subscriptionKey: string;
 };
 
@@ -150,6 +153,35 @@ export type ClientEvents =
   | OptimisticMutationAppliedEvent
   | OptimisticMutationUndoneEvent;
 
+class CustomQueryCall<TOutput> implements PromiseLike<TOutput> {
+  public constructor(
+    private client: InnerClient,
+    private query: CustomQueryRequest
+  ) {}
+
+  public buildQueryRequest() {
+    return this.query;
+  }
+
+  // biome-ignore lint/suspicious/noThenProperty: PromiseLike implementation required for deferred custom queries
+  public then<TResult1 = TOutput, TResult2 = never>(
+    onfulfilled?:
+      | ((value: TOutput) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?:
+      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+      | null
+  ): PromiseLike<TResult1 | TResult2> {
+    return this.client
+      .genericQuery<TOutput>(
+        this.query.resource,
+        this.query.procedure,
+        this.query.input
+      )
+      .then(onfulfilled, onrejected);
+  }
+}
+
 class InnerClient implements QueryExecutor {
   public readonly url: string;
   public readonly ws: WebSocketClient;
@@ -158,7 +190,7 @@ class InnerClient implements QueryExecutor {
 
   private remoteSubscriptions: Map<
     string,
-    { query: RawQueryRequest; subCounter: number }
+    { query: RawQueryRequest | CustomQueryRequest; subCounter: number }
   > = new Map();
 
   private eventListeners: Set<(event: ClientEvents) => void> = new Set();
@@ -349,7 +381,7 @@ class InnerClient implements QueryExecutor {
     }
   }
 
-  public load(query: RawQueryRequest) {
+  public load(query: RawQueryRequest | CustomQueryRequest) {
     const subscriptionId = generateId();
     const key = hash(query);
 
@@ -498,7 +530,11 @@ class InnerClient implements QueryExecutor {
     });
   }
 
-  public genericQuery(routeName: string, procedure: string, input?: any) {
+  public genericQuery<TOutput = unknown>(
+    routeName: string,
+    procedure: string,
+    input?: any
+  ): Promise<TOutput> {
     if (!this.ws || !this.ws.connected())
       throw new Error("WebSocket not connected");
 
@@ -512,13 +548,13 @@ class InnerClient implements QueryExecutor {
 
     this.sendWsMessage(queryMessage);
 
-    return new Promise((resolve, reject) => {
+    return new Promise<TOutput>((resolve, reject) => {
       this.replyHandlers[queryMessage.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[queryMessage.id];
           reject(new Error("Reply timeout"));
         }, 5000),
-        handler: (data: any) => {
+        handler: (data: TOutput) => {
           delete this.replyHandlers[queryMessage.id];
           resolve(data);
         },
@@ -548,7 +584,7 @@ export type Client<TRouter extends ClientRouterConstraint> = {
   client: {
     ws: WebSocketClient;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
-    load: (query: RawQueryRequest) => () => void;
+    load: (query: RawQueryRequest | CustomQueryRequest) => () => void;
   };
   store: ClientType<TRouter>;
 };
@@ -569,7 +605,12 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
         }
         // If it's a string, it's a custom query method
         if (typeof prop === "string") {
-          return (input?: any) => ogClient.genericQuery(routeName, prop, input);
+          return (input?: any) =>
+            new CustomQueryCall(ogClient, {
+              resource: routeName,
+              procedure: prop,
+              input,
+            });
         }
         return undefined;
       },

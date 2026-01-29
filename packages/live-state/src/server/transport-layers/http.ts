@@ -133,7 +133,7 @@ export const httpTransportLayer = (
             }
 
             const resource = segments[segments.length - 3];
-            const rawBody = request.body ? await request.json() : {};
+            const rawBody: any = request.body ? await request.json() : {};
 
             if (!resource || resource.trim() === "") {
               return Response.json(
