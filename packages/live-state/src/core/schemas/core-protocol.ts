@@ -18,7 +18,7 @@ export const queryPayloadSchema = z.record(
   z.object({
     value: z.any().nullable(),
     _meta: z.object({ timestamp: z.string().optional().nullable() }).optional(),
-  })
+  }),
 );
 
 const mutationPayloadSchema = queryPayloadSchema.superRefine((v, ctx) => {
@@ -36,9 +36,16 @@ const baseMutationSchema = z.object({
   resourceId: z.string().optional(),
 });
 
+const mutationMetaSchema = z
+  .object({
+    timestamp: z.string().optional(),
+  })
+  .optional();
+
 export const genericMutationSchema = baseMutationSchema.extend({
   procedure: z.string(),
   payload: z.any().optional(),
+  meta: mutationMetaSchema,
 });
 
 export type GenericMutation = z.infer<typeof genericMutationSchema>;
@@ -46,6 +53,7 @@ export type GenericMutation = z.infer<typeof genericMutationSchema>;
 export const defaultMutationSchema = baseMutationSchema.extend({
   procedure: z.enum(["INSERT", "UPDATE"]),
   payload: mutationPayloadSchema,
+  meta: mutationMetaSchema,
 });
 
 export type DefaultMutation = Omit<

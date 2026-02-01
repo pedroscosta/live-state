@@ -17,19 +17,38 @@ import {
 import type { Logger, Simplify } from "../../utils";
 import type { Server } from "..";
 
+/** @internal */
+export type RawMutationResult<T extends LiveObjectAny> = {
+  data: MaterializedLiveType<T>;
+  acceptedValues: Record<string, any> | null;
+};
+
 export abstract class Storage implements DataSource {
+  /** @internal */
+  protected _mutationTimestamp?: string;
+
+  /** @internal */
+  public _setMutationTimestamp(timestamp: string | undefined): void {
+    this._mutationTimestamp = timestamp;
+  }
+
+  /** @internal */
+  protected _getTimestamp(): string {
+    return this._mutationTimestamp ?? new Date().toISOString();
+  }
+
   /** @internal */
   public abstract init(
     opts: Schema<any>,
     logger?: Logger,
-    server?: Server<any>
+    server?: Server<any>,
   ): Promise<void>;
 
   /** @internal */
   public abstract rawFindById<T extends LiveObjectAny>(
     resourceName: string,
     id: string,
-    include?: IncludeClause<T>
+    include?: IncludeClause<T>,
   ): Promise<MaterializedLiveType<T> | undefined>;
 
   /**
@@ -43,7 +62,7 @@ export abstract class Storage implements DataSource {
     id: string,
     options?: {
       include?: TInclude;
-    }
+    },
   ): Promise<InferLiveObject<T, TInclude> | undefined>;
 
   /** @internal */
@@ -62,7 +81,7 @@ export abstract class Storage implements DataSource {
       include?: TInclude;
       limit?: number;
       sort?: { key: string; direction: "asc" | "desc" }[];
-    }
+    },
   ): Promise<InferLiveObject<T, TInclude>[]>;
 
   /** @internal */
@@ -71,8 +90,8 @@ export abstract class Storage implements DataSource {
     resourceId: string,
     value: MaterializedLiveType<T>,
     mutationId?: string,
-    context?: Record<string, any>
-  ): Promise<MaterializedLiveType<T>>;
+    context?: Record<string, any>,
+  ): Promise<RawMutationResult<T>>;
 
   /** @internal */
   public abstract rawUpdate<T extends LiveObjectAny>(
@@ -80,37 +99,36 @@ export abstract class Storage implements DataSource {
     resourceId: string,
     value: MaterializedLiveType<T>,
     mutationId?: string,
-    context?: Record<string, any>
-  ): Promise<MaterializedLiveType<T>>;
+    context?: Record<string, any>,
+  ): Promise<RawMutationResult<T>>;
 
   /**
    * @deprecated Use db.[collection].insert({...}) instead
    */
   public async insert<T extends LiveObjectAny>(
     resource: T,
-    value: Simplify<InferInsert<T>>
+    value: Simplify<InferInsert<T>>,
   ): Promise<InferLiveObject<T>> {
-    const now = new Date().toISOString();
+    const now = this._getTimestamp();
 
-    return inferValue(
-      await this.rawInsert(
-        resource.name,
-        (value as any).id as string,
-        {
-          value: Object.fromEntries(
-            Object.entries(value).map(([k, v]) => [
-              k,
-              {
-                value: v,
-                _meta: {
-                  timestamp: now,
-                },
+    const result = await this.rawInsert(
+      resource.name,
+      (value as any).id as string,
+      {
+        value: Object.fromEntries(
+          Object.entries(value).map(([k, v]) => [
+            k,
+            {
+              value: v,
+              _meta: {
+                timestamp: now,
               },
-            ])
-          ),
-        } as unknown as MaterializedLiveType<T>
-      )
-    ) as InferLiveObject<T>;
+            },
+          ]),
+        ),
+      } as unknown as MaterializedLiveType<T>,
+    );
+    return inferValue(result.data) as InferLiveObject<T>;
   }
 
   /**
@@ -119,28 +137,35 @@ export abstract class Storage implements DataSource {
   public async update<T extends LiveObjectAny>(
     resource: T,
     resourceId: string,
-    value: InferUpdate<T>
+    value: InferUpdate<T>,
   ): Promise<Partial<InferLiveObject<T>>> {
-    const now = new Date().toISOString();
+    const now = this._getTimestamp();
 
     // biome-ignore lint/correctness/noUnusedVariables: id is ignored on purpose
     const { id, ...rest } = value as any;
 
-    return inferValue(
-      await this.rawUpdate(resource.name, resourceId, {
-        value: Object.fromEntries(
-          Object.entries(rest).map(([k, v]) => [
-            k,
-            {
-              value: v,
-              _meta: {
-                timestamp: now,
-              },
+    const result = await this.rawUpdate(resource.name, resourceId, {
+      value: Object.fromEntries(
+        Object.entries(rest).map(([k, v]) => [
+          k,
+          {
+            value: v,
+            _meta: {
+              timestamp: now,
             },
-          ])
-        ),
-      } as unknown as MaterializedLiveType<T>)
-    ) as Partial<InferLiveObject<T>>;
+          },
+        ]),
+      ),
+    } as unknown as MaterializedLiveType<T>);
+
+    const inferred = inferValue(result.data) as any;
+    const filtered: any = {};
+    for (const key of Object.keys(rest)) {
+      if (key in inferred) {
+        filtered[key] = inferred[key];
+      }
+    }
+    return filtered as Partial<InferLiveObject<T>>;
   }
 
   public abstract transaction<T>(
@@ -148,6 +173,6 @@ export abstract class Storage implements DataSource {
       trx: Storage;
       commit: () => Promise<void>;
       rollback: () => Promise<void>;
-    }) => Promise<T>
+    }) => Promise<T>,
   ): Promise<T>;
 }

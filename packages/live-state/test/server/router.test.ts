@@ -49,8 +49,19 @@ describe("Route", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -126,7 +137,7 @@ describe("Route", () => {
       expect.objectContaining({
         resource: "users",
         where: undefined,
-      })
+      }),
     );
     expect(result).toEqual({
       data: mockData,
@@ -159,7 +170,7 @@ describe("Route", () => {
         resource: "users",
         where: { name: "John" },
         include: { posts: true },
-      })
+      }),
     );
   });
 
@@ -181,7 +192,10 @@ describe("Route", () => {
     const mockNewData = { value: { name: { value: "John" } } };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: { name: "John" },
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -190,22 +204,57 @@ describe("Route", () => {
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
-    expect(mockResource.mergeMutation).toHaveBeenCalledWith(
-      "set",
-      { name: "John" },
-      mockExistingData
-    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      {}
+      {},
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: { name: "John" },
     });
+  });
+
+  test("should apply request meta timestamp to mutations", async () => {
+    const route = new Route(mockResource);
+    const metaTimestamp = "2024-01-01T00:00:00.000Z";
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "users",
+      resourceId: "user1",
+      input: { name: "John" },
+      procedure: "UPDATE",
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+      meta: { timestamp: metaTimestamp },
+    };
+
+    const mockExistingData = { value: { id: { value: "user1" } } };
+    const mockNewData = { value: { name: { value: "John" } } };
+
+    (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: { name: "John" },
+    });
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(mockStorage._setMutationTimestamp).toHaveBeenNthCalledWith(
+      1,
+      metaTimestamp,
+    );
+    expect(mockStorage._setMutationTimestamp).toHaveBeenLastCalledWith(
+      undefined,
+    );
   });
 
   test("should throw error when MUTATE request missing payload", async () => {
@@ -227,7 +276,7 @@ describe("Route", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Payload is required");
   });
 
@@ -249,7 +298,7 @@ describe("Route", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("ResourceId is required");
   });
 
@@ -267,14 +316,18 @@ describe("Route", () => {
       procedure: "INSERT",
     };
 
-    (mockResource.mergeMutation as Mock).mockReturnValue([{}, null]);
+    // Storage returns null acceptedValues when merge is rejected
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: {} as MaterializedLiveType<any>,
+      acceptedValues: null,
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Mutation rejected");
   });
 
@@ -340,7 +393,7 @@ describe("Route", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow();
   });
 
@@ -408,7 +461,7 @@ describe("Route", () => {
 
     const newRoute = route.withMutations(({ mutation }) => ({
       customAction: mutation(z.object({ data: z.string() })).handler(
-        async () => ({ success: true })
+        async () => ({ success: true }),
       ),
     }));
 
@@ -490,8 +543,19 @@ describe("Route UPDATE Authorization", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -540,15 +604,11 @@ describe("Route UPDATE Authorization", () => {
       value: { name: { value: "John" }, userId: { value: "123" } },
     };
 
-    // Reset and mock mergeMutation to return data that matches the authorization check
-    (mockResource.mergeMutation as Mock).mockReset();
-    (mockResource.mergeMutation as Mock).mockReturnValue([
-      { value: { userId: { value: "123" } } }, // This will be used for pre-mutation authorization
-      { accepted: true },
-    ]);
-
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -563,20 +623,18 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {
-        value: { userId: { value: "123" } },
-      },
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -616,7 +674,7 @@ describe("Route UPDATE Authorization", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Not authorized");
 
     expect(preMutationAuth).toHaveBeenCalledWith(
@@ -626,7 +684,7 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).not.toHaveBeenCalled();
   });
@@ -655,7 +713,10 @@ describe("Route UPDATE Authorization", () => {
     };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -670,18 +731,18 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -709,14 +770,17 @@ describe("Route UPDATE Authorization", () => {
     };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Not authorized");
 
     expect(postMutationAuth).toHaveBeenCalledWith(
@@ -727,14 +791,14 @@ describe("Route UPDATE Authorization", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -780,7 +844,10 @@ describe("Route UPDATE Authorization", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockUpdatedData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockUpdatedData,
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -797,7 +864,7 @@ describe("Route UPDATE Authorization", () => {
           name: "UpdatedName", // Should be the updated value
           role: "admin", // Should be the updated value
         }),
-      })
+      }),
     );
 
     // Verify that the original values are NOT present
@@ -845,7 +912,10 @@ describe("Route UPDATE Authorization", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -860,7 +930,7 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -869,20 +939,18 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {
-        value: { userId: { value: "123" } },
-      },
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -915,22 +983,18 @@ describe("Route UPDATE Authorization", () => {
       value: { name: { value: "John" }, userId: { value: "123" } },
     };
 
-    // Reset and mock mergeMutation to return data that matches the pre-mutation authorization
-    (mockResource.mergeMutation as Mock).mockReset();
-    (mockResource.mergeMutation as Mock).mockReturnValue([
-      { value: { userId: { value: "123" } } }, // This will pass pre-mutation authorization
-      { accepted: true },
-    ]);
-
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Not authorized");
 
     expect(preMutationAuth).toHaveBeenCalledWith(
@@ -940,7 +1004,7 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -949,16 +1013,14 @@ describe("Route UPDATE Authorization", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {
-        value: { userId: { value: "123" } },
-      },
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -981,7 +1043,10 @@ describe("Route UPDATE Authorization", () => {
     const mockNewData = { value: { name: { value: "John" } } };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -993,13 +1058,13 @@ describe("Route UPDATE Authorization", () => {
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      {}
+      {},
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1038,15 +1103,11 @@ describe("Route UPDATE Authorization", () => {
       },
     };
 
-    // Reset and mock mergeMutation to return data that matches the complex authorization check
-    (mockResource.mergeMutation as Mock).mockReset();
-    (mockResource.mergeMutation as Mock).mockReturnValue([
-      { value: { userId: { value: "123" }, role: { value: "admin" } } }, // This will match the $and clause
-      { accepted: true },
-    ]);
-
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1065,20 +1126,18 @@ describe("Route UPDATE Authorization", () => {
           userId: "123",
           role: "admin",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {
-        value: { userId: { value: "123" }, role: { value: "admin" } },
-      },
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 });
@@ -1092,8 +1151,19 @@ describe("Route INSERT Authorization", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1135,19 +1205,16 @@ describe("Route INSERT Authorization", () => {
       context: { userId: "123" },
     };
 
+    // Mock storage to return data that passes authorization (userId: "123" matches requirement)
     const mockNewData = {
       value: { name: { value: "John" }, userId: { value: "123" } },
     };
 
-    // Reset and mock mergeMutation to return data that matches the authorization check
-    (mockResource.mergeMutation as Mock).mockReset();
-    (mockResource.mergeMutation as Mock).mockReturnValue([
-      { value: { userId: { value: "123" } } }, // This will be used for authorization
-      { accepted: true },
-    ]);
-
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1163,20 +1230,18 @@ describe("Route INSERT Authorization", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith(
       "users",
       "user1",
-      {
-        value: { userId: { value: "123" } },
-      },
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1198,26 +1263,23 @@ describe("Route INSERT Authorization", () => {
       context: { userId: "123" },
     };
 
+    // Mock storage to return data that will fail authorization (userId: "123" != "456")
     const mockNewData = {
       value: { name: { value: "John" }, userId: { value: "123" } },
     };
 
-    // Reset and mock mergeMutation to return data that will fail authorization
-    (mockResource.mergeMutation as Mock).mockReset();
-    (mockResource.mergeMutation as Mock).mockReturnValue([
-      { value: { userId: { value: "123" } } }, // This will be checked against the auth requirement of userId: "456"
-      { accepted: true },
-    ]);
-
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Not authorized");
 
     expect(insertAuth).toHaveBeenCalledWith(
@@ -1228,16 +1290,14 @@ describe("Route INSERT Authorization", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith(
       "users",
       "user1",
-      {
-        value: { userId: { value: "123" } },
-      },
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -1271,14 +1331,17 @@ describe("Route INSERT Authorization", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Not authorized");
 
     expect(insertAuth).toHaveBeenCalledWith(
@@ -1289,7 +1352,7 @@ describe("Route INSERT Authorization", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
   });
 
@@ -1323,7 +1386,10 @@ describe("Route INSERT Authorization", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1339,11 +1405,11 @@ describe("Route INSERT Authorization", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1365,7 +1431,10 @@ describe("Route INSERT Authorization", () => {
     const mockNewData = { value: { name: { value: "John" } } };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1377,13 +1446,13 @@ describe("Route INSERT Authorization", () => {
     expect(mockStorage.rawInsert).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      {}
+      {},
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 });
@@ -1397,8 +1466,19 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1444,7 +1524,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Resource already exists");
   });
 
@@ -1469,7 +1549,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Resource not found");
   });
 
@@ -1489,7 +1569,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
 
     const mockNewData = { value: { name: { value: "John" } } };
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined); // No existing resource
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1498,21 +1581,16 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
-    expect(mockResource.mergeMutation).toHaveBeenCalledWith(
-      "set",
-      { name: "John" },
-      undefined
-    );
     expect(mockStorage.rawInsert).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1534,7 +1612,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     const mockNewData = { value: { name: { value: "John" } } };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1543,21 +1624,16 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     });
 
     expect(mockStorage.rawFindById).toHaveBeenCalledWith("users", "user1");
-    expect(mockResource.mergeMutation).toHaveBeenCalledWith(
-      "set",
-      { name: "John" },
-      mockExistingData
-    );
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      expect.any(Object)
+      expect.any(Object),
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1578,7 +1654,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
 
     const mockNewData = { value: { name: { value: "John" } } };
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1589,13 +1668,13 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     expect(mockStorage.rawInsert).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       mutationId,
-      { messageId: mutationId }
+      { messageId: mutationId },
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1618,7 +1697,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     const mockNewData = { value: { name: { value: "John" } } };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1629,13 +1711,13 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     expect(mockStorage.rawUpdate).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       mutationId,
-      { messageId: mutationId }
+      { messageId: mutationId },
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 
@@ -1655,7 +1737,10 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
 
     const mockNewData = { value: { name: { value: "John" } } };
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     const result = await route.handleMutation({
       req: mockRequest,
@@ -1666,13 +1751,13 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
     expect(mockStorage.rawInsert).toHaveBeenCalledWith(
       "users",
       "user1",
-      {},
+      expect.objectContaining({ value: { name: "John" } }),
       undefined,
-      {}
+      {},
     );
     expect(result).toEqual({
       data: mockNewData,
-      acceptedValues: { accepted: true },
+      acceptedValues: {},
     });
   });
 });
@@ -1686,8 +1771,19 @@ describe("Route Error Handling", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1730,7 +1826,7 @@ describe("Route Error Handling", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Procedure is required for mutations");
   });
 
@@ -1753,7 +1849,7 @@ describe("Route Error Handling", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Unknown procedure: UNKNOWN_PROCEDURE");
   });
 
@@ -1779,7 +1875,7 @@ describe("Route Error Handling", () => {
       route.handleQuery({
         req: mockRequest,
         batcher,
-      })
+      }),
     ).rejects.toThrow("Middleware error");
   });
 
@@ -1861,8 +1957,19 @@ describe("Route Custom Mutations Advanced", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1949,7 +2056,7 @@ describe("Route Custom Mutations Advanced", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Custom error");
   });
 
@@ -2033,7 +2140,7 @@ describe("Route Custom Mutations Advanced", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow();
 
     expect(customHandler).not.toHaveBeenCalled();
@@ -2068,8 +2175,19 @@ describe("Route Authorization Error Handling", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -2123,14 +2241,17 @@ describe("Route Authorization Error Handling", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Insert authorization error");
 
     expect(insertAuth).toHaveBeenCalledWith(
@@ -2141,7 +2262,7 @@ describe("Route Authorization Error Handling", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
   });
 
@@ -2181,7 +2302,7 @@ describe("Route Authorization Error Handling", () => {
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Pre-mutation authorization error");
 
     expect(preMutationAuth).toHaveBeenCalledWith(
@@ -2191,7 +2312,7 @@ describe("Route Authorization Error Handling", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
   });
 
@@ -2228,14 +2349,17 @@ describe("Route Authorization Error Handling", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Post-mutation authorization error");
 
     expect(postMutationAuth).toHaveBeenCalledWith(
@@ -2246,7 +2370,7 @@ describe("Route Authorization Error Handling", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
   });
 });
@@ -2260,8 +2384,19 @@ describe("Route Complex Authorization Scenarios", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -2339,7 +2474,10 @@ describe("Route Complex Authorization Scenarios", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(undefined);
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockNewData);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockNewData,
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: insertRequest,
@@ -2355,7 +2493,7 @@ describe("Route Complex Authorization Scenarios", () => {
           name: "John",
           userId: "123",
         }),
-      })
+      }),
     );
 
     // Test update authorization
@@ -2384,7 +2522,10 @@ describe("Route Complex Authorization Scenarios", () => {
     ]);
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue(mockUpdatedData);
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: mockUpdatedData,
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: updateRequest,
@@ -2399,7 +2540,7 @@ describe("Route Complex Authorization Scenarios", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
     expect(postMutationAuth).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2408,7 +2549,7 @@ describe("Route Complex Authorization Scenarios", () => {
           id: "user1",
           userId: "123",
         }),
-      })
+      }),
     );
   });
 });
@@ -2422,8 +2563,19 @@ describe("Route Authorization with Deep Where Clauses", () => {
     mockStorage = {
       get: vi.fn().mockResolvedValue([]),
       rawFindById: vi.fn().mockResolvedValue(undefined),
-      rawInsert: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
-      rawUpdate: vi.fn().mockResolvedValue({} as MaterializedLiveType<any>),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn(),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -2519,9 +2671,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
       .mockResolvedValueOnce(undefined) // Initial check
       .mockResolvedValueOnce(mockResultWithRelations); // Authorization check
 
-    (mockStorage.rawInsert as Mock).mockResolvedValue(
-      mockResultWithoutRelations
-    );
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockResultWithoutRelations,
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2534,13 +2687,13 @@ describe("Route Authorization with Deep Where Clauses", () => {
     expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
       1,
       "users",
-      "user1"
+      "user1",
     );
     expect(mockStorage.rawFindById).toHaveBeenNthCalledWith(
       2,
       "users",
       "user1",
-      { posts: true }
+      { posts: true },
     );
   });
 
@@ -2607,7 +2760,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(mockResultWithNestedRelations);
 
-    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2619,7 +2775,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
       2,
       "users",
       "user1",
-      { posts: { include: { comments: true } } }
+      { posts: { include: { comments: true } } },
     );
   });
 
@@ -2646,7 +2802,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
     };
 
     (mockStorage.rawFindById as Mock).mockResolvedValueOnce(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2680,7 +2839,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
     };
 
     (mockStorage.rawFindById as Mock).mockResolvedValueOnce(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2713,7 +2875,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
 
     (mockStorage.rawFindById as Mock).mockResolvedValueOnce(undefined);
 
-    (mockStorage.rawInsert as Mock).mockResolvedValue(mockResult);
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: mockResult,
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2761,7 +2926,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(mockDataWithRelations);
 
-    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2774,7 +2942,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
       2,
       "users",
       "user1",
-      { posts: true, profile: true }
+      { posts: true, profile: true },
     );
   });
 
@@ -2814,7 +2982,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(mockDataWithRelations);
 
-    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,
@@ -2827,7 +2998,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
       2,
       "users",
       "user1",
-      { posts: true, profile: true }
+      { posts: true, profile: true },
     );
   });
 
@@ -2868,14 +3039,17 @@ describe("Route Authorization with Deep Where Clauses", () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(mockResultWithRelations);
 
-    (mockStorage.rawInsert as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawInsert as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await expect(
       route.handleMutation({
         req: mockRequest,
         db: mockStorage,
         schema: mockSchema,
-      })
+      }),
     ).rejects.toThrow("Not authorized");
   });
 
@@ -2902,7 +3076,8 @@ describe("Route Authorization with Deep Where Clauses", () => {
     (mockStorage.rawFindById as Mock).mockResolvedValueOnce(undefined);
 
     (mockStorage.rawInsert as Mock).mockResolvedValue({
-      value: { name: { value: "John" } },
+      data: { value: { name: { value: "John" } } },
+      acceptedValues: {},
     });
 
     await route.handleMutation({
@@ -2942,7 +3117,10 @@ describe("Route Authorization with Deep Where Clauses", () => {
     };
 
     (mockStorage.rawFindById as Mock).mockResolvedValue(mockExistingData);
-    (mockStorage.rawUpdate as Mock).mockResolvedValue({ value: {} });
+    (mockStorage.rawUpdate as Mock).mockResolvedValue({
+      data: { value: {} },
+      acceptedValues: {},
+    });
 
     await route.handleMutation({
       req: mockRequest,

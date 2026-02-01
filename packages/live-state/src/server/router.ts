@@ -47,7 +47,7 @@ export class Router<TRoutes extends RouteRecord> {
       if (typedRoute.hooks) {
         this.hooksRegistry.set(
           typedRoute.resourceSchema.name,
-          typedRoute.hooks
+          typedRoute.hooks,
         );
       }
     }
@@ -132,11 +132,11 @@ type QueryCreator = {
       handler: (opts: {
         req: QueryProcedureRequest<undefined>;
         db: ServerDB<any>;
-      }) => TOutput
+      }) => TOutput,
     ) => Query<StandardSchemaV1<any, undefined>, TOutput>;
   };
   <TInputValidator extends StandardSchemaV1<any, any>>(
-    validator: TInputValidator
+    validator: TInputValidator,
   ): {
     handler: <
       THandler extends (opts: {
@@ -146,17 +146,17 @@ type QueryCreator = {
         db: ServerDB<any>;
       }) => any,
     >(
-      handler: THandler
+      handler: THandler,
     ) => Query<TInputValidator, ReturnType<THandler>>;
   };
 };
 
 const queryCreator = (<TInputValidator extends StandardSchemaV1<any, any>>(
-  validator?: TInputValidator
+  validator?: TInputValidator,
 ) => {
   return {
     handler: <THandler extends Query<TInputValidator, any>["handler"]>(
-      handler: THandler
+      handler: THandler,
     ) =>
       ({
         _type: "query",
@@ -173,11 +173,11 @@ type MutationCreator = {
       handler: (opts: {
         req: MutationRequest<undefined>;
         db: ServerDB<any>;
-      }) => TOutput
+      }) => TOutput,
     ) => Mutation<StandardSchemaV1<any, undefined>, TOutput>;
   };
   <TInputValidator extends StandardSchemaV1<any, any>>(
-    validator: TInputValidator
+    validator: TInputValidator,
   ): {
     handler: <
       THandler extends (opts: {
@@ -185,17 +185,17 @@ type MutationCreator = {
         db: ServerDB<any>;
       }) => any,
     >(
-      handler: THandler
+      handler: THandler,
     ) => Mutation<TInputValidator, ReturnType<THandler>>;
   };
 };
 
 const mutationCreator = (<TInputValidator extends StandardSchemaV1<any, any>>(
-  validator?: TInputValidator
+  validator?: TInputValidator,
 ) => {
   return {
     handler: <THandler extends Mutation<TInputValidator, any>["handler"]>(
-      handler: THandler
+      handler: THandler,
     ) =>
       ({
         _type: "mutation",
@@ -293,7 +293,7 @@ export class Route<
     customMutations?: TCustomMutations,
     customQueries?: TCustomQueries,
     authorization?: Authorization<TResourceSchema>,
-    hooks?: Hooks<TResourceSchema>
+    hooks?: Hooks<TResourceSchema>,
   ) {
     this.resourceSchema = resourceSchema;
     this.middlewares = new Set();
@@ -314,7 +314,7 @@ export class Route<
     procedureFactory: (opts: {
       mutation: typeof mutationCreator;
       query: typeof queryCreator;
-    }) => T
+    }) => T,
   ) {
     const procedures = procedureFactory({
       mutation: mutationCreator,
@@ -349,7 +349,7 @@ export class Route<
       mutations as ExtractMutations<T> & Record<string, Mutation<any, any>>,
       queries as ExtractQueries<T> & Record<string, Query<any, any>>,
       this.authorization,
-      this.hooks
+      this.hooks,
     );
   }
 
@@ -357,7 +357,7 @@ export class Route<
    * @deprecated Use `withProcedures` instead
    */
   public withMutations<T extends Record<string, Mutation<any, any>>>(
-    mutationFactory: (opts: { mutation: typeof mutationCreator }) => T
+    mutationFactory: (opts: { mutation: typeof mutationCreator }) => T,
   ) {
     return this.withProcedures(({ mutation }) => mutationFactory({ mutation }));
   }
@@ -373,7 +373,7 @@ export class Route<
       this.customMutations,
       this.customQueries,
       this.authorization,
-      hooks
+      hooks,
     );
   }
 
@@ -441,62 +441,71 @@ export class Route<
     db: Storage;
     schema: Schema<any>;
   }): Promise<any> => {
-    const serverDB = createServerDB(db, schema);
+    const mutationTimestamp = req.meta?.timestamp ?? new Date().toISOString();
+    db._setMutationTimestamp(mutationTimestamp);
 
-    return await this.wrapInMiddlewares(async (req: MutationRequest) => {
-      if (!req.procedure)
-        throw new Error("Procedure is required for mutations");
-      const customProcedure = this.customMutations[req.procedure];
+    try {
+      const serverDB = createServerDB(db, schema);
 
-      if (customProcedure) {
-        const validationResult = customProcedure.inputValidator[
-          "~standard"
-        ].validate(req.input);
+      return await this.wrapInMiddlewares(async (req: MutationRequest) => {
+        if (!req.procedure)
+          throw new Error("Procedure is required for mutations");
+        const customProcedure = this.customMutations[req.procedure];
 
-        // Handle both sync and async validation
-        const result =
-          validationResult instanceof Promise
-            ? await validationResult
-            : validationResult;
+        if (customProcedure) {
+          const validationResult = customProcedure.inputValidator[
+            "~standard"
+          ].validate(req.input);
 
-        if (result.issues) {
-          const errorMessage = result.issues
-            .map(
-              (issue: {
-                message: string;
-                path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
-              }) => {
-                const path = issue.path
-                  ?.map((p) =>
-                    typeof p === "object" && "key" in p
-                      ? String(p.key)
-                      : String(p)
-                  )
-                  .join(".");
-                return path ? `${path}: ${issue.message}` : issue.message;
-              }
-            )
-            .join(", ");
-          throw new Error(`Validation failed: ${errorMessage}`);
+          // Handle both sync and async validation
+          const result =
+            validationResult instanceof Promise
+              ? await validationResult
+              : validationResult;
+
+          if (result.issues) {
+            const errorMessage = result.issues
+              .map(
+                (issue: {
+                  message: string;
+                  path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+                }) => {
+                  const path = issue.path
+                    ?.map((p) =>
+                      typeof p === "object" && "key" in p
+                        ? String(p.key)
+                        : String(p),
+                    )
+                    .join(".");
+                  return path ? `${path}: ${issue.message}` : issue.message;
+                },
+              )
+              .join(", ");
+            throw new Error(`Validation failed: ${errorMessage}`);
+          }
+
+          req.input = result.value;
+
+          return customProcedure.handler({
+            req,
+            db: serverDB,
+          });
+        } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
+          return this.handleSet({
+            req: req as MutationRequest<
+              LiveObjectMutationInput<TResourceSchema>
+            >,
+            db,
+            operation: req.procedure,
+            schema,
+          });
+        } else {
+          throw new Error(`Unknown procedure: ${req.procedure}`);
         }
-
-        req.input = result.value;
-
-        return customProcedure.handler({
-          req,
-          db: serverDB,
-        });
-      } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
-        return this.handleSet({
-          req: req as MutationRequest<LiveObjectMutationInput<TResourceSchema>>,
-          db,
-          operation: req.procedure,
-          schema,
-        });
-      } else {
-        throw new Error(`Unknown procedure: ${req.procedure}`);
-      }
-    })(req);
+      })(req);
+    } finally {
+      db._setMutationTimestamp(undefined);
+    }
   };
 
   /** @internal */
@@ -538,11 +547,11 @@ export class Route<
                 ?.map((p) =>
                   typeof p === "object" && "key" in p
                     ? String(p.key)
-                    : String(p)
+                    : String(p),
                 )
                 .join(".");
               return path ? `${path}: ${issue.message}` : issue.message;
-            }
+            },
           )
           .join(", ");
         throw new Error(`Validation failed: ${errorMessage}`);
@@ -558,7 +567,7 @@ export class Route<
   };
 
   public getAuthorizationClause(
-    req: QueryRequest
+    req: QueryRequest,
   ): WhereClause<TResourceSchema> | undefined | boolean {
     return this.authorization?.read?.({
       ctx: req.context,
@@ -581,7 +590,7 @@ export class Route<
 
     const target = await db.rawFindById<TResourceSchema>(
       req.resource,
-      req.resourceId
+      req.resourceId,
     );
 
     if (operation === "INSERT" && target) {
@@ -590,25 +599,25 @@ export class Route<
       throw new Error("Resource not found");
     }
 
+    const inputValue = {
+      value: req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
+    } as MaterializedLiveType<TResourceSchema>;
+
     return db.transaction(async ({ trx }) => {
-      const [newRecord, acceptedValues] = this.resourceSchema.mergeMutation(
-        "set",
-        req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
-        target
-      );
-
-      if (!acceptedValues) {
-        throw new Error("Mutation rejected");
-      }
-
       if (operation === "INSERT") {
-        const result = await trx.rawInsert<TResourceSchema>(
-          req.resource,
-          req.resourceId!,
-          newRecord,
-          req.context?.messageId,
-          req.context
-        );
+        const { data: result, acceptedValues } =
+          await trx.rawInsert<TResourceSchema>(
+            req.resource,
+            req.resourceId!,
+            inputValue,
+            req.context?.messageId,
+            req.context,
+          );
+
+        if (!acceptedValues) {
+          throw new Error("Mutation rejected");
+        }
+
         const inferredResultValue = inferValue(result) as Simplify<
           InferLiveObjectWithRelationalIds<TResourceSchema>
         >;
@@ -631,7 +640,7 @@ export class Route<
             const includeClause = extractIncludeFromWhere(
               authorizationClause,
               req.resource,
-              schema
+              schema,
             );
 
             const authorizationTarget =
@@ -639,7 +648,7 @@ export class Route<
                 ? await trx.rawFindById<TResourceSchema>(
                     req.resource,
                     req.resourceId!,
-                    includeClause
+                    includeClause,
                   )
                 : result;
 
@@ -686,7 +695,7 @@ export class Route<
           const includeClause = extractIncludeFromWhere(
             authorizationClause,
             req.resource,
-            schema
+            schema,
           );
 
           const authorizationTarget =
@@ -694,7 +703,7 @@ export class Route<
               ? await trx.rawFindById<TResourceSchema>(
                   req.resource,
                   req.resourceId!,
-                  includeClause
+                  includeClause,
                 )
               : target;
 
@@ -713,13 +722,18 @@ export class Route<
         }
       }
 
-      const result = await trx.rawUpdate<TResourceSchema>(
-        req.resource,
-        req.resourceId!,
-        newRecord,
-        req.context?.messageId,
-        req.context
-      );
+      const { data: result, acceptedValues } =
+        await trx.rawUpdate<TResourceSchema>(
+          req.resource,
+          req.resourceId!,
+          inputValue,
+          req.context?.messageId,
+          req.context,
+        );
+
+      if (!acceptedValues) {
+        throw new Error("Mutation rejected");
+      }
 
       if (this.authorization?.update?.postMutation) {
         const inferredResultValue = inferValue(result) as Simplify<
@@ -743,7 +757,7 @@ export class Route<
           const includeClause = extractIncludeFromWhere(
             authorizationClause,
             req.resource,
-            schema
+            schema,
           );
 
           const authorizationTarget =
@@ -751,7 +765,7 @@ export class Route<
               ? await trx.rawFindById<TResourceSchema>(
                   req.resource,
                   req.resourceId!,
-                  includeClause
+                  includeClause,
                 )
               : result;
 
@@ -778,7 +792,7 @@ export class Route<
   };
 
   private wrapInMiddlewares<T extends Request>(
-    next: NextFunction<any, T>
+    next: NextFunction<any, T>,
   ): NextFunction<any, T> {
     return (req: T) => {
       return Array.from(this.middlewares.values()).reduceRight(
@@ -786,7 +800,7 @@ export class Route<
           return (req) =>
             middleware({ req, next: next as NextFunction<any, any> });
         },
-        next
+        next,
       )(req);
     };
   }
@@ -801,7 +815,7 @@ export class RouteFactory {
 
   collectionRoute<T extends LiveObjectAny>(
     shape: T,
-    authorization?: Authorization<T>
+    authorization?: Authorization<T>,
   ) {
     return new Route<
       T,
@@ -809,7 +823,7 @@ export class RouteFactory {
       Record<string, never>,
       Record<string, never>
     >(shape, undefined, undefined, authorization, undefined).use(
-      ...this.middlewares
+      ...this.middlewares,
     );
   }
 

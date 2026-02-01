@@ -98,11 +98,11 @@ describe("webSocketAdapter", () => {
 
     expect(mockWebSocket.on).toHaveBeenCalledWith(
       "message",
-      expect.any(Function)
+      expect.any(Function),
     );
     expect(mockWebSocket.on).toHaveBeenCalledWith(
       "close",
-      expect.any(Function)
+      expect.any(Function),
     );
     expect(generateId).toHaveBeenCalled();
   });
@@ -112,7 +112,7 @@ describe("webSocketAdapter", () => {
 
     // Get the message handler
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const subscribeMessage = {
@@ -134,7 +134,7 @@ describe("webSocketAdapter", () => {
           cookies: { sessionId: "abc123" },
         }),
         subscription: expect.any(Function),
-      })
+      }),
     );
 
     expect(mockWebSocket.send).toHaveBeenCalledWith(
@@ -145,7 +145,7 @@ describe("webSocketAdapter", () => {
           resource: "users",
           data: [{ id: { value: "user1" }, name: { value: "John" } }],
         },
-      })
+      }),
     );
   });
 
@@ -153,7 +153,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const queryMessage = {
@@ -184,7 +184,7 @@ describe("webSocketAdapter", () => {
           resource: "users",
           data: [{ id: { value: "user1" }, name: { value: "John" } }],
         },
-      })
+      }),
     );
   });
 
@@ -192,7 +192,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const queryMessage1 = {
@@ -227,7 +227,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const mutateMessage = {
@@ -240,6 +240,7 @@ describe("webSocketAdapter", () => {
           _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
         },
       },
+      meta: { timestamp: "2023-01-03T00:00:00.000Z" },
       id: "msg-1",
       procedure: "INSERT",
     };
@@ -263,6 +264,7 @@ describe("webSocketAdapter", () => {
         },
         resourceId: "user1",
         procedure: "INSERT",
+        meta: { timestamp: "2023-01-03T00:00:00.000Z" },
         context: expect.objectContaining({
           messageId: "msg-1",
         }),
@@ -277,7 +279,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const mutateMessage = {
@@ -308,7 +310,7 @@ describe("webSocketAdapter", () => {
         id: "msg-1",
         type: "REPLY",
         data: { success: true },
-      })
+      }),
     );
   });
 
@@ -316,7 +318,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const mutateMessage = {
@@ -334,7 +336,7 @@ describe("webSocketAdapter", () => {
     };
 
     (mockServer.handleMutation as Mock).mockRejectedValue(
-      new Error("Validation failed")
+      new Error("Validation failed"),
     );
 
     await messageHandler(Buffer.from(JSON.stringify(mutateMessage)));
@@ -345,7 +347,7 @@ describe("webSocketAdapter", () => {
         type: "REJECT",
         resource: "users",
         message: "Validation failed",
-      })
+      }),
     );
   });
 
@@ -353,7 +355,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     // This should not throw an error, just log it
@@ -367,7 +369,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const closeHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "close"
+      (call) => call[0] === "close",
     )?.[1];
 
     // Create a mock unsubscribe function returned by handleQuery
@@ -379,7 +381,7 @@ describe("webSocketAdapter", () => {
 
     // Subscribe first
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const subscribeMessage = {
@@ -405,7 +407,7 @@ describe("webSocketAdapter", () => {
 
     // Subscribe to users resource
     const messageHandler = (ws.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     expect(messageHandler).toBeDefined();
@@ -455,7 +457,7 @@ describe("webSocketAdapter", () => {
 
     // Subscribe to users resource
     const messageHandler = (ws.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     expect(messageHandler).toBeDefined();
@@ -495,13 +497,13 @@ describe("webSocketAdapter", () => {
 
   test("should handle context provider returning promise", async () => {
     (mockServer.contextProvider as Mock).mockReturnValue(
-      Promise.resolve({ userId: "async-user" })
+      Promise.resolve({ userId: "async-user" }),
     );
 
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const queryMessage = {
@@ -525,7 +527,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const queryMessage = {
@@ -554,7 +556,7 @@ describe("webSocketAdapter", () => {
     // Should not throw an error
     expect(mockWebSocket.on).toHaveBeenCalledWith(
       "message",
-      expect.any(Function)
+      expect.any(Function),
     );
   });
 
@@ -569,7 +571,7 @@ describe("webSocketAdapter", () => {
     // Should not throw an error
     expect(mockWebSocket.on).toHaveBeenCalledWith(
       "message",
-      expect.any(Function)
+      expect.any(Function),
     );
   });
 
@@ -577,7 +579,7 @@ describe("webSocketAdapter", () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message"
+      (call) => call[0] === "message",
     )?.[1];
 
     const queryMessage = {
@@ -589,7 +591,7 @@ describe("webSocketAdapter", () => {
     (mockServer.handleQuery as Mock).mockResolvedValue(null);
 
     await expect(
-      messageHandler(Buffer.from(JSON.stringify(queryMessage)))
+      messageHandler(Buffer.from(JSON.stringify(queryMessage))),
     ).resolves.toBeUndefined();
   });
 });

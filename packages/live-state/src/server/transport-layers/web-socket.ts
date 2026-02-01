@@ -215,6 +215,7 @@ export const webSocketAdapter = (server: Server<AnyRouter>) => {
                 resourceId: (parsedMessage as DefaultMutation).resourceId,
                 procedure: (parsedMessage as GenericMutation).procedure,
                 queryParams: parsedQs,
+                meta: (parsedMessage as GenericMutation).meta,
               },
             });
 
