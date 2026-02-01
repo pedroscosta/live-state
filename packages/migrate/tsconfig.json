@@ -1,0 +1,11 @@
+{
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "outDir": "./dist",
+    "types": ["node"],
+    "rootDir": "."
+  },
+  "include": ["."],
+  "exclude": ["node_modules", "dist"]
+}
