@@ -228,7 +228,7 @@ export class LiveAtomicType<
       encodedMutation._meta.timestamp &&
       materializedShape._meta.timestamp.localeCompare(
         encodedMutation._meta.timestamp
-      ) >= 0
+      ) > 0
     )
       return [materializedShape, null];
 

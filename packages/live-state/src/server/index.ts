@@ -38,6 +38,8 @@ export interface MutationRequest<TInput = any> extends BaseRequest {
   resource: string;
   resourceId?: string;
   procedure: string;
+  /** @internal */
+  meta?: { timestamp?: string };
 }
 
 export type Request = QueryRequest | MutationRequest | QueryProcedureRequest;

@@ -92,7 +92,7 @@ describe("httpTransportLayer", () => {
       "http://localhost/users?page=1&limit=10&where[status]=active",
       {
         method: "GET",
-      }
+      },
     );
 
     await httpHandler(request);
@@ -141,6 +141,9 @@ describe("httpTransportLayer", () => {
           },
         },
       },
+      meta: {
+        timestamp: "2023-01-03T00:00:00.000Z",
+      },
     };
 
     const request = new Request("http://localhost/users/insert", {
@@ -177,6 +180,7 @@ describe("httpTransportLayer", () => {
         },
         resourceId: "user1",
         procedure: "INSERT",
+        meta: { timestamp: "2023-01-03T00:00:00.000Z" },
       }),
     });
   });
@@ -357,7 +361,7 @@ describe("httpTransportLayer", () => {
     });
 
     (mockServer.handleQuery as Mock).mockRejectedValue(
-      new Error("Unexpected error")
+      new Error("Unexpected error"),
     );
 
     const response = await httpHandler(request);
@@ -399,7 +403,7 @@ describe("httpTransportLayer", () => {
       {
         method: "POST",
         body: JSON.stringify({ payload: { data: "test" } }),
-      }
+      },
     );
 
     await httpHandler(request);
@@ -419,7 +423,7 @@ describe("httpTransportLayer", () => {
         "http://localhost/users?where[deletedAt]=null",
         {
           method: "GET",
-        }
+        },
       );
 
       // Mock qs.parse to return string "null" as qs.parse does
@@ -444,7 +448,7 @@ describe("httpTransportLayer", () => {
         "http://localhost/users?where[deletedAt][$eq]=null",
         {
           method: "GET",
-        }
+        },
       );
 
       // Mock qs.parse to return string "null" as qs.parse does
@@ -469,7 +473,7 @@ describe("httpTransportLayer", () => {
         "http://localhost/users?where[author][deletedAt]=null",
         {
           method: "GET",
-        }
+        },
       );
 
       // Mock qs.parse to return string "null" as qs.parse does
@@ -494,7 +498,7 @@ describe("httpTransportLayer", () => {
         "http://localhost/users?where[deletedAt][$not][$eq]=null",
         {
           method: "GET",
-        }
+        },
       );
 
       // Mock qs.parse to return string "null" as qs.parse does
@@ -519,7 +523,7 @@ describe("httpTransportLayer", () => {
         "http://localhost/users?where[status][$in][]=null&where[status][$in][]=active",
         {
           method: "GET",
-        }
+        },
       );
 
       // Mock qs.parse to return string "null" as qs.parse does
@@ -544,7 +548,7 @@ describe("httpTransportLayer", () => {
         "http://localhost/users?where[deletedAt]=null&where[archivedAt]=null&where[name]=John",
         {
           method: "GET",
-        }
+        },
       );
 
       // Mock qs.parse to return string "null" as qs.parse does
@@ -565,12 +569,9 @@ describe("httpTransportLayer", () => {
     });
 
     test("should not normalize the string 'null' when it's a valid value", async () => {
-      const request = new Request(
-        "http://localhost/users?where[name]=null",
-        {
-          method: "GET",
-        }
-      );
+      const request = new Request("http://localhost/users?where[name]=null", {
+        method: "GET",
+      });
 
       // Mock qs.parse to return string "null" as qs.parse does
       // In this case, we want to test that "null" gets normalized even if it's meant to be a string

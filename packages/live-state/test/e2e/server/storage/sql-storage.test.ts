@@ -615,7 +615,7 @@ describe("SQLStorage E2E Tests with SQLite", () => {
     test("should use rawInsert", async () => {
       const userId = generateId();
 
-      const rawUser = await storage.rawInsert(testSchema.users.name, userId, {
+      const result = await storage.rawInsert(testSchema.users.name, userId, {
         value: {
           id: { value: userId },
           name: {
@@ -629,8 +629,9 @@ describe("SQLStorage E2E Tests with SQLite", () => {
         },
       });
 
-      expect(rawUser).toBeDefined();
-      expect(rawUser.value.id.value).toBe(userId);
+      expect(result.data).toBeDefined();
+      expect(result.data.value.id.value).toBe(userId);
+      expect(result.acceptedValues).toBeDefined();
     });
 
     test("should use rawUpdate", async () => {
@@ -642,22 +643,18 @@ describe("SQLStorage E2E Tests with SQLite", () => {
         email: "john@example.com",
       });
 
-      const updated = await storage.rawUpdate(testSchema.users.name, userId, {
+      const result = await storage.rawUpdate(testSchema.users.name, userId, {
         value: {
-          id: { value: userId },
           name: {
             value: "John Updated",
-            _meta: { timestamp: new Date().toISOString() },
-          },
-          email: {
-            value: "john@example.com",
             _meta: { timestamp: new Date().toISOString() },
           },
         },
       });
 
-      expect(updated).toBeDefined();
-      expect(updated.value.name.value).toBe("John Updated");
+      expect(result.data).toBeDefined();
+      expect(result.data.value.name.value).toBe("John Updated");
+      expect(result.acceptedValues).toBeDefined();
     });
   });
 });

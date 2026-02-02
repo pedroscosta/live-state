@@ -27,7 +27,7 @@ import {
   detectDialect,
   getDialectHelpers,
 } from "./dialect-helpers";
-import { Storage } from "./interface";
+import { type RawMutationResult, Storage } from "./interface";
 import { initializeSchema } from "./schema-init";
 import { applyInclude, applyWhere } from "./sql-utils";
 
@@ -48,13 +48,13 @@ export class SQLStorage extends Storage {
     db: Kysely<{ [x: string]: Selectable<any> }>,
     schema: Schema<any>,
     logger?: Logger,
-    server?: Server<any>
+    server?: Server<any>,
   );
   public constructor(
     poolOrDb: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>,
     schema?: Schema<any>,
     logger?: Logger,
-    server?: Server<any>
+    server?: Server<any>,
   ) {
     super();
 
@@ -81,7 +81,7 @@ export class SQLStorage extends Storage {
   public async init(
     opts: Schema<any>,
     logger?: Logger,
-    server?: Server<any>
+    server?: Server<any>,
   ): Promise<void> {
     this.schema = opts;
     this.logger = logger;
@@ -93,7 +93,7 @@ export class SQLStorage extends Storage {
   private selectMetaColumns(
     eb: any,
     resourceName: string,
-    metaTableName: string
+    metaTableName: string,
   ): any {
     const dialect = detectDialect(this.db);
     const entity = this.schema?.[resourceName];
@@ -114,7 +114,7 @@ export class SQLStorage extends Storage {
   public async rawFindById<T extends LiveObjectAny>(
     resourceName: string,
     id: string,
-    include?: IncludeClause<T>
+    include?: IncludeClause<T>,
   ): Promise<MaterializedLiveType<T> | undefined> {
     if (!this.schema) throw new Error("Schema not initialized");
 
@@ -130,10 +130,10 @@ export class SQLStorage extends Storage {
             this.selectMetaColumns(eb, resourceName, metaTableName).whereRef(
               `${metaTableName}.id`,
               "=",
-              `${resourceName}.id`
-            )
+              `${resourceName}.id`,
+            ),
           )
-          .as("_meta")
+          .as("_meta"),
       );
 
     query = applyInclude(
@@ -142,7 +142,7 @@ export class SQLStorage extends Storage {
       query,
       include,
       this.dialectHelpers,
-      this.db
+      this.db,
     );
 
     const rawValue = await query.executeTakeFirst();
@@ -161,12 +161,12 @@ export class SQLStorage extends Storage {
     id: string,
     options?: {
       include?: TInclude;
-    }
+    },
   ): Promise<InferLiveObject<T, TInclude> | undefined> {
     const rawValue = await this.rawFindById(
       resource.name,
       id,
-      options?.include
+      options?.include,
     );
 
     if (!rawValue) return;
@@ -190,10 +190,10 @@ export class SQLStorage extends Storage {
             this.selectMetaColumns(eb, resourceName, metaTableName).whereRef(
               `${metaTableName}.id`,
               "=",
-              `${resourceName}.id`
-            )
+              `${resourceName}.id`,
+            ),
           )
-          .as("_meta")
+          .as("_meta"),
       );
 
     queryBuilder = applyWhere(this.schema, resourceName, queryBuilder, where);
@@ -204,7 +204,7 @@ export class SQLStorage extends Storage {
       queryBuilder,
       include,
       this.dialectHelpers,
-      this.db
+      this.db,
     );
 
     if (limit !== undefined) {
@@ -237,7 +237,7 @@ export class SQLStorage extends Storage {
       include?: TInclude;
       limit?: number;
       sort?: { key: string; direction: "asc" | "desc" }[];
-    }
+    },
   ): Promise<InferLiveObject<T, TInclude>[]> {
     const materializedResults = await this.get({
       resource: resource.name,
@@ -248,7 +248,7 @@ export class SQLStorage extends Storage {
     });
 
     return materializedResults.map(
-      (value) => inferValue(value) as InferLiveObject<T, TInclude>
+      (value) => inferValue(value) as InferLiveObject<T, TInclude>,
     );
   }
 
@@ -258,11 +258,22 @@ export class SQLStorage extends Storage {
     resourceId: string,
     value: MaterializedLiveType<T>,
     mutationId?: string,
-    context?: Record<string, any>
-  ): Promise<MaterializedLiveType<T>> {
+    context?: Record<string, any>,
+  ): Promise<RawMutationResult<T>> {
     const hooks = this.server?.router?.getHooks(resourceName);
+    const entity = this.schema?.[resourceName];
 
-    let processedValue = value;
+    const [mergedRecord, acceptedValues] = entity?.mergeMutation?.(
+      "set",
+      value.value as Record<string, MaterializedLiveType<LiveObjectAny>>,
+      undefined,
+    ) ?? [value, value.value];
+
+    if (!acceptedValues) {
+      return { data: value, acceptedValues: null };
+    }
+
+    let processedValue = mergedRecord as MaterializedLiveType<T>;
     const rawValueWithId = {
       ...processedValue,
       value: {
@@ -289,7 +300,6 @@ export class SQLStorage extends Storage {
 
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
-    const entity = this.schema?.[resourceName];
 
     for (const [key, val] of Object.entries(processedValue.value)) {
       const metaVal = val._meta?.timestamp;
@@ -306,20 +316,19 @@ export class SQLStorage extends Storage {
     await this.db
       .insertInto(resourceName)
       .values({ ...values, id: resourceId })
-      .execute()
-      .then(() => {
-        this.db
-          .insertInto(`${resourceName}_meta`)
-          .values({ ...metaValues, id: resourceId })
-          .execute();
-      });
+      .execute();
+
+    await this.db
+      .insertInto(`${resourceName}_meta`)
+      .values({ ...metaValues, id: resourceId })
+      .execute();
 
     const mutation = this.buildMutation(
       resourceName,
       resourceId,
       "INSERT",
       processedValue,
-      mutationId
+      mutationId,
     );
 
     if (mutation) {
@@ -345,7 +354,7 @@ export class SQLStorage extends Storage {
       });
     }
 
-    return processedValue;
+    return { data: processedValue, acceptedValues };
   }
 
   /** @internal */
@@ -354,16 +363,24 @@ export class SQLStorage extends Storage {
     resourceId: string,
     value: MaterializedLiveType<T>,
     mutationId?: string,
-    context?: Record<string, any>
-  ): Promise<MaterializedLiveType<T>> {
+    context?: Record<string, any>,
+  ): Promise<RawMutationResult<T>> {
     const hooks = this.server?.router?.getHooks(resourceName);
+    const entity = this.schema?.[resourceName];
 
-    let previousRawValue: MaterializedLiveType<T> | undefined;
-    if (hooks?.beforeUpdate || hooks?.afterUpdate) {
-      previousRawValue = await this.rawFindById<T>(resourceName, resourceId);
+    const existingRecord = await this.rawFindById<T>(resourceName, resourceId);
+
+    const [mergedRecord, acceptedValues] = entity?.mergeMutation?.(
+      "set",
+      value.value as Record<string, MaterializedLiveType<LiveObjectAny>>,
+      existingRecord,
+    ) ?? [value, value.value];
+
+    if (!acceptedValues) {
+      return { data: value, acceptedValues: null };
     }
 
-    let processedValue = value;
+    let processedValue = mergedRecord as MaterializedLiveType<T>;
     const rawValueWithId = {
       ...processedValue,
       value: {
@@ -377,11 +394,11 @@ export class SQLStorage extends Storage {
       (inferredValue as any).id = resourceId;
 
       let previousInferredValue: any | undefined;
-      if (previousRawValue) {
+      if (existingRecord) {
         const previousRawValueWithId = {
-          ...previousRawValue,
+          ...existingRecord,
           value: {
-            ...previousRawValue.value,
+            ...existingRecord.value,
             id: { value: resourceId },
           },
         };
@@ -394,7 +411,7 @@ export class SQLStorage extends Storage {
         value: inferredValue as any,
         rawValue: rawValueWithId,
         previousValue: previousInferredValue,
-        previousRawValue,
+        previousRawValue: existingRecord,
         db: this,
       });
 
@@ -405,7 +422,6 @@ export class SQLStorage extends Storage {
 
     const values: Record<string, any> = {};
     const metaValues: Record<string, string> = {};
-    const entity = this.schema?.[resourceName];
 
     for (const [key, val] of Object.entries(processedValue.value)) {
       const metaVal = val._meta?.timestamp;
@@ -417,6 +433,10 @@ export class SQLStorage extends Storage {
         values[key] = val.value;
       }
       metaValues[key] = metaVal;
+    }
+
+    if (Object.keys(values).length === 0) {
+      return { data: processedValue, acceptedValues };
     }
 
     await Promise.all([
@@ -437,7 +457,7 @@ export class SQLStorage extends Storage {
       resourceId,
       "UPDATE",
       processedValue,
-      mutationId
+      mutationId,
     );
 
     // TODO investigate using returning queries
@@ -451,7 +471,7 @@ export class SQLStorage extends Storage {
     if (hooks?.afterUpdate) {
       const updatedRawValue = await this.rawFindById<T>(
         resourceName,
-        resourceId
+        resourceId,
       );
       if (updatedRawValue) {
         const updatedRawValueWithId = {
@@ -465,11 +485,11 @@ export class SQLStorage extends Storage {
         (inferredValue as any).id = resourceId;
 
         let previousInferredValue: any | undefined;
-        if (previousRawValue) {
+        if (existingRecord) {
           const previousRawValueWithId = {
-            ...previousRawValue,
+            ...existingRecord,
             value: {
-              ...previousRawValue.value,
+              ...existingRecord.value,
               id: { value: resourceId },
             },
           };
@@ -482,13 +502,13 @@ export class SQLStorage extends Storage {
           value: inferredValue as any,
           rawValue: updatedRawValueWithId,
           previousValue: previousInferredValue,
-          previousRawValue,
+          previousRawValue: existingRecord,
           db: this,
         });
       }
     }
 
-    return processedValue;
+    return { data: processedValue, acceptedValues };
   }
 
   public async transaction<T>(
@@ -496,7 +516,7 @@ export class SQLStorage extends Storage {
       trx: Storage;
       commit: () => Promise<void>;
       rollback: () => Promise<void>;
-    }) => Promise<T>
+    }) => Promise<T>,
   ): Promise<T> {
     if (!this.schema) throw new Error("Schema not initialized");
 
@@ -577,7 +597,7 @@ export class SQLStorage extends Storage {
         trx as typeof this.db,
         this.schema,
         this.logger,
-        this.server
+        this.server,
       );
       (transactionStorage as any).mutationStack = transactionStack;
 
@@ -643,7 +663,7 @@ export class SQLStorage extends Storage {
 
     if (Array.isArray(value)) {
       return value.map((item) =>
-        this.parseRelationalJsonStrings(item, resourceName)
+        this.parseRelationalJsonStrings(item, resourceName),
       );
     }
 
@@ -678,7 +698,7 @@ export class SQLStorage extends Storage {
                   const nestedResourceName = relation.entity.name;
                   parsed[key] = this.parseRelationalJsonStrings(
                     jsonParsed,
-                    nestedResourceName
+                    nestedResourceName,
                   );
                 } else {
                   parsed[key] = jsonParsed;
@@ -704,7 +724,7 @@ export class SQLStorage extends Storage {
               const nestedResourceName = relation.entity.name;
               parsed[key] = this.parseRelationalJsonStrings(
                 val,
-                nestedResourceName
+                nestedResourceName,
               );
             } else {
               parsed[key] = val;
@@ -724,7 +744,7 @@ export class SQLStorage extends Storage {
                     const nestedResourceName = relation.entity.name;
                     return this.parseRelationalJsonStrings(
                       jsonParsed,
-                      nestedResourceName
+                      nestedResourceName,
                     );
                   }
                 }
@@ -741,7 +761,7 @@ export class SQLStorage extends Storage {
                   const nestedResourceName = relation.entity.name;
                   return this.parseRelationalJsonStrings(
                     item,
-                    nestedResourceName
+                    nestedResourceName,
                   );
                 }
               }
@@ -761,7 +781,7 @@ export class SQLStorage extends Storage {
 
   private convertToMaterializedLiveType<T extends LiveObjectAny>(
     value: Record<string, any>,
-    resourceName: string
+    resourceName: string,
   ): MaterializedLiveType<T> {
     const entity = this.schema?.[resourceName];
 
@@ -789,7 +809,7 @@ export class SQLStorage extends Storage {
           if (Array.isArray(val)) {
             acc[key] = {
               value: val.map((v) =>
-                this.convertToMaterializedLiveType(v, relationResourceName)
+                this.convertToMaterializedLiveType(v, relationResourceName),
               ),
               _meta: { timestamp: value?._meta?.[key], relation: true },
             };
@@ -831,7 +851,7 @@ export class SQLStorage extends Storage {
   }
 
   private isKyselyLike(
-    value: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>
+    value: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>,
   ): value is Kysely<{ [x: string]: Selectable<any> }> {
     if (value instanceof Kysely) return true;
     if (!value || typeof value !== "object") return false;
@@ -856,7 +876,7 @@ export class SQLStorage extends Storage {
     resourceId: string,
     procedure: "INSERT" | "UPDATE",
     value: MaterializedLiveType<T>,
-    mutationId?: string
+    mutationId?: string,
   ): DefaultMutation | null {
     const payload: Record<
       string,
@@ -889,7 +909,7 @@ export class SQLStorage extends Storage {
 
   private trackMutation(
     mutation: DefaultMutation,
-    entityData: MaterializedLiveType<any>
+    entityData: MaterializedLiveType<any>,
   ): void {
     if (this.db.isTransaction) {
       this.mutationStack.push({ mutation, entityData });
@@ -900,13 +920,13 @@ export class SQLStorage extends Storage {
 
   private notifyMutations(
     mutations: DefaultMutation[],
-    entityData: MaterializedLiveType<any>
+    entityData: MaterializedLiveType<any>,
   ): void;
   private notifyMutations(
     mutationEntries: Array<{
       mutation: DefaultMutation;
       entityData: MaterializedLiveType<any>;
-    }>
+    }>,
   ): void;
   private notifyMutations(
     mutationsOrEntries:
@@ -915,7 +935,7 @@ export class SQLStorage extends Storage {
           mutation: DefaultMutation;
           entityData: MaterializedLiveType<any>;
         }>,
-    entityData?: MaterializedLiveType<any>
+    entityData?: MaterializedLiveType<any>,
   ): void {
     if (!this.server) return;
 

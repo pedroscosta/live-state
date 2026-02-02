@@ -503,6 +503,7 @@ class InnerClient implements QueryExecutor {
       resource: routeName,
       procedure,
       payload,
+      meta: { timestamp: new Date().toISOString() },
     };
 
     this.emitEvent({

@@ -629,14 +629,16 @@ describe("createClient", () => {
 
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:3000/users/hello",
-        {
+        expect.objectContaining({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ payload: "World" }),
-        }
+        })
       );
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.payload).toBe("World");
+      expect(body.meta).toHaveProperty("timestamp");
 
       expect(result).toEqual(customMutationResponse);
     });

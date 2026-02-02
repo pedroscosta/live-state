@@ -9,12 +9,16 @@ export const httpQuerySchema = querySchema.omit({
   resource: true,
 });
 
-export const httpGenericMutationSchema = genericMutationSchema.omit({
-  id: true,
-  type: true,
-  resource: true,
-  procedure: true,
-});
+export const httpGenericMutationSchema = genericMutationSchema
+  .omit({
+    id: true,
+    type: true,
+    resource: true,
+    procedure: true,
+  })
+  .extend({
+    meta: genericMutationSchema.shape.meta,
+  });
 
 export const httpDefaultMutationSchema = defaultMutationSchema.omit({
   id: true,

@@ -246,7 +246,10 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
               ...headers,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ payload: argumentsList[0] }),
+            body: JSON.stringify({
+              payload: argumentsList[0],
+              meta: { timestamp: new Date().toISOString() },
+            }),
           },
           opts.fetchOptions
         );

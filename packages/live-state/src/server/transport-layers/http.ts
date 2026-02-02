@@ -208,6 +208,7 @@ export const httpTransportLayer = (
                   ? procedure.toUpperCase()
                   : procedure,
               queryParams: {},
+              meta: (body as any).meta,
             },
           });
 
