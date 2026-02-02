@@ -28,13 +28,23 @@ export abstract class Storage implements DataSource {
   protected _mutationTimestamp?: string;
 
   /** @internal */
-  public _setMutationTimestamp(timestamp: string | undefined): void {
-    this._mutationTimestamp = timestamp;
+  public _setMutationTimestamp(timestamp: string | undefined): Storage {
+    const nextStorage = this._clone();
+    nextStorage._mutationTimestamp = timestamp;
+    return nextStorage;
   }
 
   /** @internal */
   protected _getTimestamp(): string {
     return this._mutationTimestamp ?? new Date().toISOString();
+  }
+
+  /** @internal */
+  protected _clone(): this {
+    return Object.assign(
+      Object.create(Object.getPrototypeOf(this)),
+      this,
+    );
   }
 
   /** @internal */

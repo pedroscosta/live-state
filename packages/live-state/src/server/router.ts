@@ -442,70 +442,66 @@ export class Route<
     schema: Schema<any>;
   }): Promise<any> => {
     const mutationTimestamp = req.meta?.timestamp ?? new Date().toISOString();
-    db._setMutationTimestamp(mutationTimestamp);
+    const mutationDb = db._setMutationTimestamp(mutationTimestamp);
 
-    try {
-      const serverDB = createServerDB(db, schema);
+    const serverDB = createServerDB(mutationDb, schema);
 
-      return await this.wrapInMiddlewares(async (req: MutationRequest) => {
-        if (!req.procedure)
-          throw new Error("Procedure is required for mutations");
-        const customProcedure = this.customMutations[req.procedure];
+    return await this.wrapInMiddlewares(async (req: MutationRequest) => {
+      if (!req.procedure)
+        throw new Error("Procedure is required for mutations");
+      const customProcedure = this.customMutations[req.procedure];
 
-        if (customProcedure) {
-          const validationResult = customProcedure.inputValidator[
-            "~standard"
-          ].validate(req.input);
+      if (customProcedure) {
+        const validationResult = customProcedure.inputValidator[
+          "~standard"
+        ].validate(req.input);
 
-          // Handle both sync and async validation
-          const result =
-            validationResult instanceof Promise
-              ? await validationResult
-              : validationResult;
+        // Handle both sync and async validation
+        const result =
+          validationResult instanceof Promise
+            ? await validationResult
+            : validationResult;
 
-          if (result.issues) {
-            const errorMessage = result.issues
-              .map(
-                (issue: {
-                  message: string;
-                  path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
-                }) => {
-                  const path = issue.path
-                    ?.map((p) =>
-                      typeof p === "object" && "key" in p
-                        ? String(p.key)
-                        : String(p),
-                    )
-                    .join(".");
-                  return path ? `${path}: ${issue.message}` : issue.message;
-                },
-              )
-              .join(", ");
-            throw new Error(`Validation failed: ${errorMessage}`);
-          }
-
-          req.input = result.value;
-
-          return customProcedure.handler({
-            req,
-            db: serverDB,
-          });
-        } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
-          return this.handleSet({
-            req: req as MutationRequest<
-              LiveObjectMutationInput<TResourceSchema>
-            >,
-            db,
-            operation: req.procedure,
-            schema,
-          });
-        } else {
-          throw new Error(`Unknown procedure: ${req.procedure}`);
+        if (result.issues) {
+          const errorMessage = result.issues
+            .map(
+              (issue: {
+                message: string;
+                path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+              }) => {
+                const path = issue.path
+                  ?.map((p) =>
+                    typeof p === "object" && "key" in p
+                      ? String(p.key)
+                      : String(p),
+                  )
+                  .join(".");
+                return path ? `${path}: ${issue.message}` : issue.message;
+              },
+            )
+            .join(", ");
+          throw new Error(`Validation failed: ${errorMessage}`);
         }
-      })(req);
-    } finally {
-      db._setMutationTimestamp(undefined);
-    }
+
+        req.input = result.value;
+
+        return customProcedure.handler({
+          req,
+          db: serverDB,
+        });
+      } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
+        return this.handleSet({
+          req: req as MutationRequest<
+            LiveObjectMutationInput<TResourceSchema>
+          >,
+          db: mutationDb,
+          operation: req.procedure,
+          schema,
+        });
+      } else {
+        throw new Error(`Unknown procedure: ${req.procedure}`);
+      }
+    })(req);
   };
 
   /** @internal */

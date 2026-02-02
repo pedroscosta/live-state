@@ -61,7 +61,7 @@ describe("Route", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -248,13 +248,10 @@ describe("Route", () => {
       schema: mockSchema,
     });
 
-    expect(mockStorage._setMutationTimestamp).toHaveBeenNthCalledWith(
-      1,
+    expect(mockStorage._setMutationTimestamp).toHaveBeenCalledWith(
       metaTimestamp,
     );
-    expect(mockStorage._setMutationTimestamp).toHaveBeenLastCalledWith(
-      undefined,
-    );
+    expect(mockStorage._setMutationTimestamp).toHaveBeenCalledTimes(1);
   });
 
   test("should throw error when MUTATE request missing payload", async () => {
@@ -555,7 +552,7 @@ describe("Route UPDATE Authorization", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1163,7 +1160,7 @@ describe("Route INSERT Authorization", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1478,7 +1475,7 @@ describe("Route INSERT/UPDATE Edge Cases", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1783,7 +1780,7 @@ describe("Route Error Handling", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -1969,7 +1966,7 @@ describe("Route Custom Mutations Advanced", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -2187,7 +2184,7 @@ describe("Route Authorization Error Handling", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -2396,7 +2393,7 @@ describe("Route Complex Authorization Scenarios", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
@@ -2575,7 +2572,7 @@ describe("Route Authorization with Deep Where Clauses", () => {
           data: {} as MaterializedLiveType<any>,
           acceptedValues: {},
         }),
-      _setMutationTimestamp: vi.fn(),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
       transaction: vi.fn().mockImplementation(async (fn) => {
         return await fn({
           trx: mockStorage,
