@@ -274,9 +274,11 @@ describe('custom optimistic mutations (websocket client)', () => {
 
 		expect(client.store.query.posts.one('post-timeout').get()).toBeDefined();
 
+		const rejectionAssertion = expect(mutationPromise).rejects.toThrow(
+			'Reply timeout'
+		);
 		await vi.advanceTimersByTimeAsync(5000);
-
-		await expect(mutationPromise).rejects.toThrow('Reply timeout');
+		await rejectionAssertion;
 		expect(client.store.query.posts.one('post-timeout').get()).toBeUndefined();
 		expect(
 			events.find((event) => event.type === 'OPTIMISTIC_MUTATION_UNDONE')
