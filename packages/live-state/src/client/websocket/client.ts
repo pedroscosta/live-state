@@ -14,7 +14,7 @@ import {
   syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
-import type { LiveObjectAny, LiveObjectMutationInput } from "../../schema";
+import type { LiveObjectAny, LiveObjectMutationInput, Schema } from "../../schema";
 import {
   createLogger,
   hash,
@@ -23,12 +23,18 @@ import {
   type Simplify,
 } from "../../utils";
 import type { ClientOptions } from "..";
+import {
+  createOptimisticStorageProxy,
+  type OptimisticMutationsRegistry,
+  type OptimisticOperation,
+} from "../optimistic";
 import type { ClientRouterConstraint, Client as ClientType } from "../types";
 import { createObservable } from "../utils";
 import { WebSocketClient } from "../ws-wrapper";
 import { OptimisticStore } from "./store";
 
-interface WebSocketClientOptions extends ClientOptions {
+interface WebSocketClientOptions<TSchema extends Schema<any> = Schema<any>>
+  extends ClientOptions<TSchema> {
   connection?: {
     autoConnect?: boolean;
     autoReconnect?: boolean;
@@ -187,6 +193,7 @@ class InnerClient implements QueryExecutor {
   public readonly ws: WebSocketClient;
   public readonly store: OptimisticStore;
   private readonly logger: Logger;
+  private readonly optimisticMutations?: OptimisticMutationsRegistry<any>;
 
   private remoteSubscriptions: Map<
     string,
@@ -197,7 +204,12 @@ class InnerClient implements QueryExecutor {
 
   private replyHandlers: Record<
     string,
-    { timeoutHandle: NodeJS.Timeout; handler: (data: any) => void }
+    {
+      timeoutHandle: NodeJS.Timeout;
+      handler: (data: any) => void;
+      reject?: (error: Error) => void;
+      optimisticMutationIds?: Array<{ resource: string; mutationId: string }>;
+    }
   > = {};
 
   public constructor(opts: WebSocketClientOptions) {
@@ -205,6 +217,7 @@ class InnerClient implements QueryExecutor {
     this.logger = createLogger({
       level: opts.logLevel ?? LogLevel.INFO,
     });
+    this.optimisticMutations = opts.optimisticMutations;
 
     this.store = new OptimisticStore(
       opts.schema,
@@ -323,6 +336,16 @@ class InnerClient implements QueryExecutor {
           this.logger.error("Error merging mutation from the server:", e);
         }
       } else if (parsedMessage.type === "REJECT") {
+        if (this.replyHandlers[parsedMessage.id]) {
+          clearTimeout(this.replyHandlers[parsedMessage.id].timeoutHandle);
+          this.undoOptimisticOperations(
+            this.replyHandlers[parsedMessage.id].optimisticMutationIds ?? []
+          );
+          const message = parsedMessage.message ?? "Mutation rejected";
+          this.replyHandlers[parsedMessage.id].reject?.(new Error(message));
+          delete this.replyHandlers[parsedMessage.id];
+        }
+
         const pendingMutations =
           this.store.optimisticMutationStack[parsedMessage.resource]?.length ??
           0;
@@ -506,14 +529,51 @@ class InnerClient implements QueryExecutor {
       meta: { timestamp: new Date().toISOString() },
     };
 
-    this.emitEvent({
-      type: "MUTATION_SENT",
-      mutationId: mutationMessage.id,
-      resource: routeName,
-      resourceId: "",
-      procedure,
-      optimistic: false,
-    });
+    let optimisticMutationIds: Array<{
+      resource: string;
+      mutationId: string;
+    }> = [];
+
+    const optimisticHandler = this.optimisticMutations?.getHandler(
+      routeName,
+      procedure
+    );
+
+    if (optimisticHandler) {
+      try {
+        const { proxy, getOperations } = createOptimisticStorageProxy(
+          this.store,
+          this.store.schema
+        );
+
+        optimisticHandler({ input: payload, storage: proxy });
+
+        const operations = getOperations();
+        optimisticMutationIds = this.applyOptimisticOperations(operations);
+
+        this.emitEvent({
+          type: "MUTATION_SENT",
+          mutationId: mutationMessage.id,
+          resource: routeName,
+          resourceId: "",
+          procedure,
+          optimistic: true,
+        });
+      } catch (e) {
+        this.logger.error("Error executing optimistic handler:", e);
+        this.undoOptimisticOperations(optimisticMutationIds);
+        throw e;
+      }
+    } else {
+      this.emitEvent({
+        type: "MUTATION_SENT",
+        mutationId: mutationMessage.id,
+        resource: routeName,
+        resourceId: "",
+        procedure,
+        optimistic: false,
+      });
+    }
 
     this.sendWsMessage(mutationMessage);
 
@@ -521,14 +581,100 @@ class InnerClient implements QueryExecutor {
       this.replyHandlers[mutationMessage.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[mutationMessage.id];
+          this.undoOptimisticOperations(optimisticMutationIds);
           reject(new Error("Reply timeout"));
         }, 5000),
         handler: (data: any) => {
           delete this.replyHandlers[mutationMessage.id];
+          this.confirmOptimisticOperations(optimisticMutationIds);
           resolve(data);
         },
+        reject,
+        optimisticMutationIds,
       };
     });
+  }
+
+  private applyOptimisticOperations(
+    operations: OptimisticOperation[]
+  ): Array<{ resource: string; mutationId: string }> {
+    const appliedMutations: Array<{ resource: string; mutationId: string }> =
+      [];
+
+    for (const op of operations) {
+      const mutationId = generateId();
+      const timestamp = new Date().toISOString();
+
+      const mutationMessage: DefaultMutationMessage = {
+        id: mutationId,
+        type: "MUTATE",
+        resource: op.resource,
+        resourceId: op.id,
+        procedure: op.type === "insert" ? "INSERT" : "UPDATE",
+        payload: this.store.schema[op.resource].encodeMutation(
+          "set",
+          op.data as LiveObjectMutationInput<LiveObjectAny>,
+          timestamp
+        ),
+      };
+
+      const pendingMutations =
+        (this.store.optimisticMutationStack[op.resource]?.length ?? 0) + 1;
+
+      this.store.addMutation(op.resource, mutationMessage, true);
+
+      appliedMutations.push({ resource: op.resource, mutationId });
+
+      this.emitEvent({
+        type: "OPTIMISTIC_MUTATION_APPLIED",
+        mutationId,
+        resource: op.resource,
+        resourceId: op.id,
+        procedure: op.type === "insert" ? "INSERT" : "UPDATE",
+        pendingMutations,
+      });
+    }
+
+    return appliedMutations;
+  }
+
+  private undoOptimisticOperations(
+    mutations: Array<{ resource: string; mutationId: string }>
+  ) {
+    for (const { resource, mutationId } of mutations) {
+      const pendingMutations =
+        this.store.optimisticMutationStack[resource]?.length ?? 0;
+
+      const mutation = this.store.optimisticMutationStack[resource]?.find(
+        (m) => m.id === mutationId
+      );
+
+      this.store.undoMutation(resource, mutationId);
+
+      if (mutation) {
+        this.emitEvent({
+          type: "OPTIMISTIC_MUTATION_UNDONE",
+          mutationId,
+          resource,
+          resourceId: mutation.resourceId,
+          pendingMutations: pendingMutations - 1,
+        });
+      }
+    }
+  }
+
+  private confirmOptimisticOperations(
+    mutations: Array<{ resource: string; mutationId: string }>
+  ) {
+    for (const { resource, mutationId } of mutations) {
+      const mutation = this.store.optimisticMutationStack[resource]?.find(
+        (m) => m.id === mutationId
+      );
+
+      if (mutation) {
+        this.store.addMutation(resource, mutation, false);
+      }
+    }
   }
 
   public genericQuery<TOutput = unknown>(
@@ -559,6 +705,7 @@ class InnerClient implements QueryExecutor {
           delete this.replyHandlers[queryMessage.id];
           resolve(data);
         },
+        reject,
       };
     });
   }

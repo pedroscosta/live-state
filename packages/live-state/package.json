@@ -90,6 +90,11 @@
       "types": "./src/client/fetch/index.ts",
       "import": "./dist/fetch-client.js",
       "require": "./dist/fetch-client.js"
+    },
+    "./client/optimistic": {
+      "types": "./src/client/optimistic/index.ts",
+      "import": "./dist/optimistic-client.js",
+      "require": "./dist/optimistic-client.js"
     }
   },
   "peerDependencies": {
