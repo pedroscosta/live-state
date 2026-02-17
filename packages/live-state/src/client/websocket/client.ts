@@ -601,41 +601,48 @@ class InnerClient implements QueryExecutor {
     const appliedMutations: Array<{ resource: string; mutationId: string }> =
       [];
 
-    for (const op of operations) {
-      const mutationId = generateId();
-      const timestamp = new Date().toISOString();
+    try {
+      for (const op of operations) {
+        const mutationId = generateId();
+        const timestamp = new Date().toISOString();
 
-      const mutationMessage: DefaultMutationMessage = {
-        id: mutationId,
-        type: "MUTATE",
-        resource: op.resource,
-        resourceId: op.id,
-        procedure: op.type === "insert" ? "INSERT" : "UPDATE",
-        payload: this.store.schema[op.resource].encodeMutation(
-          "set",
-          op.data as LiveObjectMutationInput<LiveObjectAny>,
-          timestamp,
-        ),
-      };
+        const mutationMessage: DefaultMutationMessage = {
+          id: mutationId,
+          type: "MUTATE",
+          resource: op.resource,
+          resourceId: op.id,
+          procedure: op.type === "insert" ? "INSERT" : "UPDATE",
+          payload: this.store.schema[op.resource].encodeMutation(
+            "set",
+            op.data as LiveObjectMutationInput<LiveObjectAny>,
+            timestamp,
+          ),
+        };
 
-      const pendingMutations =
-        (this.store.optimisticMutationStack[op.resource]?.length ?? 0) + 1;
+        const pendingMutations =
+          (this.store.optimisticMutationStack[op.resource]?.length ?? 0) + 1;
 
-      this.store.addMutation(op.resource, mutationMessage, true);
+        this.store.addMutation(op.resource, mutationMessage, true);
 
-      appliedMutations.push({ resource: op.resource, mutationId });
+        appliedMutations.push({ resource: op.resource, mutationId });
 
-      this.emitEvent({
-        type: "OPTIMISTIC_MUTATION_APPLIED",
-        mutationId,
-        resource: op.resource,
-        resourceId: op.id,
-        procedure: op.type === "insert" ? "INSERT" : "UPDATE",
-        pendingMutations,
-      });
+        this.emitEvent({
+          type: "OPTIMISTIC_MUTATION_APPLIED",
+          mutationId,
+          resource: op.resource,
+          resourceId: op.id,
+          procedure: op.type === "insert" ? "INSERT" : "UPDATE",
+          pendingMutations,
+        });
+      }
+
+      return appliedMutations;
+    } catch (err) {
+      for (const { resource, mutationId } of appliedMutations) {
+        this.store.undoMutation(resource, mutationId);
+      }
+      throw err;
     }
-
-    return appliedMutations;
   }
 
   private undoOptimisticOperations(
