@@ -14,7 +14,11 @@ import {
   syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
-import type { LiveObjectAny, LiveObjectMutationInput, Schema } from "../../schema";
+import type {
+  LiveObjectAny,
+  LiveObjectMutationInput,
+  Schema,
+} from "../../schema";
 import {
   createLogger,
   hash,
@@ -162,7 +166,7 @@ export type ClientEvents =
 class CustomQueryCall<TOutput> implements PromiseLike<TOutput> {
   public constructor(
     private client: InnerClient,
-    private query: CustomQueryRequest
+    private query: CustomQueryRequest,
   ) {}
 
   public buildQueryRequest() {
@@ -171,18 +175,14 @@ class CustomQueryCall<TOutput> implements PromiseLike<TOutput> {
 
   // biome-ignore lint/suspicious/noThenProperty: PromiseLike implementation required for deferred custom queries
   public then<TResult1 = TOutput, TResult2 = never>(
-    onfulfilled?:
-      | ((value: TOutput) => TResult1 | PromiseLike<TResult1>)
-      | null,
-    onrejected?:
-      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-      | null
+    onfulfilled?: ((value: TOutput) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2> {
     return this.client
       .genericQuery<TOutput>(
         this.query.resource,
         this.query.procedure,
-        this.query.input
+        this.query.input,
       )
       .then(onfulfilled, onrejected);
   }
@@ -242,7 +242,7 @@ class InnerClient implements QueryExecutor {
           type: "QUERY_SUBSCRIPTION_TRIGGERED",
           query,
         });
-      }
+      },
     );
 
     this.ws = new WebSocketClient({
@@ -287,7 +287,7 @@ class InnerClient implements QueryExecutor {
                 });
                 this.sendWsMessage(m);
               });
-          }
+          },
         );
       }
     });
@@ -330,7 +330,7 @@ class InnerClient implements QueryExecutor {
         try {
           this.store.addMutation(
             resource,
-            parsedMessage as DefaultMutationMessage
+            parsedMessage as DefaultMutationMessage,
           );
         } catch (e) {
           this.logger.error("Error merging mutation from the server:", e);
@@ -339,7 +339,7 @@ class InnerClient implements QueryExecutor {
         if (this.replyHandlers[parsedMessage.id]) {
           clearTimeout(this.replyHandlers[parsedMessage.id].timeoutHandle);
           this.undoOptimisticOperations(
-            this.replyHandlers[parsedMessage.id].optimisticMutationIds ?? []
+            this.replyHandlers[parsedMessage.id].optimisticMutationIds ?? [],
           );
           const message = parsedMessage.message ?? "Mutation rejected";
           this.replyHandlers[parsedMessage.id].reject?.(new Error(message));
@@ -390,7 +390,7 @@ class InnerClient implements QueryExecutor {
 
         this.store.loadConsolidatedState(
           parsedSyncData.resource,
-          parsedSyncData.data
+          parsedSyncData.data,
         );
 
         this.emitEvent({
@@ -464,7 +464,7 @@ class InnerClient implements QueryExecutor {
 
   public subscribe(
     query: z.infer<typeof clQueryMsgSchema>,
-    callback: (value: any[]) => void
+    callback: (value: any[]) => void,
   ) {
     return this.store.subscribe(query, callback);
   }
@@ -475,7 +475,7 @@ class InnerClient implements QueryExecutor {
     procedure: "INSERT" | "UPDATE",
     payload: Partial<
       Omit<Simplify<LiveObjectMutationInput<LiveObjectAny>>["value"], "id">
-    >
+    >,
   ) {
     const mutationMessage: DefaultMutationMessage = {
       id: generateId(),
@@ -484,7 +484,7 @@ class InnerClient implements QueryExecutor {
       payload: this.store.schema[routeName].encodeMutation(
         "set",
         payload as LiveObjectMutationInput<LiveObjectAny>,
-        new Date().toISOString()
+        new Date().toISOString(),
       ),
       resourceId,
       procedure,
@@ -536,14 +536,14 @@ class InnerClient implements QueryExecutor {
 
     const optimisticHandler = this.optimisticMutations?.getHandler(
       routeName,
-      procedure
+      procedure,
     );
 
     if (optimisticHandler) {
       try {
         const { proxy, getOperations } = createOptimisticStorageProxy(
           this.store,
-          this.store.schema
+          this.store.schema,
         );
 
         optimisticHandler({ input: payload, storage: proxy });
@@ -596,7 +596,7 @@ class InnerClient implements QueryExecutor {
   }
 
   private applyOptimisticOperations(
-    operations: OptimisticOperation[]
+    operations: OptimisticOperation[],
   ): Array<{ resource: string; mutationId: string }> {
     const appliedMutations: Array<{ resource: string; mutationId: string }> =
       [];
@@ -614,7 +614,7 @@ class InnerClient implements QueryExecutor {
         payload: this.store.schema[op.resource].encodeMutation(
           "set",
           op.data as LiveObjectMutationInput<LiveObjectAny>,
-          timestamp
+          timestamp,
         ),
       };
 
@@ -639,14 +639,14 @@ class InnerClient implements QueryExecutor {
   }
 
   private undoOptimisticOperations(
-    mutations: Array<{ resource: string; mutationId: string }>
+    mutations: Array<{ resource: string; mutationId: string }>,
   ) {
     for (const { resource, mutationId } of mutations) {
       const pendingMutations =
         this.store.optimisticMutationStack[resource]?.length ?? 0;
 
       const mutation = this.store.optimisticMutationStack[resource]?.find(
-        (m) => m.id === mutationId
+        (m) => m.id === mutationId,
       );
 
       this.store.undoMutation(resource, mutationId);
@@ -664,11 +664,11 @@ class InnerClient implements QueryExecutor {
   }
 
   private confirmOptimisticOperations(
-    mutations: Array<{ resource: string; mutationId: string }>
+    mutations: Array<{ resource: string; mutationId: string }>,
   ) {
     for (const { resource, mutationId } of mutations) {
       const mutation = this.store.optimisticMutationStack[resource]?.find(
-        (m) => m.id === mutationId
+        (m) => m.id === mutationId,
       );
 
       if (mutation) {
@@ -680,7 +680,7 @@ class InnerClient implements QueryExecutor {
   public genericQuery<TOutput = unknown>(
     routeName: string,
     procedure: string,
-    input?: any
+    input?: any,
   ): Promise<TOutput> {
     if (!this.ws || !this.ws.connected())
       throw new Error("WebSocket not connected");
@@ -738,13 +738,13 @@ export type Client<TRouter extends ClientRouterConstraint> = {
 };
 
 export const createClient = <TRouter extends ClientRouterConstraint>(
-  opts: WebSocketClientOptions
+  opts: WebSocketClientOptions,
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
 
   const wrapQueryBuilderWithCustomQueries = (
     routeName: string,
-    queryBuilder: QueryBuilder<any>
+    queryBuilder: QueryBuilder<any>,
   ) => {
     return new Proxy(queryBuilder, {
       get(target, prop, receiver) {
@@ -776,16 +776,13 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
       },
     },
     store: {
-      query: Object.entries(opts.schema).reduce(
-        (acc, [key, value]) => {
-          acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
-            key,
-            QueryBuilder._init(value, ogClient)
-          );
-          return acc;
-        },
-        {} as any
-      ) as ClientType<TRouter>["query"],
+      query: Object.entries(opts.schema).reduce((acc, [key, value]) => {
+        acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
+          key,
+          QueryBuilder._init(value, ogClient),
+        );
+        return acc;
+      }, {} as any) as ClientType<TRouter>["query"],
       mutate: createObservable(() => {}, {
         apply: (_, path, argumentsList) => {
           if (path.length < 2) return;

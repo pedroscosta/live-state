@@ -22,13 +22,13 @@ export function Board(): JSX.Element {
         <Button
           className="w-sm"
           onClick={() => {
-            store.mutate.groups.insert({
+            store.mutate.groups.createGroup({
               id: ulid().toLowerCase(),
               name: `New Group ${Object.keys(groups ?? {}).length + 1}`,
             });
           }}
         >
-          Add Group
+          Add Group (optimistic)
         </Button>
         <Button
           className="w-sm"

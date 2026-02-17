@@ -58,18 +58,14 @@ export const Card = ({
         <p className="text-lg border bg-muted p-2 rounded-lg">{card.counter}</p>
         <Button
           onClick={() => {
-            store.mutate.cards.update(cardId, {
-              counter: card.counter + 1,
-            });
+            store.mutate.cards.incrementCounter({ cardId });
           }}
         >
           +
         </Button>
         <Button
           onClick={() => {
-            store.mutate.cards.update(cardId, {
-              counter: card.counter - 1,
-            });
+            store.mutate.cards.decrementCounter({ cardId });
           }}
         >
           -
