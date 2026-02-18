@@ -199,7 +199,7 @@ describe('custom optimistic mutations (websocket client)', () => {
 		);
 
 		await expect(mutationPromise).resolves.toEqual({ ok: true });
-		expect(client.store.query.posts.one('post-1').get()).toBeDefined();
+		expect(client.store.query.posts.one('post-1').get()).toBeUndefined();
 
 		unsubscribe();
 		client.client.ws.disconnect();
