@@ -31,7 +31,7 @@ export const routerImpl = router({
                 cards: true,
               },
             });
-          }
+          },
         ),
         customFindOne: mutation(z.string()).handler(async ({ req, db }) => {
           const result = await db.findOne(schema.cards, req.input!, {
@@ -82,10 +82,10 @@ export const routerImpl = router({
           const totalCards = Object.values(allGroups).reduce(
             (sum, group) =>
               sum + (group.cards ? Object.keys(group.cards).length : 0),
-            0
+            0,
           );
           const groupsWithCards = Object.values(allGroups).filter(
-            (group) => group.cards && Object.keys(group.cards).length > 0
+            (group) => group.cards && Object.keys(group.cards).length > 0,
           ).length;
 
           return {
@@ -105,7 +105,7 @@ export const routerImpl = router({
 
           const searchTerm = req.input!.toLowerCase();
           const matchingGroups = Object.values(allGroups).filter((group) =>
-            group.name.toLowerCase().includes(searchTerm)
+            group.name.toLowerCase().includes(searchTerm),
           );
 
           return matchingGroups.reduce(
@@ -113,44 +113,43 @@ export const routerImpl = router({
               acc[group.id] = group;
               return acc;
             },
-            {} as Record<string, (typeof matchingGroups)[0]>
+            {} as Record<string, (typeof matchingGroups)[0]>,
           );
         }),
+        createGroup: mutation(
+          z.object({ id: z.string(), name: z.string() }),
+        ).handler(async ({ req, db }) => {
+          await new Promise((r) => setTimeout(r, 4_000));
+          return db.insert(schema.groups, {
+            id: req.input!.id,
+            name: req.input!.name,
+          });
+        }),
       })),
-    cards: publicRoute.collectionRoute(schema.cards, {
-      // insert: ({ ctx, value }) => {
-      //   console.log("Insert auth context", ctx);
-      //   console.log("Insert auth value", value);
-      //   return Math.random() < 0.5;
-      // },
-      // read: (ctx) => {
-      //   console.log("Auth context", ctx);
-      //   return {
-      //     counter: {
-      //       $gte: 1,
-      //     },
-      //   };
-      // },
-      // insert: (ctx) => {
-      //   return {
-      //     counter: {
-      //       $gte: 1,
-      //     },
-      //   };
-      // },
-      // update: {
-      //   preMutation: (ctx) => {
-      //     return {
-      //       counter: { $gte: 0 },
-      //     };
-      //   },
-      //   postMutation: (ctx) => {
-      //     return {
-      //       counter: { $gte: 2 },
-      //     };
-      //   },
-      // },
-    }),
+    cards: publicRoute
+      .collectionRoute(schema.cards)
+      .withProcedures(({ mutation }) => ({
+        incrementCounter: mutation(z.object({ cardId: z.string() })).handler(
+          async ({ req, db }) => {
+            await new Promise((r) => setTimeout(r, 4_000));
+            const card = await db.findOne(schema.cards, req.input!.cardId);
+            if (!card) throw new Error("Card not found");
+            return db.update(schema.cards, req.input!.cardId, {
+              counter: card.counter + 1,
+            });
+          },
+        ),
+        decrementCounter: mutation(z.object({ cardId: z.string() })).handler(
+          async ({ req, db }) => {
+            await new Promise((r) => setTimeout(r, 4_000));
+            const card = await db.findOne(schema.cards, req.input!.cardId);
+            if (!card) throw new Error("Card not found");
+            return db.update(schema.cards, req.input!.cardId, {
+              counter: card.counter - 1,
+            });
+          },
+        ),
+      })),
   },
 });
 
