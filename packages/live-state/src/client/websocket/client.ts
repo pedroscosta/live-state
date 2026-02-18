@@ -208,7 +208,6 @@ class InnerClient implements QueryExecutor {
       timeoutHandle: NodeJS.Timeout;
       handler: (data: any) => void;
       reject?: (error: Error) => void;
-      optimisticMutationIds?: Array<{ resource: string; mutationId: string }>;
     }
   > = {};
 
@@ -338,8 +337,8 @@ class InnerClient implements QueryExecutor {
       } else if (parsedMessage.type === "REJECT") {
         if (this.replyHandlers[parsedMessage.id]) {
           clearTimeout(this.replyHandlers[parsedMessage.id].timeoutHandle);
-          this.undoOptimisticOperations(
-            this.replyHandlers[parsedMessage.id].optimisticMutationIds ?? [],
+          this.emitUndoEvents(
+            this.store.undoCustomMutation(parsedMessage.id),
           );
           const message = parsedMessage.message ?? "Mutation rejected";
           this.replyHandlers[parsedMessage.id].reject?.(new Error(message));
@@ -529,11 +528,6 @@ class InnerClient implements QueryExecutor {
       meta: { timestamp: new Date().toISOString() },
     };
 
-    let optimisticMutationIds: Array<{
-      resource: string;
-      mutationId: string;
-    }> = [];
-
     const optimisticHandler = this.optimisticMutations?.getHandler(
       routeName,
       procedure,
@@ -549,7 +543,8 @@ class InnerClient implements QueryExecutor {
         optimisticHandler({ input: payload, storage: proxy });
 
         const operations = getOperations();
-        optimisticMutationIds = this.applyOptimisticOperations(operations);
+        const appliedIds = this.applyOptimisticOperations(operations);
+        this.store.registerCustomMutation(mutationMessage.id, appliedIds);
 
         this.emitEvent({
           type: "MUTATION_SENT",
@@ -561,7 +556,7 @@ class InnerClient implements QueryExecutor {
         });
       } catch (e) {
         this.logger.error("Error executing optimistic handler:", e);
-        this.undoOptimisticOperations(optimisticMutationIds);
+        this.emitUndoEvents(this.store.undoCustomMutation(mutationMessage.id));
         throw e;
       }
     } else {
@@ -581,16 +576,17 @@ class InnerClient implements QueryExecutor {
       this.replyHandlers[mutationMessage.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[mutationMessage.id];
-          this.undoOptimisticOperations(optimisticMutationIds);
+          this.emitUndoEvents(
+            this.store.undoCustomMutation(mutationMessage.id),
+          );
           reject(new Error("Reply timeout"));
         }, 5000),
         handler: (data: any) => {
           delete this.replyHandlers[mutationMessage.id];
-          this.confirmOptimisticOperations(optimisticMutationIds);
+          this.store.confirmCustomMutation(mutationMessage.id);
           resolve(data);
         },
         reject,
-        optimisticMutationIds,
       };
     });
   }
@@ -645,42 +641,24 @@ class InnerClient implements QueryExecutor {
     }
   }
 
-  private undoOptimisticOperations(
-    mutations: Array<{ resource: string; mutationId: string }>,
+  private emitUndoEvents(
+    undone: Array<{
+      resource: string;
+      mutationId: string;
+      resourceId: string;
+    }>,
   ) {
-    for (const { resource, mutationId } of mutations) {
+    for (const { resource, mutationId, resourceId } of undone) {
       const pendingMutations =
         this.store.optimisticMutationStack[resource]?.length ?? 0;
 
-      const mutation = this.store.optimisticMutationStack[resource]?.find(
-        (m) => m.id === mutationId,
-      );
-
-      this.store.undoMutation(resource, mutationId);
-
-      if (mutation) {
-        this.emitEvent({
-          type: "OPTIMISTIC_MUTATION_UNDONE",
-          mutationId,
-          resource,
-          resourceId: mutation.resourceId,
-          pendingMutations: pendingMutations - 1,
-        });
-      }
-    }
-  }
-
-  private confirmOptimisticOperations(
-    mutations: Array<{ resource: string; mutationId: string }>,
-  ) {
-    for (const { resource, mutationId } of mutations) {
-      const mutation = this.store.optimisticMutationStack[resource]?.find(
-        (m) => m.id === mutationId,
-      );
-
-      if (mutation) {
-        this.store.addMutation(resource, mutation, false);
-      }
+      this.emitEvent({
+        type: "OPTIMISTIC_MUTATION_UNDONE",
+        mutationId,
+        resource,
+        resourceId,
+        pendingMutations,
+      });
     }
   }
 

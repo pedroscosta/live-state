@@ -30,6 +30,10 @@ export class OptimisticStore {
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
   private logger: Logger;
   private onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void;
+  private customMutationIndex: Record<
+    string,
+    Array<{ resource: string; mutationId: string }>
+  > = {};
 
   private collectionSubscriptions: Map<
     string,
@@ -282,6 +286,59 @@ export class OptimisticStore {
       ),
       prevValue,
     );
+  }
+
+  public registerCustomMutation(
+    messageId: string,
+    mutations: Array<{ resource: string; mutationId: string }>,
+  ) {
+    this.customMutationIndex[messageId] = mutations;
+  }
+
+  public confirmCustomMutation(messageId: string) {
+    const mutations = this.customMutationIndex[messageId];
+    if (!mutations) return;
+
+    for (const { resource, mutationId } of mutations) {
+      this.undoMutation(resource, mutationId);
+      // const mutation = this.optimisticMutationStack[resource]?.find(
+      //   (m) => m.id === mutationId,
+      // );
+
+      // if (mutation) {
+      //   this.addMutation(resource, mutation, false);
+      // }
+    }
+
+    delete this.customMutationIndex[messageId];
+  }
+
+  public undoCustomMutation(
+    messageId: string,
+  ): Array<{ resource: string; mutationId: string; resourceId: string }> {
+    const mutations = this.customMutationIndex[messageId];
+    if (!mutations) return [];
+
+    const undone: Array<{
+      resource: string;
+      mutationId: string;
+      resourceId: string;
+    }> = [];
+
+    for (const { resource, mutationId } of mutations) {
+      const mutation = this.optimisticMutationStack[resource]?.find(
+        (m) => m.id === mutationId,
+      );
+
+      this.undoMutation(resource, mutationId);
+
+      if (mutation) {
+        undone.push({ resource, mutationId, resourceId: mutation.resourceId });
+      }
+    }
+
+    delete this.customMutationIndex[messageId];
+    return undone;
   }
 
   public loadConsolidatedState(
