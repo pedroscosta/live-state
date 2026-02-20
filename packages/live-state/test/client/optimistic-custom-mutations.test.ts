@@ -120,6 +120,21 @@ const createTestClient = async (optimisticMutations?: any) => {
 	return { client, ws };
 };
 
+const createOfflineTestClient = (optimisticMutations?: any) => {
+	const client = createClient<TestRouter>({
+		url: 'ws://localhost:1234',
+		schema,
+		storage: false,
+		optimisticMutations,
+		connection: {
+			autoConnect: false,
+			autoReconnect: false,
+		},
+	});
+
+	return { client };
+};
+
 const getLastSentMessage = (ws: MockWebSocket) => {
 	const calls = ws.send.mock.calls;
 	if (calls.length === 0) return null;
@@ -375,6 +390,251 @@ test('fails safely when optimistic handler throws', async () => {
 		).toBeUndefined();
 
 		unsubscribe();
+		client.client.ws.disconnect();
+	});
+});
+
+describe('offline custom optimistic mutations', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.clearAllMocks();
+		vi.clearAllTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	test('applies optimistically when offline with optimistic handler', () => {
+		const optimisticMutations = defineOptimisticMutations<TestRouter, typeof schema>({
+			posts: {
+				createPost: ({ input, storage }) => {
+					storage.posts.insert({
+						id: input.id,
+						title: input.title,
+						likes: input.likes,
+					});
+				},
+			},
+		});
+
+		const { client } = createOfflineTestClient(optimisticMutations);
+
+		const result = client.store.mutate.posts.createPost({
+			id: 'offline-post-1',
+			title: 'Offline Post',
+			likes: 5,
+		});
+
+		expect(result).toBeInstanceOf(Promise);
+
+		const record = client.store.query.posts.one('offline-post-1').get();
+		expect(record).toEqual(
+			expect.objectContaining({ id: 'offline-post-1', title: 'Offline Post', likes: 5 })
+		);
+
+		client.client.ws.disconnect();
+	});
+
+	test('throws when offline without optimistic handler', () => {
+		const { client } = createOfflineTestClient();
+
+		expect(() =>
+			client.store.mutate.posts.createPost({
+				id: 'offline-post-2',
+				title: 'Should Fail',
+				likes: 0,
+			})
+		).toThrow('WebSocket not connected');
+
+		client.client.ws.disconnect();
+	});
+
+	test('resolves immediately with undefined when offline', async () => {
+		const optimisticMutations = defineOptimisticMutations<TestRouter, typeof schema>({
+			posts: {
+				createPost: ({ input, storage }) => {
+					storage.posts.insert({
+						id: input.id,
+						title: input.title,
+						likes: input.likes,
+					});
+				},
+			},
+		});
+
+		const { client } = createOfflineTestClient(optimisticMutations);
+
+		const result = await client.store.mutate.posts.createPost({
+			id: 'offline-post-3',
+			title: 'Fire and Forget',
+			likes: 0,
+		});
+
+		expect(result).toBeUndefined();
+
+		client.client.ws.disconnect();
+	});
+
+	test('replays custom mutation messages on reconnect', async () => {
+		const optimisticMutations = defineOptimisticMutations<TestRouter, typeof schema>({
+			posts: {
+				createPost: ({ input, storage }) => {
+					storage.posts.insert({
+						id: input.id,
+						title: input.title,
+						likes: input.likes,
+					});
+				},
+			},
+		});
+
+		const { client } = createOfflineTestClient(optimisticMutations);
+
+		await client.store.mutate.posts.createPost({
+			id: 'replay-post-1',
+			title: 'Replayed Post',
+			likes: 0,
+		});
+
+		expect(client.store.query.posts.one('replay-post-1').get()).toBeDefined();
+
+		await client.client.ws.connect();
+		const ws = (client.client.ws as any).ws as MockWebSocket;
+		ws.simulateOpen();
+
+		const sentMessages = ws.send.mock.calls.map((c: any) => JSON.parse(c[0]));
+		const customMutationMsg = sentMessages.find(
+			(m: any) => m.type === 'MUTATE' && m.procedure === 'createPost'
+		);
+		expect(customMutationMsg).toBeDefined();
+		expect(customMutationMsg.resource).toBe('posts');
+
+		client.client.ws.disconnect();
+	});
+
+	test('confirms custom mutation on server reply after reconnect', async () => {
+		const optimisticMutations = defineOptimisticMutations<TestRouter, typeof schema>({
+			posts: {
+				createPost: ({ input, storage }) => {
+					storage.posts.insert({
+						id: input.id,
+						title: input.title,
+						likes: input.likes,
+					});
+				},
+			},
+		});
+
+		const { client } = createOfflineTestClient(optimisticMutations);
+
+		await client.store.mutate.posts.createPost({
+			id: 'confirm-post-1',
+			title: 'Confirm Post',
+			likes: 0,
+		});
+
+		await client.client.ws.connect();
+		const ws = (client.client.ws as any).ws as MockWebSocket;
+		ws.simulateOpen();
+
+		const sentMessages = ws.send.mock.calls.map((c: any) => JSON.parse(c[0]));
+		const customMsg = sentMessages.find(
+			(m: any) => m.type === 'MUTATE' && m.procedure === 'createPost'
+		);
+
+		ws.simulateMessage(
+			JSON.stringify({ type: 'REPLY', id: customMsg.id, data: { ok: true } })
+		);
+
+		expect(client.store.query.posts.one('confirm-post-1').get()).toBeUndefined();
+
+		client.client.ws.disconnect();
+	});
+
+	test('rolls back on server rejection after reconnect', async () => {
+		const optimisticMutations = defineOptimisticMutations<TestRouter, typeof schema>({
+			posts: {
+				createPost: ({ input, storage }) => {
+					storage.posts.insert({
+						id: input.id,
+						title: input.title,
+						likes: input.likes,
+					});
+				},
+			},
+		});
+
+		const { client } = createOfflineTestClient(optimisticMutations);
+
+		await client.store.mutate.posts.createPost({
+			id: 'reject-post-1',
+			title: 'Reject Post',
+			likes: 0,
+		});
+
+		expect(client.store.query.posts.one('reject-post-1').get()).toBeDefined();
+
+		await client.client.ws.connect();
+		const ws = (client.client.ws as any).ws as MockWebSocket;
+		ws.simulateOpen();
+
+		const sentMessages = ws.send.mock.calls.map((c: any) => JSON.parse(c[0]));
+		const customMsg = sentMessages.find(
+			(m: any) => m.type === 'MUTATE' && m.procedure === 'createPost'
+		);
+
+		ws.simulateMessage(
+			JSON.stringify({
+				type: 'REJECT',
+				id: customMsg.id,
+				resource: 'posts',
+				message: 'Not allowed',
+			})
+		);
+
+		expect(client.store.query.posts.one('reject-post-1').get()).toBeUndefined();
+
+		client.client.ws.disconnect();
+	});
+
+	test('does not replay individual mutations belonging to custom mutations', async () => {
+		const optimisticMutations = defineOptimisticMutations<TestRouter, typeof schema>({
+			posts: {
+				createPost: ({ input, storage }) => {
+					storage.posts.insert({
+						id: input.id,
+						title: input.title,
+						likes: input.likes,
+					});
+				},
+			},
+		});
+
+		const { client } = createOfflineTestClient(optimisticMutations);
+
+		await client.store.mutate.posts.createPost({
+			id: 'no-replay-post',
+			title: 'No Individual Replay',
+			likes: 0,
+		});
+
+		await client.client.ws.connect();
+		const ws = (client.client.ws as any).ws as MockWebSocket;
+		ws.simulateOpen();
+
+		const sentMessages = ws.send.mock.calls.map((c: any) => JSON.parse(c[0]));
+
+		const defaultMutations = sentMessages.filter(
+			(m: any) => m.type === 'MUTATE' && m.procedure === 'INSERT'
+		);
+		expect(defaultMutations).toHaveLength(0);
+
+		const customMutations = sentMessages.filter(
+			(m: any) => m.type === 'MUTATE' && m.procedure === 'createPost'
+		);
+		expect(customMutations).toHaveLength(1);
+
 		client.client.ws.disconnect();
 	});
 });
