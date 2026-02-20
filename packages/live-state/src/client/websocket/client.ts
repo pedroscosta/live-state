@@ -222,12 +222,24 @@ class InnerClient implements QueryExecutor {
       opts.schema,
       opts.storage,
       this.logger,
-      (stack) => {
+      (stack, _customStack, customIndex) => {
+        const customMutationIds = new Set<string>();
+        if (customIndex) {
+          for (const mutations of Object.values(customIndex)) {
+            for (const { mutationId } of mutations) {
+              customMutationIds.add(mutationId);
+            }
+          }
+        }
+
         Object.values(stack)
           ?.flat()
           ?.forEach((m) => {
+            if (customMutationIds.has(m.id)) return;
             this.sendWsMessage(m);
           });
+
+        this.replayCustomMutationStack();
       },
       (resource, itemCount) => {
         this.emitEvent({
@@ -272,10 +284,13 @@ class InnerClient implements QueryExecutor {
           });
         });
 
+        const customMutationIds = this.store.getCustomMutationMutationIds();
+
         Object.values(this.store.optimisticMutationStack).forEach(
           (mutations) => {
             if (mutations)
               mutations.forEach((m) => {
+                if (customMutationIds.has(m.id)) return;
                 this.emitEvent({
                   type: "MUTATION_SENT",
                   mutationId: m.id,
@@ -288,6 +303,8 @@ class InnerClient implements QueryExecutor {
               });
           },
         );
+
+        this.replayCustomMutationStack();
       }
     });
   }
@@ -516,8 +533,16 @@ class InnerClient implements QueryExecutor {
   }
 
   public genericMutate(routeName: string, procedure: string, payload: any) {
-    if (!this.ws || !this.ws.connected())
+    const isConnected = this.ws?.connected();
+
+    const optimisticHandler = this.optimisticMutations?.getHandler(
+      routeName,
+      procedure,
+    );
+
+    if (!isConnected && !optimisticHandler) {
       throw new Error("WebSocket not connected");
+    }
 
     const mutationMessage: MutationMessage = {
       id: generateId(),
@@ -527,11 +552,6 @@ class InnerClient implements QueryExecutor {
       payload,
       meta: { timestamp: new Date().toISOString() },
     };
-
-    const optimisticHandler = this.optimisticMutations?.getHandler(
-      routeName,
-      procedure,
-    );
 
     if (optimisticHandler) {
       try {
@@ -568,6 +588,11 @@ class InnerClient implements QueryExecutor {
         procedure,
         optimistic: false,
       });
+    }
+
+    if (!isConnected) {
+      this.store.addCustomMutationMessage(mutationMessage);
+      return Promise.resolve(undefined);
     }
 
     this.sendWsMessage(mutationMessage);
@@ -700,6 +725,23 @@ class InnerClient implements QueryExecutor {
     return () => {
       this.eventListeners.delete(listener);
     };
+  }
+
+  private replayCustomMutationStack() {
+    for (const message of this.store.customMutationStack) {
+      this.sendWsMessage(message);
+
+      this.replyHandlers[message.id] = {
+        timeoutHandle: setTimeout(() => {
+          delete this.replyHandlers[message.id];
+          this.emitUndoEvents(this.store.undoCustomMutation(message.id));
+        }, 5000),
+        handler: () => {
+          delete this.replyHandlers[message.id];
+          this.store.confirmCustomMutation(message.id);
+        },
+      };
+    }
   }
 
   private sendWsMessage(message: ClientMessage) {

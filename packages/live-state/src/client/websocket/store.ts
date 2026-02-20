@@ -1,6 +1,9 @@
 import fastDeepEqual from "fast-deep-equal";
 import type { RawQueryRequest } from "../../core/schemas/core-protocol";
-import type { DefaultMutationMessage } from "../../core/schemas/web-socket";
+import type {
+  DefaultMutationMessage,
+  MutationMessage,
+} from "../../core/schemas/web-socket";
 import {
   type IncludeClause,
   inferValue,
@@ -26,11 +29,12 @@ type RawObjPool = Record<
 export class OptimisticStore {
   private rawObjPool: RawObjPool = {} as RawObjPool;
   public optimisticMutationStack: Record<string, DefaultMutationMessage[]> = {};
+  public customMutationStack: MutationMessage[] = [];
   private optimisticObjGraph: ObjectGraph;
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
   private logger: Logger;
   private onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void;
-  private customMutationIndex: Record<
+  public customMutationIndex: Record<
     string,
     Array<{ resource: string; mutationId: string }>
   > = {};
@@ -51,7 +55,11 @@ export class OptimisticStore {
     public readonly schema: Schema<any>,
     storage: ClientOptions["storage"],
     logger: Logger,
-    afterLoadMutations?: (stack: typeof this.optimisticMutationStack) => void,
+    afterLoadMutations?: (
+      stack: typeof this.optimisticMutationStack,
+      customStack: MutationMessage[],
+      customIndex: typeof this.customMutationIndex,
+    ) => void,
     onStorageLoaded?: (resource: string, itemCount: number) => void,
     onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void,
   ) {
@@ -62,12 +70,30 @@ export class OptimisticStore {
 
     if (storage !== false) {
       this.kvStorage.init(this.schema, storage.name).then(() => {
-        this.kvStorage
-          .getMeta<typeof this.optimisticMutationStack>("mutationStack")
-          .then((data) => {
-            if (!data || Object.keys(data).length === 0) return;
-            this.optimisticMutationStack = data;
-            afterLoadMutations?.(this.optimisticMutationStack);
+        Promise.all([
+          this.kvStorage.getMeta<typeof this.optimisticMutationStack>(
+            "mutationStack",
+          ),
+          this.kvStorage.getMeta<MutationMessage[]>("customMutationStack"),
+          this.kvStorage.getMeta<typeof this.customMutationIndex>(
+            "customMutationIndex",
+          ),
+        ])
+          .then(([mutStack, customStack, customIndex]) => {
+            if (mutStack && Object.keys(mutStack).length > 0) {
+              this.optimisticMutationStack = mutStack;
+            }
+            if (customStack && customStack.length > 0) {
+              this.customMutationStack = customStack;
+            }
+            if (customIndex && Object.keys(customIndex).length > 0) {
+              this.customMutationIndex = customIndex;
+            }
+            afterLoadMutations?.(
+              this.optimisticMutationStack,
+              this.customMutationStack,
+              this.customMutationIndex,
+            );
           })
           .then(() => {
             Object.entries(this.schema).forEach(([k]) => {
@@ -288,11 +314,17 @@ export class OptimisticStore {
     );
   }
 
+  public addCustomMutationMessage(message: MutationMessage) {
+    this.customMutationStack.push(message);
+    this.kvStorage.setMeta("customMutationStack", this.customMutationStack);
+  }
+
   public registerCustomMutation(
     messageId: string,
     mutations: Array<{ resource: string; mutationId: string }>,
   ) {
     this.customMutationIndex[messageId] = mutations;
+    this.kvStorage.setMeta("customMutationIndex", this.customMutationIndex);
   }
 
   public confirmCustomMutation(messageId: string) {
@@ -301,16 +333,15 @@ export class OptimisticStore {
 
     for (const { resource, mutationId } of mutations) {
       this.undoMutation(resource, mutationId);
-      // const mutation = this.optimisticMutationStack[resource]?.find(
-      //   (m) => m.id === mutationId,
-      // );
-
-      // if (mutation) {
-      //   this.addMutation(resource, mutation, false);
-      // }
     }
 
     delete this.customMutationIndex[messageId];
+    this.kvStorage.setMeta("customMutationIndex", this.customMutationIndex);
+
+    this.customMutationStack = this.customMutationStack.filter(
+      (m) => m.id !== messageId,
+    );
+    this.kvStorage.setMeta("customMutationStack", this.customMutationStack);
   }
 
   public undoCustomMutation(
@@ -338,7 +369,24 @@ export class OptimisticStore {
     }
 
     delete this.customMutationIndex[messageId];
+    this.kvStorage.setMeta("customMutationIndex", this.customMutationIndex);
+
+    this.customMutationStack = this.customMutationStack.filter(
+      (m) => m.id !== messageId,
+    );
+    this.kvStorage.setMeta("customMutationStack", this.customMutationStack);
+
     return undone;
+  }
+
+  public getCustomMutationMutationIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const mutations of Object.values(this.customMutationIndex)) {
+      for (const { mutationId } of mutations) {
+        ids.add(mutationId);
+      }
+    }
+    return ids;
   }
 
   public loadConsolidatedState(
