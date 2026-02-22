@@ -1,0 +1,44 @@
+{
+  "name": "@live-state/migrate",
+  "version": "0.0.1",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Migration CLI tool for @live-state/sync breaking changes",
+  "author": "Pedro Costa",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/pedroscosta/live-state",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedroscosta/live-state.git",
+    "directory": "packages/migrate"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "live-state-migrate": "./dist/cli.js"
+  },
+  "files": [
+    "dist/**"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "biome lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^20.11.24",
+    "tsup": "^8.5.1",
+    "typescript": "5.5.4"
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1",
+    "tinyglobby": "^0.2.14",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-typescript": "^0.23.2"
+  }
+}
