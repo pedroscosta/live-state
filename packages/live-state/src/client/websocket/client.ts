@@ -728,6 +728,8 @@ class InnerClient implements QueryExecutor {
   }
 
   private replayCustomMutationStack() {
+    if (!this.ws?.connected()) return;
+
     for (const message of this.store.customMutationStack) {
       this.sendWsMessage(message);
 
