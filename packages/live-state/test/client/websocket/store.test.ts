@@ -143,7 +143,12 @@ describe("OptimisticStore", () => {
       ],
     };
 
-    mockKVStorage.getMeta.mockResolvedValue(mockMutationStack);
+    mockKVStorage.getMeta.mockImplementation((key: string) => {
+      if (key === "mutationStack") return Promise.resolve(mockMutationStack);
+      if (key === "customMutationStack") return Promise.resolve([]);
+      if (key === "customMutationIndex") return Promise.resolve({});
+      return Promise.resolve(undefined);
+    });
     mockKVStorage.get.mockResolvedValue({ user1: { name: "John" } });
 
     store = new OptimisticStore(
@@ -157,7 +162,7 @@ describe("OptimisticStore", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mockKVStorage.init).toHaveBeenCalledWith(mockSchema, "test-storage");
-    expect(afterLoadMutations).toHaveBeenCalledWith(mockMutationStack);
+    expect(afterLoadMutations).toHaveBeenCalledWith(mockMutationStack, [], {});
   });
 
   test("should get all objects of a resource type", () => {
@@ -695,7 +700,7 @@ describe("OptimisticStore", () => {
     // Wait for async initialization
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(afterLoadMutations).not.toHaveBeenCalled();
+    expect(afterLoadMutations).toHaveBeenCalledWith({}, [], {});
   });
 
   test("should handle empty data during initialization", async () => {

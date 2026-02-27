@@ -31,6 +31,7 @@ import { SQLStorage } from "../../src/server/storage";
 import { generateId } from "../../src/core/utils";
 import { createClient } from "../../src/client";
 import { createClient as createFetchClient } from "../../src/client/fetch";
+import { defineOptimisticMutations } from "../../src/client/optimistic";
 import type { Server as HttpServer } from "http";
 import { LogLevel } from "../../src/utils";
 
@@ -643,6 +644,275 @@ describe("Custom Procedures End-to-End Tests", () => {
       expect(result.updatedIds.length).toBe(2);
       expect(result.updatedIds).toContain(userId1);
       expect(result.updatedIds).toContain(userId2);
+    });
+  });
+
+  describe("Offline Custom Mutations with Reconnect", () => {
+    test("should replay custom mutation on reconnect and server processes it", async () => {
+      const optimisticMutations = defineOptimisticMutations<typeof testRouter, typeof testSchema>({
+        users: {
+          createUserWithRole: ({ input, storage }) => {
+            storage.users.insert({
+              id: generateId(),
+              name: `[${(input as any).role.toUpperCase()}] ${(input as any).name}`,
+              email: (input as any).email,
+            });
+          },
+        },
+      });
+
+      const offlineClient = createClient<typeof testRouter>({
+        url: `ws://localhost:${serverPort}/ws`,
+        schema: testSchema,
+        storage: false,
+        optimisticMutations,
+        connection: {
+          autoConnect: false,
+          autoReconnect: false,
+        },
+      });
+
+      const result = await offlineClient.store.mutate.users.createUserWithRole({
+        name: "Offline User",
+        email: "offline@example.com",
+        role: "admin",
+      });
+
+      expect(result).toBeUndefined();
+
+      await offlineClient.client.ws.connect();
+      await waitForConnection(offlineClient);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const dbUsers = await kyselyDb.selectFrom("users").selectAll().execute();
+      const offlineUser = dbUsers.find((u: any) =>
+        u.name?.includes("Offline User"),
+      );
+      expect(offlineUser).toBeDefined();
+      expect(offlineUser!.name).toBe("[ADMIN] Offline User");
+      expect(offlineUser!.email).toBe("offline@example.com");
+
+      offlineClient.client.ws.disconnect();
+    });
+
+    test("should rollback on server rejection after reconnect", async () => {
+      const router2 = router({
+        schema: testSchema,
+        routes: {
+          users: publicRoute
+            .collectionRoute(testSchema.users)
+            .withProcedures(({ mutation }) => ({
+              createUserWithRole: mutation(
+                z.object({
+                  name: z.string(),
+                  email: z.string(),
+                  role: z.enum(["admin", "user", "guest"]),
+                })
+              ).handler(async () => {
+                throw new Error("Rejected by server");
+              }),
+              countGuests: mutation().handler(async ({ db }) => {
+                const users = await db.users.get();
+                return { guestCount: users.filter((u: any) => u.name?.startsWith("[GUEST]")).length };
+              }),
+              batchUpdateNames: mutation(
+                z.object({
+                  userIds: z.array(z.string()),
+                  suffix: z.string(),
+                })
+              ).handler(async ({ req, db }) => {
+                const updated: string[] = [];
+                for (const userId of req.input.userIds) {
+                  const user = await db.users.one(userId).get();
+                  if (user) {
+                    await db.users.update(userId, {
+                      name: `${user.name}${req.input.suffix}`,
+                    });
+                    updated.push(userId);
+                  }
+                }
+                return { updatedIds: updated, count: updated.length };
+              }),
+              getUsersByNamePrefix: mutation(z.object({ prefix: z.string() })).handler(async () => ({ dummy: true })),
+              getUserCount: mutation().handler(async () => ({ dummy: true })),
+              searchUsers: mutation(z.object({ nameContains: z.string().optional(), emailDomain: z.string().optional() })).handler(async () => ({ dummy: true })),
+            })),
+          posts: publicRoute.collectionRoute(testSchema.posts),
+        },
+      });
+
+      const rejectServer = server({
+        router: router2,
+        storage,
+        schema: testSchema,
+        logLevel: LogLevel.DEBUG,
+      });
+
+      const { app: app2 } = expressWs(express());
+      app2.use(express.json());
+      app2.use(express.urlencoded({ extended: true }));
+      expressAdapter(app2, rejectServer);
+
+      const rejectPort = await new Promise<number>((resolve) => {
+        const srv = app2.listen(0, () => {
+          const address = srv?.address();
+          const port = typeof address === "object" && address?.port ? address.port : 0;
+          resolve(port);
+        });
+        // Store for cleanup
+        (app2 as any)._server = srv;
+      });
+
+      const optimisticMutations = defineOptimisticMutations<typeof testRouter, typeof testSchema>({
+        users: {
+          createUserWithRole: ({ input, storage: s }) => {
+            s.users.insert({
+              id: generateId(),
+              name: `[${(input as any).role.toUpperCase()}] ${(input as any).name}`,
+              email: (input as any).email,
+            });
+          },
+        },
+      });
+
+      const offlineClient = createClient<typeof testRouter>({
+        url: `ws://localhost:${rejectPort}/ws`,
+        schema: testSchema,
+        storage: false,
+        optimisticMutations,
+        connection: {
+          autoConnect: false,
+          autoReconnect: false,
+        },
+      });
+
+      await offlineClient.store.mutate.users.createUserWithRole({
+        name: "Reject User",
+        email: "reject@example.com",
+        role: "admin",
+      });
+
+      const optimisticUsers = offlineClient.store.query.users.get();
+      expect(optimisticUsers.length).toBe(1);
+
+      await offlineClient.client.ws.connect();
+      await waitForConnection(offlineClient);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const afterRejectUsers = offlineClient.store.query.users.get();
+      expect(afterRejectUsers.length).toBe(0);
+
+      offlineClient.client.ws.disconnect();
+      await new Promise<void>((resolve) => {
+        (app2 as any)._server?.close(() => resolve());
+      });
+    });
+
+    test("should replay multiple offline custom mutations", async () => {
+      const optimisticMutations = defineOptimisticMutations<typeof testRouter, typeof testSchema>({
+        users: {
+          createUserWithRole: ({ input, storage: s }) => {
+            s.users.insert({
+              id: generateId(),
+              name: `[${(input as any).role.toUpperCase()}] ${(input as any).name}`,
+              email: (input as any).email,
+            });
+          },
+        },
+      });
+
+      const offlineClient = createClient<typeof testRouter>({
+        url: `ws://localhost:${serverPort}/ws`,
+        schema: testSchema,
+        storage: false,
+        optimisticMutations,
+        connection: {
+          autoConnect: false,
+          autoReconnect: false,
+        },
+      });
+
+      await offlineClient.store.mutate.users.createUserWithRole({
+        name: "User One",
+        email: "one@example.com",
+        role: "admin",
+      });
+
+      await offlineClient.store.mutate.users.createUserWithRole({
+        name: "User Two",
+        email: "two@example.com",
+        role: "user",
+      });
+
+      await offlineClient.store.mutate.users.createUserWithRole({
+        name: "User Three",
+        email: "three@example.com",
+        role: "guest",
+      });
+
+      const optimisticUsers = offlineClient.store.query.users.get();
+      expect(optimisticUsers.length).toBe(3);
+
+      await offlineClient.client.ws.connect();
+      await waitForConnection(offlineClient);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const dbUsers = await kyselyDb.selectFrom("users").selectAll().execute();
+
+      expect(dbUsers.length).toBe(3);
+      expect(dbUsers.find((u: any) => u.name === "[ADMIN] User One")).toBeDefined();
+      expect(dbUsers.find((u: any) => u.name === "[USER] User Two")).toBeDefined();
+      expect(dbUsers.find((u: any) => u.name === "[GUEST] User Three")).toBeDefined();
+
+      offlineClient.client.ws.disconnect();
+    });
+
+    test("other connected clients receive mutations from reconnected client", async () => {
+      const optimisticMutations = defineOptimisticMutations<typeof testRouter, typeof testSchema>({
+        users: {
+          createUserWithRole: ({ input, storage: s }) => {
+            s.users.insert({
+              id: generateId(),
+              name: `[${(input as any).role.toUpperCase()}] ${(input as any).name}`,
+              email: (input as any).email,
+            });
+          },
+        },
+      });
+
+      const offlineClient = createClient<typeof testRouter>({
+        url: `ws://localhost:${serverPort}/ws`,
+        schema: testSchema,
+        storage: false,
+        optimisticMutations,
+        connection: {
+          autoConnect: false,
+          autoReconnect: false,
+        },
+      });
+
+      await offlineClient.store.mutate.users.createUserWithRole({
+        name: "Broadcast User",
+        email: "broadcast@example.com",
+        role: "admin",
+      });
+
+      await offlineClient.client.ws.connect();
+      await waitForConnection(offlineClient);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const onlineUsers = wsClient.store.query.users.get();
+      const broadcastUser = onlineUsers.find((u) =>
+        u.name?.includes("Broadcast User"),
+      );
+      expect(broadcastUser).toBeDefined();
+      expect(broadcastUser?.name).toBe("[ADMIN] Broadcast User");
+
+      offlineClient.client.ws.disconnect();
     });
   });
 
