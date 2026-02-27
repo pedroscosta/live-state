@@ -733,6 +733,8 @@ class InnerClient implements QueryExecutor {
     for (const message of this.store.customMutationStack) {
       this.sendWsMessage(message);
 
+      if (this.replyHandlers[message.id]) continue;
+
       this.replyHandlers[message.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[message.id];
