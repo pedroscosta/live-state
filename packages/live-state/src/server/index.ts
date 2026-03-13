@@ -9,7 +9,7 @@ import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
 import { inferValue, type Schema, type WhereClause } from "../schema";
 import { createLogger, type Logger, LogLevel } from "../utils";
-import type { AnyRouter, QueryProcedureRequest, QueryResult, Route } from "./router";
+import type { AnyRouter, AnyRouteOrProcedure, QueryProcedureRequest, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import type { Batcher } from "./storage/batcher";
 
@@ -220,7 +220,7 @@ export class Server<TRouter extends AnyRouter> {
     const result = await this.wrapInMiddlewares(
       async (req: MutationRequest) => {
         const route = this.router.routes[req.resource] as
-          | Route<any, any, any, any>
+          | AnyRouteOrProcedure
           | undefined;
 
         if (!route) {
@@ -245,7 +245,7 @@ export class Server<TRouter extends AnyRouter> {
     const result = await this.wrapInMiddlewares(
       async (req: QueryProcedureRequest) => {
         const route = this.router.routes[req.resource] as
-          | Route<any, any, any, any>
+          | AnyRouteOrProcedure
           | undefined;
 
         if (!route) {

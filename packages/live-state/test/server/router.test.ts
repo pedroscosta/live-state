@@ -9,8 +9,9 @@ import {
 } from "vitest";
 import { z } from "zod";
 import { LiveObjectAny, MaterializedLiveType, Schema } from "../../src/schema";
-import { QueryRequest, MutationRequest } from "../../src/server";
+import { QueryRequest, MutationRequest, QueryProcedureRequest } from "../../src/server";
 import {
+  ProcedureRoute,
   Route,
   RouteFactory,
   routeFactory,
@@ -3127,5 +3128,472 @@ describe("Route Authorization with Deep Where Clauses", () => {
 
     expect(preMutationAuth).toHaveBeenCalled();
     expect(postMutationAuth).toHaveBeenCalled();
+  });
+});
+
+describe("ProcedureRoute", () => {
+  let mockStorage: Storage;
+  let mockSchema: Schema<any>;
+
+  beforeEach(() => {
+    mockStorage = {
+      get: vi.fn().mockResolvedValue([]),
+      rawFindById: vi.fn().mockResolvedValue(undefined),
+      rawInsert: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      rawUpdate: vi
+        .fn()
+        .mockResolvedValue({
+          data: {} as MaterializedLiveType<any>,
+          acceptedValues: {},
+        }),
+      _setMutationTimestamp: vi.fn().mockImplementation(() => mockStorage),
+      transaction: vi.fn().mockImplementation(async (fn) => {
+        return await fn({
+          trx: mockStorage,
+          commit: vi.fn().mockResolvedValue(undefined),
+          rollback: vi.fn().mockResolvedValue(undefined),
+        });
+      }),
+    } as unknown as Storage;
+
+    mockSchema = {};
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("should have undefined resourceSchema", () => {
+    const route = new ProcedureRoute();
+
+    expect(route.resourceSchema).toBeUndefined();
+  });
+
+  test("should create procedure route with custom mutations", () => {
+    const customMutations = {
+      doSomething: {
+        _type: "mutation" as const,
+        inputValidator: z.object({ data: z.string() }),
+        handler: vi.fn(),
+      },
+    };
+
+    const route = new ProcedureRoute(customMutations);
+
+    expect(route.customMutations).toEqual(customMutations);
+    expect(route.customQueries).toEqual({});
+  });
+
+  test("should create procedure route with custom queries", () => {
+    const customQueries = {
+      getSomething: {
+        _type: "query" as const,
+        inputValidator: z.object({ id: z.string() }),
+        handler: vi.fn(),
+      },
+    };
+
+    const route = new ProcedureRoute(undefined, customQueries);
+
+    expect(route.customQueries).toEqual(customQueries);
+    expect(route.customMutations).toEqual({});
+  });
+
+  test("should add middlewares", () => {
+    const route = new ProcedureRoute();
+    const middleware1 = vi.fn();
+    const middleware2 = vi.fn();
+
+    const result = route.use(middleware1, middleware2);
+
+    expect(result).toBe(route);
+    expect(route.middlewares.has(middleware1)).toBe(true);
+    expect(route.middlewares.has(middleware2)).toBe(true);
+  });
+
+  test("should handle custom mutation", async () => {
+    const customHandler = vi.fn().mockResolvedValue({ success: true });
+    const customMutations = {
+      doSomething: {
+        _type: "mutation" as const,
+        inputValidator: z.object({ data: z.string() }),
+        handler: customHandler,
+      },
+    };
+
+    const route = new ProcedureRoute(customMutations);
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "actions",
+      procedure: "doSomething",
+      input: { data: "test" },
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    const result = await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(customHandler).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        input: { data: "test" },
+      }),
+      db: expect.any(Object),
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  test("should validate custom mutation input", async () => {
+    const customHandler = vi.fn();
+    const customMutations = {
+      doSomething: {
+        _type: "mutation" as const,
+        inputValidator: z.object({ data: z.string() }),
+        handler: customHandler,
+      },
+    };
+
+    const route = new ProcedureRoute(customMutations);
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "actions",
+      procedure: "doSomething",
+      input: { data: 123 },
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleMutation({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      }),
+    ).rejects.toThrow("Validation failed");
+    expect(customHandler).not.toHaveBeenCalled();
+  });
+
+  test("should throw on unknown procedure", async () => {
+    const route = new ProcedureRoute();
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "actions",
+      procedure: "INSERT",
+      input: {},
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleMutation({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      }),
+    ).rejects.toThrow("Unknown procedure: INSERT");
+  });
+
+  test("should throw on UPDATE procedure", async () => {
+    const route = new ProcedureRoute();
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "actions",
+      procedure: "UPDATE",
+      input: {},
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleMutation({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      }),
+    ).rejects.toThrow("Unknown procedure: UPDATE");
+  });
+
+  test("should handle custom query", async () => {
+    const customHandler = vi.fn().mockResolvedValue([{ id: "1", name: "Test" }]);
+    const customQueries = {
+      getSomething: {
+        _type: "query" as const,
+        inputValidator: z.object({ filter: z.string() }),
+        handler: customHandler,
+      },
+    };
+
+    const route = new ProcedureRoute(undefined, customQueries);
+    const mockRequest: QueryProcedureRequest = {
+      type: "CUSTOM_QUERY",
+      resource: "actions",
+      procedure: "getSomething",
+      input: { filter: "test" },
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    const result = await route.handleCustomQuery({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(customHandler).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        input: { filter: "test" },
+      }),
+      db: expect.any(Object),
+    });
+    expect(result).toEqual([{ id: "1", name: "Test" }]);
+  });
+
+  test("should validate custom query input", async () => {
+    const customHandler = vi.fn();
+    const customQueries = {
+      getSomething: {
+        _type: "query" as const,
+        inputValidator: z.object({ filter: z.string() }),
+        handler: customHandler,
+      },
+    };
+
+    const route = new ProcedureRoute(undefined, customQueries);
+    const mockRequest: QueryProcedureRequest = {
+      type: "CUSTOM_QUERY",
+      resource: "actions",
+      procedure: "getSomething",
+      input: { filter: 123 },
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleCustomQuery({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      }),
+    ).rejects.toThrow("Validation failed");
+    expect(customHandler).not.toHaveBeenCalled();
+  });
+
+  test("should throw on unknown query procedure", async () => {
+    const route = new ProcedureRoute();
+    const mockRequest: QueryProcedureRequest = {
+      type: "CUSTOM_QUERY",
+      resource: "actions",
+      procedure: "nonExistent",
+      input: undefined,
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await expect(
+      route.handleCustomQuery({
+        req: mockRequest,
+        db: mockStorage,
+        schema: mockSchema,
+      }),
+    ).rejects.toThrow("Unknown query procedure: nonExistent");
+  });
+
+  test("should return undefined from getAuthorizationClause", () => {
+    const route = new ProcedureRoute();
+
+    expect(route.getAuthorizationClause()).toBeUndefined();
+  });
+
+  test("should apply middlewares to mutations", async () => {
+    const executionOrder: string[] = [];
+
+    const middleware = vi.fn(({ req, next }) => {
+      executionOrder.push("middleware-before");
+      const result = next(req);
+      executionOrder.push("middleware-after");
+      return result;
+    });
+
+    const customMutations = {
+      doSomething: {
+        _type: "mutation" as const,
+        inputValidator: z.undefined(),
+        handler: vi.fn().mockImplementation(() => {
+          executionOrder.push("handler");
+          return { done: true };
+        }),
+      },
+    };
+
+    const route = new ProcedureRoute(customMutations);
+    route.use(middleware);
+
+    const mockRequest: MutationRequest = {
+      type: "MUTATE",
+      resource: "actions",
+      procedure: "doSomething",
+      input: undefined,
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await route.handleMutation({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(executionOrder).toEqual([
+      "middleware-before",
+      "handler",
+      "middleware-after",
+    ]);
+  });
+
+  test("should apply middlewares to queries", async () => {
+    const executionOrder: string[] = [];
+
+    const middleware = vi.fn(({ req, next }) => {
+      executionOrder.push("middleware-before");
+      const result = next(req);
+      executionOrder.push("middleware-after");
+      return result;
+    });
+
+    const customQueries = {
+      getSomething: {
+        _type: "query" as const,
+        inputValidator: z.undefined(),
+        handler: vi.fn().mockImplementation(() => {
+          executionOrder.push("handler");
+          return { data: [] };
+        }),
+      },
+    };
+
+    const route = new ProcedureRoute(undefined, customQueries);
+    route.use(middleware);
+
+    const mockRequest: QueryProcedureRequest = {
+      type: "CUSTOM_QUERY",
+      resource: "actions",
+      procedure: "getSomething",
+      input: undefined,
+      headers: {},
+      cookies: {},
+      queryParams: {},
+      context: {},
+    };
+
+    await route.handleCustomQuery({
+      req: mockRequest,
+      db: mockStorage,
+      schema: mockSchema,
+    });
+
+    expect(executionOrder).toEqual([
+      "middleware-before",
+      "handler",
+      "middleware-after",
+    ]);
+  });
+});
+
+describe("RouteFactory.withProcedures", () => {
+  test("should create ProcedureRoute with mutations and queries", () => {
+    const factory = RouteFactory.create();
+
+    const route = factory.withProcedures(({ mutation, query }) => ({
+      doSomething: mutation(z.object({ data: z.string() })).handler(
+        async () => ({ success: true }),
+      ),
+      getSomething: query(z.object({ id: z.string() })).handler(
+        async () => ({ id: "1", name: "Test" }),
+      ),
+    }));
+
+    expect(route).toBeInstanceOf(ProcedureRoute);
+    expect(route.resourceSchema).toBeUndefined();
+    expect(route.customMutations.doSomething).toBeDefined();
+    expect(route.customMutations.doSomething._type).toBe("mutation");
+    expect(route.customQueries.getSomething).toBeDefined();
+    expect(route.customQueries.getSomething._type).toBe("query");
+  });
+
+  test("should apply factory middlewares to ProcedureRoute", () => {
+    const middleware1 = vi.fn();
+    const middleware2 = vi.fn();
+    const factory = RouteFactory.create().use(middleware1, middleware2);
+
+    const route = factory.withProcedures(({ mutation }) => ({
+      doSomething: mutation().handler(async () => ({})),
+    }));
+
+    expect(route.middlewares.has(middleware1)).toBe(true);
+    expect(route.middlewares.has(middleware2)).toBe(true);
+  });
+
+  test("should work with routeFactory helper", () => {
+    const route = routeFactory().withProcedures(({ mutation, query }) => ({
+      doSomething: mutation().handler(async () => ({})),
+      getSomething: query().handler(async () => ({})),
+    }));
+
+    expect(route).toBeInstanceOf(ProcedureRoute);
+  });
+});
+
+describe("Router with ProcedureRoute", () => {
+  test("should register hooks only for collection routes", () => {
+    const mockResource = {
+      name: "users",
+    } as LiveObjectAny;
+
+    const hooks = {
+      beforeInsert: vi.fn(),
+    };
+
+    const collectionRoute = new Route(
+      mockResource,
+      undefined,
+      undefined,
+      undefined,
+      hooks,
+    );
+    const procedureRoute = new ProcedureRoute();
+
+    const routerInstance = Router.create({
+      routes: {
+        users: collectionRoute,
+        actions: procedureRoute,
+      } as any,
+    });
+
+    expect(routerInstance.getHooks("users")).toBe(hooks);
+    expect(routerInstance.getHooks("actions")).toBeUndefined();
   });
 });

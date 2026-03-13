@@ -17,10 +17,10 @@ export type FetchClientOptions = Omit<ClientOptions, "storage"> & {
 const safeFetch = async (
   url: string,
   options?: RequestInit,
-  baseOptions?: RequestInit
+  baseOptions?: RequestInit,
 ) => {
   const normalizeHeaders = (
-    headers: HeadersInit | undefined
+    headers: HeadersInit | undefined,
   ): Record<string, string> => {
     if (!headers) return {};
     if (headers instanceof Headers) {
@@ -89,7 +89,7 @@ const serializeNullValues = (value: any): any => {
 };
 
 export const createClient = <TRouter extends ClientRouterConstraint>(
-  opts: FetchClientOptions
+  opts: FetchClientOptions,
 ): Client<TRouter, true> => {
   const queryExecutor: QueryExecutor = {
     get: async (query) => {
@@ -105,7 +105,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
             "Content-Type": "application/json",
           },
         },
-        opts.fetchOptions
+        opts.fetchOptions,
       );
 
       if (!res || typeof res !== "object") {
@@ -137,7 +137,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
 
   const wrapQueryBuilderWithCustomQueries = (
     routeName: string,
-    queryBuilder: QueryBuilder<any, any, any, any>
+    queryBuilder: QueryBuilder<any, any, any, any>,
   ) => {
     return new Proxy(queryBuilder, {
       get(target, prop, receiver) {
@@ -158,7 +158,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
                 },
                 body: JSON.stringify({ input }),
               },
-              opts.fetchOptions
+              opts.fetchOptions,
             );
           };
         }
@@ -168,16 +168,44 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
   };
 
   return {
-    query: Object.entries(opts.schema).reduce(
-      (acc, [key, value]) => {
-        acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
-          key,
-          QueryBuilder._init(value, queryExecutor, true)
+    query: new Proxy({} as Client<TRouter, true>["query"], {
+      get(_, prop) {
+        if (typeof prop !== "string") return undefined;
+        if (Object.hasOwn(opts.schema, prop)) {
+          return wrapQueryBuilderWithCustomQueries(
+            prop,
+            QueryBuilder._init(opts.schema[prop], queryExecutor, true),
+          );
+        }
+        return new Proxy(
+          {},
+          {
+            get(_, queryProp) {
+              if (typeof queryProp !== "string") return undefined;
+              return async (input?: any) => {
+                const headers =
+                  (await consumeGeneratable(opts.credentials)) ?? {};
+                return await safeFetch(
+                  `${opts.url}/${prop as string}/query/${queryProp as string}`,
+                  {
+                    method: "POST",
+                    headers: {
+                      ...headers,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ input }),
+                  },
+                  opts.fetchOptions,
+                );
+              };
+            },
+          },
         );
-        return acc;
       },
-      {} as any
-    ) as Client<TRouter, true>["query"],
+      has(_, prop) {
+        return typeof prop === "string";
+      },
+    }),
     mutate: createObservable(() => {}, {
       apply: async (_, path, argumentsList) => {
         if (path.length < 2) return;
@@ -203,11 +231,11 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
                 payload: opts.schema[route].encodeMutation(
                   "set",
                   input as LiveObjectMutationInput<LiveObjectAny>,
-                  new Date().toISOString()
+                  new Date().toISOString(),
                 ),
               }),
             },
-            opts.fetchOptions
+            opts.fetchOptions,
           );
           return;
         }
@@ -229,11 +257,11 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
                 payload: opts.schema[route].encodeMutation(
                   "set",
                   rest as LiveObjectMutationInput<LiveObjectAny>,
-                  new Date().toISOString()
+                  new Date().toISOString(),
                 ),
               }),
             },
-            opts.fetchOptions
+            opts.fetchOptions,
           );
           return;
         }
@@ -251,7 +279,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
               meta: { timestamp: new Date().toISOString() },
             }),
           },
-          opts.fetchOptions
+          opts.fetchOptions,
         );
       },
     }) as unknown as Client<TRouter, true>["mutate"],

@@ -42,24 +42,33 @@ type CustomQueryLoadable<TOutput> = PromiseLike<TOutput> & {
   buildQueryRequest: () => CustomQueryRequest;
 };
 
-type CustomQueryResult<TOutput> = UnwrapPromise<TOutput> extends QueryBuilder<
-  infer TCollection,
-  infer TInclude,
-  infer TSingle,
-  any
->
-  ? TSingle extends true
-    ? CustomQueryLoadable<
-        Simplify<InferLiveObject<TCollection, TInclude>> | undefined
-      >
-    : CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInclude>>[]>
-  : Promisify<UnwrapPromise<TOutput>>;
+type CustomQueryResult<TOutput, TShouldAwait extends boolean = false> =
+  UnwrapPromise<TOutput> extends QueryBuilder<
+    infer TCollection,
+    infer TInclude,
+    infer TSingle,
+    any
+  >
+    ? TShouldAwait extends true
+      ? TSingle extends true
+        ? Promise<
+            Simplify<InferLiveObject<TCollection, TInclude>> | undefined
+          >
+        : Promise<Simplify<InferLiveObject<TCollection, TInclude>>[]>
+      : TSingle extends true
+        ? CustomQueryLoadable<
+            Simplify<InferLiveObject<TCollection, TInclude>> | undefined
+          >
+        : CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInclude>>[]>
+    : Promisify<UnwrapPromise<TOutput>>;
 
-type CustomQueryFunction<TInput, TOutput> = [TInput] extends
-  | [never]
-  | [undefined]
-  ? () => CustomQueryResult<TOutput>
-  : (input: TInput) => CustomQueryResult<TOutput>;
+type CustomQueryFunction<
+  TInput,
+  TOutput,
+  TShouldAwait extends boolean = false,
+> = [TInput] extends [never] | [undefined]
+  ? () => CustomQueryResult<TOutput, TShouldAwait>
+  : (input: TInput) => CustomQueryResult<TOutput, TShouldAwait>;
 
 /**
  * Simplified router constraint for client-side usage.
@@ -70,7 +79,7 @@ export type ClientRouterConstraint = {
   routes: Record<
     string,
     {
-      resourceSchema: LiveObjectAny;
+      resourceSchema: LiveObjectAny | undefined;
       customMutations: Record<
         string,
         {
@@ -91,41 +100,64 @@ export type ClientRouterConstraint = {
   >;
 };
 
+type CollectionQueryType<
+  TRoute extends ClientRouterConstraint["routes"][string],
+  TShouldAwait extends boolean,
+> = TRoute["resourceSchema"] extends LiveObjectAny
+  ? QueryBuilder<TRoute["resourceSchema"], {}, false, TShouldAwait> & {
+      [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
+        InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
+        ReturnType<TRoute["customQueries"][K2]["handler"]>,
+        TShouldAwait
+      >;
+    }
+  : {
+      [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
+        InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
+        ReturnType<TRoute["customQueries"][K2]["handler"]>,
+        TShouldAwait
+      >;
+    };
+
+type CollectionMutateType<
+  TRoute extends ClientRouterConstraint["routes"][string],
+  TShouldAwait extends boolean,
+> = TRoute["resourceSchema"] extends LiveObjectAny
+  ? {
+      insert: (
+        input: Simplify<InferInsert<TRoute["resourceSchema"]>>
+      ) => ConditionalPromise<void, TShouldAwait>;
+      update: (
+        id: string,
+        value: Simplify<InferUpdate<TRoute["resourceSchema"]>>
+      ) => ConditionalPromise<void, TShouldAwait>;
+    } & {
+      [K2 in keyof TRoute["customMutations"]]: CustomMutationFunction<
+        InferSchema<TRoute["customMutations"][K2]["inputValidator"]>,
+        ReturnType<TRoute["customMutations"][K2]["handler"]>
+      >;
+    }
+  : {
+      [K2 in keyof TRoute["customMutations"]]: CustomMutationFunction<
+        InferSchema<TRoute["customMutations"][K2]["inputValidator"]>,
+        ReturnType<TRoute["customMutations"][K2]["handler"]>
+      >;
+    };
+
 export type Client<
   TRouter extends ClientRouterConstraint,
   TShouldAwait extends boolean = false,
 > = {
   query: {
-    [K in keyof TRouter["routes"]]: QueryBuilder<
-      TRouter["routes"][K]["resourceSchema"],
-      {},
-      false,
+    [K in keyof TRouter["routes"]]: CollectionQueryType<
+      TRouter["routes"][K],
       TShouldAwait
-    > & {
-      [K2 in keyof TRouter["routes"][K]["customQueries"]]: CustomQueryFunction<
-        InferSchema<
-          TRouter["routes"][K]["customQueries"][K2]["inputValidator"]
-        >,
-        ReturnType<TRouter["routes"][K]["customQueries"][K2]["handler"]>
-      >;
-    };
+    >;
   };
   mutate: {
-    [K in keyof TRouter["routes"]]: {
-      insert: (
-        input: Simplify<InferInsert<TRouter["routes"][K]["resourceSchema"]>>
-      ) => ConditionalPromise<void, TShouldAwait>;
-      update: (
-        id: string,
-        value: Simplify<InferUpdate<TRouter["routes"][K]["resourceSchema"]>>
-      ) => ConditionalPromise<void, TShouldAwait>;
-    } & {
-      [K2 in keyof TRouter["routes"][K]["customMutations"]]: CustomMutationFunction<
-        InferSchema<
-          TRouter["routes"][K]["customMutations"][K2]["inputValidator"]
-        >,
-        ReturnType<TRouter["routes"][K]["customMutations"][K2]["handler"]>
-      >;
-    };
+    [K in keyof TRouter["routes"]]: CollectionMutateType<
+      TRouter["routes"][K],
+      TShouldAwait
+    >;
   };
 };

@@ -409,3 +409,223 @@ describe("complex procedure return types", () => {
     }>();
   });
 });
+
+/**
+ * Procedure-only routes (not tied to a collection)
+ */
+const routerWithProcedureOnlyRoutes = createRouter({
+  schema,
+  routes: {
+    users: publicRoute
+      .collectionRoute(schema.users)
+      .withProcedures(({ query }) => ({
+        getUsersByAge: query(z.object({ minAge: z.number() })).handler(
+          async ({ req }) => {
+            return [{ id: "1", name: "Test", email: "test@test.com", age: req.input.minAge }];
+          }
+        ),
+      })),
+
+    posts: publicRoute.collectionRoute(schema.posts),
+
+    // Procedure-only route - no collection
+    analytics: publicRoute.withProcedures(({ mutation, query }) => ({
+      getStats: query().handler(async () => {
+        return { totalUsers: 100, totalPosts: 500 };
+      }),
+
+      getTopContent: query(z.object({ limit: z.number() })).handler(
+        async ({ req }) => {
+          return [] as { title: string; views: number }[];
+        }
+      ),
+
+      resetCache: mutation().handler(async () => {
+        return { cleared: true };
+      }),
+
+      importData: mutation(
+        z.object({ source: z.string(), format: z.enum(["json", "csv"]) })
+      ).handler(async ({ req }) => {
+        return { imported: 42, source: req.input.source };
+      }),
+    })),
+  },
+});
+
+const {
+  store: { query: pQuery, mutate: pMutate },
+} = createClient<typeof routerWithProcedureOnlyRoutes>({
+  url: "ws://localhost:5001/ws",
+  schema,
+  storage: false,
+});
+
+describe("procedure-only routes - websocket client queries", () => {
+  test("should infer custom query without input on procedure route", () => {
+    const getStats = pQuery.analytics.getStats;
+
+    expectTypeOf(getStats).parameters.toEqualTypeOf<[]>();
+
+    expectTypeOf(getStats).returns.toEqualTypeOf<
+      Promise<{ totalUsers: number; totalPosts: number }>
+    >();
+  });
+
+  test("should infer custom query with input on procedure route", () => {
+    const getTopContent = pQuery.analytics.getTopContent;
+
+    expectTypeOf(getTopContent)
+      .parameter(0)
+      .toEqualTypeOf<{ limit: number }>();
+
+    expectTypeOf(getTopContent).returns.toEqualTypeOf<
+      Promise<{ title: string; views: number }[]>
+    >();
+  });
+
+  test("procedure-only route query type has custom query keys", () => {
+    expectTypeOf(pQuery.analytics).toHaveProperty("getStats");
+    expectTypeOf(pQuery.analytics).toHaveProperty("getTopContent");
+  });
+
+  test("collection routes should still have QueryBuilder methods", () => {
+    expectTypeOf(pQuery.users.get).toBeFunction();
+    expectTypeOf(pQuery.users.where).toBeFunction();
+    expectTypeOf(pQuery.users.getUsersByAge).toBeFunction();
+  });
+});
+
+describe("procedure-only routes - websocket client mutations", () => {
+  test("should infer custom mutation without input on procedure route", () => {
+    const resetCache = pMutate.analytics.resetCache;
+
+    expectTypeOf(resetCache).parameters.toEqualTypeOf<[]>();
+
+    expectTypeOf(resetCache).returns.toEqualTypeOf<
+      Promise<{ cleared: boolean }>
+    >();
+  });
+
+  test("should infer custom mutation with input on procedure route", () => {
+    const importData = pMutate.analytics.importData;
+
+    expectTypeOf(importData).parameter(0).toEqualTypeOf<{
+      source: string;
+      format: "json" | "csv";
+    }>();
+
+    expectTypeOf(importData).returns.toEqualTypeOf<
+      Promise<{ imported: number; source: string }>
+    >();
+  });
+
+  test("procedure-only route mutate type has custom mutation keys", () => {
+    expectTypeOf(pMutate.analytics).toHaveProperty("resetCache");
+    expectTypeOf(pMutate.analytics).toHaveProperty("importData");
+  });
+
+  test("collection routes should still have insert/update", () => {
+    expectTypeOf(pMutate.users.insert).toBeFunction();
+    expectTypeOf(pMutate.users.update).toBeFunction();
+  });
+});
+
+/**
+ * Fetch client with procedure-only routes
+ */
+const fetchClientWithProcedures = createFetchClient<typeof routerWithProcedureOnlyRoutes>({
+  url: "http://localhost:3000",
+  schema,
+  credentials: async () => ({}),
+});
+
+describe("procedure-only routes - fetch client", () => {
+  test("should infer custom query on procedure route", () => {
+    const getStats = fetchClientWithProcedures.query.analytics.getStats;
+
+    expectTypeOf(getStats).parameters.toEqualTypeOf<[]>();
+
+    expectTypeOf(getStats).returns.toEqualTypeOf<
+      Promise<{ totalUsers: number; totalPosts: number }>
+    >();
+  });
+
+  test("should infer custom mutation on procedure route", () => {
+    const importData = fetchClientWithProcedures.mutate.analytics.importData;
+
+    expectTypeOf(importData).parameter(0).toEqualTypeOf<{
+      source: string;
+      format: "json" | "csv";
+    }>();
+
+    expectTypeOf(importData).returns.toEqualTypeOf<
+      Promise<{ imported: number; source: string }>
+    >();
+  });
+
+  test("fetch procedure-only route query type has custom query keys", () => {
+    expectTypeOf(fetchClientWithProcedures.query.analytics).toHaveProperty("getStats");
+    expectTypeOf(fetchClientWithProcedures.query.analytics).toHaveProperty("getTopContent");
+  });
+
+  test("fetch procedure-only route mutate type has custom mutation keys", () => {
+    expectTypeOf(fetchClientWithProcedures.mutate.analytics).toHaveProperty("resetCache");
+    expectTypeOf(fetchClientWithProcedures.mutate.analytics).toHaveProperty("importData");
+  });
+
+  test("collection routes should still work normally", () => {
+    expectTypeOf(fetchClientWithProcedures.query.users.get).toBeFunction();
+    expectTypeOf(fetchClientWithProcedures.mutate.users.insert).toBeFunction();
+  });
+});
+
+/**
+ * Custom queries returning QueryBuilder — buildQueryRequest behavior
+ */
+const routerWithQueryBuilderQuery = createRouter({
+  schema,
+  routes: {
+    users: publicRoute
+      .collectionRoute(schema.users)
+      .withProcedures(({ query }) => ({
+        usersByAge: query(z.object({ minAge: z.number() })).handler(
+          async ({ req, db }) => {
+            return db.users.where({ age: { $gte: req.input.minAge } });
+          }
+        ),
+      })),
+    posts: publicRoute.collectionRoute(schema.posts),
+  },
+});
+
+describe("QueryBuilder-returning custom queries - fetch vs websocket", () => {
+  test("fetch client custom query returning QueryBuilder resolves to Promise", () => {
+    const fetchQueryBuilderClient = createFetchClient<typeof routerWithQueryBuilderQuery>({
+      url: "http://localhost:3000",
+      schema,
+      credentials: async () => ({}),
+    });
+
+    const result = fetchQueryBuilderClient.query.users.usersByAge({ minAge: 18 });
+
+    // Fetch client should resolve to a plain Promise, not CustomQueryLoadable
+    expectTypeOf(result).toMatchTypeOf<PromiseLike<any>>();
+    // Should NOT have buildQueryRequest (fetch doesn't support subscriptions)
+    expectTypeOf<keyof typeof result>().not.toEqualTypeOf<"buildQueryRequest">();
+  });
+
+  test("websocket client custom query returning QueryBuilder resolves to PromiseLike", () => {
+    const {
+      store: { query: wsQuery },
+    } = createClient<typeof routerWithQueryBuilderQuery>({
+      url: "ws://localhost:5001/ws",
+      schema,
+      storage: false,
+    });
+
+    const result = wsQuery.users.usersByAge({ minAge: 18 });
+
+    expectTypeOf(result).toMatchTypeOf<PromiseLike<any>>();
+  });
+});
