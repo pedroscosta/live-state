@@ -807,13 +807,31 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
       },
     },
     store: {
-      query: Object.entries(opts.schema).reduce((acc, [key, value]) => {
-        acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
-          key,
-          QueryBuilder._init(value, ogClient),
-        );
-        return acc;
-      }, {} as any) as ClientType<TRouter>["query"],
+      query: new Proxy({} as ClientType<TRouter>["query"], {
+        get(_, prop) {
+          if (typeof prop !== "string") return undefined;
+          if (prop in opts.schema) {
+            return wrapQueryBuilderWithCustomQueries(
+              prop,
+              QueryBuilder._init(opts.schema[prop], ogClient),
+            );
+          }
+          return new Proxy({}, {
+            get(_, queryProp) {
+              if (typeof queryProp !== "string") return undefined;
+              return (input?: any) =>
+                new CustomQueryCall(ogClient, {
+                  resource: prop,
+                  procedure: queryProp,
+                  input,
+                });
+            },
+          });
+        },
+        has(_, prop) {
+          return typeof prop === "string";
+        },
+      }),
       mutate: createObservable(() => {}, {
         apply: (_, path, argumentsList) => {
           if (path.length < 2) return;

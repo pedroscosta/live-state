@@ -32,7 +32,13 @@ import type {
 import type { Batcher } from "./storage/batcher";
 import { createServerDB, type ServerDB } from "./storage/server-query-builder";
 
-export type RouteRecord = Record<string, AnyRoute>;
+export type AnyProcedureRoute = ProcedureRoute<
+  Middleware<any>,
+  Record<string, any>,
+  Record<string, any>
+>;
+export type AnyRouteOrProcedure = AnyRoute | AnyProcedureRoute;
+export type RouteRecord = Record<string, AnyRouteOrProcedure>;
 
 export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
@@ -42,7 +48,8 @@ export class Router<TRoutes extends RouteRecord> {
     this.routes = opts.routes;
 
     for (const route of Object.values(opts.routes)) {
-      const typedRoute = route;
+      if (route.resourceSchema === undefined) continue;
+      const typedRoute = route as AnyRoute;
 
       if (typedRoute.hooks) {
         this.hooksRegistry.set(
@@ -64,7 +71,8 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Record<keyof TSchema, Route<any, any, any, any>>,
+  TRoutes extends Record<keyof TSchema, Route<any, any, any, any>> &
+    Record<string, Route<any, any, any, any> | ProcedureRoute<any, any, any>>,
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
@@ -802,6 +810,173 @@ export class Route<
   }
 }
 
+export class ProcedureRoute<
+  TMiddleware extends Middleware<any>,
+  TCustomMutations extends Record<string, Mutation<any, any>>,
+  TCustomQueries extends Record<string, Query<any, any>>,
+> {
+  readonly resourceSchema: undefined = undefined;
+  readonly middlewares: Set<TMiddleware>;
+  readonly customMutations: TCustomMutations;
+  readonly customQueries: TCustomQueries;
+
+  public constructor(
+    customMutations?: TCustomMutations,
+    customQueries?: TCustomQueries,
+  ) {
+    this.middlewares = new Set();
+    this.customMutations = customMutations ?? ({} as TCustomMutations);
+    this.customQueries = customQueries ?? ({} as TCustomQueries);
+  }
+
+  public use(...middlewares: TMiddleware[]) {
+    for (const middleware of middlewares) {
+      this.middlewares.add(middleware);
+    }
+    return this;
+  }
+
+  /** @internal */
+  public handleMutation = async ({
+    req,
+    db,
+    schema,
+  }: {
+    req: MutationRequest;
+    db: Storage;
+    schema: Schema<any>;
+  }): Promise<any> => {
+    const mutationTimestamp = req.meta?.timestamp ?? new Date().toISOString();
+    const mutationDb = db._setMutationTimestamp(mutationTimestamp);
+
+    const serverDB = createServerDB(mutationDb, schema);
+
+    return await this.wrapInMiddlewares(async (req: MutationRequest) => {
+      if (!req.procedure)
+        throw new Error("Procedure is required for mutations");
+
+      const customProcedure = this.customMutations[req.procedure];
+
+      if (customProcedure) {
+        const validationResult = customProcedure.inputValidator[
+          "~standard"
+        ].validate(req.input);
+
+        const result =
+          validationResult instanceof Promise
+            ? await validationResult
+            : validationResult;
+
+        if (result.issues) {
+          const errorMessage = result.issues
+            .map(
+              (issue: {
+                message: string;
+                path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+              }) => {
+                const path = issue.path
+                  ?.map((p) =>
+                    typeof p === "object" && "key" in p
+                      ? String(p.key)
+                      : String(p),
+                  )
+                  .join(".");
+                return path ? `${path}: ${issue.message}` : issue.message;
+              },
+            )
+            .join(", ");
+          throw new Error(`Validation failed: ${errorMessage}`);
+        }
+
+        req.input = result.value;
+
+        return customProcedure.handler({
+          req,
+          db: serverDB,
+        });
+      }
+
+      throw new Error(`Unknown procedure: ${req.procedure}`);
+    })(req);
+  };
+
+  /** @internal */
+  public handleCustomQuery = async ({
+    req,
+    db,
+    schema,
+  }: {
+    req: QueryProcedureRequest;
+    db: Storage;
+    schema: Schema<any>;
+  }): Promise<any> => {
+    const serverDB = createServerDB(db, schema);
+
+    return await this.wrapInMiddlewares(async (req: QueryProcedureRequest) => {
+      const customProcedure = this.customQueries[req.procedure];
+
+      if (!customProcedure) {
+        throw new Error(`Unknown query procedure: ${req.procedure}`);
+      }
+
+      const validationResult = customProcedure.inputValidator[
+        "~standard"
+      ].validate(req.input);
+
+      const result =
+        validationResult instanceof Promise
+          ? await validationResult
+          : validationResult;
+
+      if (result.issues) {
+        const errorMessage = result.issues
+          .map(
+            (issue: {
+              message: string;
+              path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+            }) => {
+              const path = issue.path
+                ?.map((p) =>
+                  typeof p === "object" && "key" in p
+                    ? String(p.key)
+                    : String(p),
+                )
+                .join(".");
+              return path ? `${path}: ${issue.message}` : issue.message;
+            },
+          )
+          .join(", ");
+        throw new Error(`Validation failed: ${errorMessage}`);
+      }
+
+      req.input = result.value;
+
+      return customProcedure.handler({
+        req,
+        db: serverDB,
+      });
+    })(req);
+  };
+
+  public getAuthorizationClause(): undefined {
+    return undefined;
+  }
+
+  private wrapInMiddlewares<T extends Request>(
+    next: NextFunction<any, T>,
+  ): NextFunction<any, T> {
+    return (req: T) => {
+      return Array.from(this.middlewares.values()).reduceRight(
+        (next, middleware) => {
+          return (req) =>
+            middleware({ req, next: next as NextFunction<any, any> });
+        },
+        next,
+      )(req);
+    };
+  }
+}
+
 export class RouteFactory {
   private middlewares: Middleware<any>[];
 
@@ -821,6 +996,45 @@ export class RouteFactory {
     >(shape, undefined, undefined, authorization, undefined).use(
       ...this.middlewares,
     );
+  }
+
+  withProcedures<T extends Record<string, Procedure<any, any>>>(
+    procedureFactory: (opts: {
+      mutation: typeof mutationCreator;
+      query: typeof queryCreator;
+    }) => T,
+  ) {
+    const procedures = procedureFactory({
+      mutation: mutationCreator,
+      query: queryCreator,
+    });
+
+    const mutations: Record<string, Mutation<any, any>> = {};
+    const queries: Record<string, Query<any, any>> = {};
+
+    for (const [key, procedure] of Object.entries(procedures)) {
+      if (procedure._type === "mutation") {
+        mutations[key] = procedure;
+      } else {
+        queries[key] = procedure;
+      }
+    }
+
+    type ExtractMutations<R> = {
+      [K in keyof R as R[K] extends Mutation<any, any> ? K : never]: R[K];
+    };
+    type ExtractQueries<R> = {
+      [K in keyof R as R[K] extends Query<any, any> ? K : never]: R[K];
+    };
+
+    return new ProcedureRoute<
+      Middleware<any>,
+      ExtractMutations<T> & Record<string, Mutation<any, any>>,
+      ExtractQueries<T> & Record<string, Query<any, any>>
+    >(
+      mutations as ExtractMutations<T> & Record<string, Mutation<any, any>>,
+      queries as ExtractQueries<T> & Record<string, Query<any, any>>,
+    ).use(...this.middlewares);
   }
 
   use(...middlewares: Middleware<any>[]) {

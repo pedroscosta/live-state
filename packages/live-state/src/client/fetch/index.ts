@@ -168,16 +168,40 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
   };
 
   return {
-    query: Object.entries(opts.schema).reduce(
-      (acc, [key, value]) => {
-        acc[key as keyof TRouter["routes"]] = wrapQueryBuilderWithCustomQueries(
-          key,
-          QueryBuilder._init(value, queryExecutor, true)
-        );
-        return acc;
+    query: new Proxy({} as Client<TRouter, true>["query"], {
+      get(_, prop) {
+        if (typeof prop !== "string") return undefined;
+        if (prop in opts.schema) {
+          return wrapQueryBuilderWithCustomQueries(
+            prop,
+            QueryBuilder._init(opts.schema[prop], queryExecutor, true)
+          );
+        }
+        return new Proxy({}, {
+          get(_, queryProp) {
+            if (typeof queryProp !== "string") return undefined;
+            return async (input?: any) => {
+              const headers = (await consumeGeneratable(opts.credentials)) ?? {};
+              return await safeFetch(
+                `${opts.url}/${prop as string}/query/${queryProp as string}`,
+                {
+                  method: "POST",
+                  headers: {
+                    ...headers,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ input }),
+                },
+                opts.fetchOptions
+              );
+            };
+          },
+        });
       },
-      {} as any
-    ) as Client<TRouter, true>["query"],
+      has(_, prop) {
+        return typeof prop === "string";
+      },
+    }),
     mutate: createObservable(() => {}, {
       apply: async (_, path, argumentsList) => {
         if (path.length < 2) return;
