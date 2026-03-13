@@ -742,7 +742,7 @@ export class QueryEngine {
         this.logger.debug(
           `[QueryEngine] assembleResults: Adding root entity "${key}" to resultData`
         );
-        resultData.push(entry.data);
+        resultData.unshift(entry.data);
         continue;
       }
 
