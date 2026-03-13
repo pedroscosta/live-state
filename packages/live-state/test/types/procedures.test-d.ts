@@ -579,3 +579,53 @@ describe("procedure-only routes - fetch client", () => {
     expectTypeOf(fetchClientWithProcedures.mutate.users.insert).toBeFunction();
   });
 });
+
+/**
+ * Custom queries returning QueryBuilder — buildQueryRequest behavior
+ */
+const routerWithQueryBuilderQuery = createRouter({
+  schema,
+  routes: {
+    users: publicRoute
+      .collectionRoute(schema.users)
+      .withProcedures(({ query }) => ({
+        usersByAge: query(z.object({ minAge: z.number() })).handler(
+          async ({ req, db }) => {
+            return db.users.where({ age: { $gte: req.input.minAge } });
+          }
+        ),
+      })),
+    posts: publicRoute.collectionRoute(schema.posts),
+  },
+});
+
+describe("QueryBuilder-returning custom queries - fetch vs websocket", () => {
+  test("fetch client custom query returning QueryBuilder resolves to Promise", () => {
+    const fetchQueryBuilderClient = createFetchClient<typeof routerWithQueryBuilderQuery>({
+      url: "http://localhost:3000",
+      schema,
+      credentials: async () => ({}),
+    });
+
+    const result = fetchQueryBuilderClient.query.users.usersByAge({ minAge: 18 });
+
+    // Fetch client should resolve to a plain Promise, not CustomQueryLoadable
+    expectTypeOf(result).toMatchTypeOf<PromiseLike<any>>();
+    // Should NOT have buildQueryRequest (fetch doesn't support subscriptions)
+    expectTypeOf<keyof typeof result>().not.toEqualTypeOf<"buildQueryRequest">();
+  });
+
+  test("websocket client custom query returning QueryBuilder resolves to PromiseLike", () => {
+    const {
+      store: { query: wsQuery },
+    } = createClient<typeof routerWithQueryBuilderQuery>({
+      url: "ws://localhost:5001/ws",
+      schema,
+      storage: false,
+    });
+
+    const result = wsQuery.users.usersByAge({ minAge: 18 });
+
+    expectTypeOf(result).toMatchTypeOf<PromiseLike<any>>();
+  });
+});

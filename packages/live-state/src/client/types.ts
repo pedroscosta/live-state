@@ -42,24 +42,33 @@ type CustomQueryLoadable<TOutput> = PromiseLike<TOutput> & {
   buildQueryRequest: () => CustomQueryRequest;
 };
 
-type CustomQueryResult<TOutput> = UnwrapPromise<TOutput> extends QueryBuilder<
-  infer TCollection,
-  infer TInclude,
-  infer TSingle,
-  any
->
-  ? TSingle extends true
-    ? CustomQueryLoadable<
-        Simplify<InferLiveObject<TCollection, TInclude>> | undefined
-      >
-    : CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInclude>>[]>
-  : Promisify<UnwrapPromise<TOutput>>;
+type CustomQueryResult<TOutput, TShouldAwait extends boolean = false> =
+  UnwrapPromise<TOutput> extends QueryBuilder<
+    infer TCollection,
+    infer TInclude,
+    infer TSingle,
+    any
+  >
+    ? TShouldAwait extends true
+      ? TSingle extends true
+        ? Promise<
+            Simplify<InferLiveObject<TCollection, TInclude>> | undefined
+          >
+        : Promise<Simplify<InferLiveObject<TCollection, TInclude>>[]>
+      : TSingle extends true
+        ? CustomQueryLoadable<
+            Simplify<InferLiveObject<TCollection, TInclude>> | undefined
+          >
+        : CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInclude>>[]>
+    : Promisify<UnwrapPromise<TOutput>>;
 
-type CustomQueryFunction<TInput, TOutput> = [TInput] extends
-  | [never]
-  | [undefined]
-  ? () => CustomQueryResult<TOutput>
-  : (input: TInput) => CustomQueryResult<TOutput>;
+type CustomQueryFunction<
+  TInput,
+  TOutput,
+  TShouldAwait extends boolean = false,
+> = [TInput] extends [never] | [undefined]
+  ? () => CustomQueryResult<TOutput, TShouldAwait>
+  : (input: TInput) => CustomQueryResult<TOutput, TShouldAwait>;
 
 /**
  * Simplified router constraint for client-side usage.
@@ -98,13 +107,15 @@ type CollectionQueryType<
   ? QueryBuilder<TRoute["resourceSchema"], {}, false, TShouldAwait> & {
       [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
         InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
-        ReturnType<TRoute["customQueries"][K2]["handler"]>
+        ReturnType<TRoute["customQueries"][K2]["handler"]>,
+        TShouldAwait
       >;
     }
   : {
       [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
         InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
-        ReturnType<TRoute["customQueries"][K2]["handler"]>
+        ReturnType<TRoute["customQueries"][K2]["handler"]>,
+        TShouldAwait
       >;
     };
 
