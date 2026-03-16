@@ -35,7 +35,8 @@ import { createServerDB, type ServerDB } from "./storage/server-query-builder";
 export type AnyProcedureRoute = ProcedureRoute<
   Middleware<any>,
   Record<string, any>,
-  Record<string, any>
+  Record<string, any>,
+  any
 >;
 export type AnyRouteOrProcedure = AnyRoute | AnyProcedureRoute;
 export type RouteRecord = Record<string, AnyRouteOrProcedure>;
@@ -71,8 +72,8 @@ export class Router<TRoutes extends RouteRecord> {
 
 export const router = <
   TSchema extends Schema<any>,
-  TRoutes extends Record<keyof TSchema, Route<any, any, any, any>> &
-    Record<string, Route<any, any, any, any> | ProcedureRoute<any, any, any>>,
+  TRoutes extends Record<keyof TSchema, Route<any, any, any, any, any>> &
+    Record<string, Route<any, any, any, any, any> | ProcedureRoute<any, any, any, any>>,
 >(opts: {
   schema: TSchema;
   routes: TRoutes;
@@ -134,12 +135,12 @@ export type Procedure<
   TOutput,
 > = Mutation<TInputValidator, TOutput> | Query<TInputValidator, TOutput>;
 
-type QueryCreator = {
+type QueryCreator<TSchema extends Schema<any> = Schema<any>> = {
   (): {
     handler: <TOutput>(
       handler: (opts: {
         req: QueryProcedureRequest<undefined>;
-        db: ServerDB<any>;
+        db: ServerDB<TSchema>;
       }) => TOutput,
     ) => Query<StandardSchemaV1<any, undefined>, TOutput>;
   };
@@ -151,7 +152,7 @@ type QueryCreator = {
         req: QueryProcedureRequest<
           StandardSchemaV1.InferOutput<TInputValidator>
         >;
-        db: ServerDB<any>;
+        db: ServerDB<TSchema>;
       }) => any,
     >(
       handler: THandler,
@@ -175,12 +176,12 @@ const queryCreator = (<TInputValidator extends StandardSchemaV1<any, any>>(
   };
 }) as QueryCreator;
 
-type MutationCreator = {
+type MutationCreator<TSchema extends Schema<any> = Schema<any>> = {
   (): {
     handler: <TOutput>(
       handler: (opts: {
         req: MutationRequest<undefined>;
-        db: ServerDB<any>;
+        db: ServerDB<TSchema>;
       }) => TOutput,
     ) => Mutation<StandardSchemaV1<any, undefined>, TOutput>;
   };
@@ -190,7 +191,7 @@ type MutationCreator = {
     handler: <
       THandler extends (opts: {
         req: MutationRequest<StandardSchemaV1.InferOutput<TInputValidator>>;
-        db: ServerDB<any>;
+        db: ServerDB<TSchema>;
       }) => any,
     >(
       handler: THandler,
@@ -234,24 +235,24 @@ export type Authorization<TShape extends LiveObjectAny> = {
 };
 
 // Lifecycle Hook Types
-export type BeforeInsertHook<TShape extends LiveObjectAny> = (opts: {
+export type BeforeInsertHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>> = (opts: {
   ctx?: Record<string, any>;
   value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
   rawValue: MaterializedLiveType<TShape>;
-  db: ServerDB<any>;
+  db: ServerDB<TSchema>;
 }) =>
   | Promise<MaterializedLiveType<TShape> | void>
   | MaterializedLiveType<TShape>
   | void;
 
-export type AfterInsertHook<TShape extends LiveObjectAny> = (opts: {
+export type AfterInsertHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>> = (opts: {
   ctx?: Record<string, any>;
   value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
   rawValue: MaterializedLiveType<TShape>;
-  db: ServerDB<any>;
+  db: ServerDB<TSchema>;
 }) => Promise<void> | void;
 
-export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
+export type BeforeUpdateHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>> = (opts: {
   ctx?: Record<string, any>;
   value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
   rawValue: MaterializedLiveType<TShape>;
@@ -259,13 +260,13 @@ export type BeforeUpdateHook<TShape extends LiveObjectAny> = (opts: {
     id: string;
   };
   previousRawValue?: MaterializedLiveType<TShape>;
-  db: ServerDB<any>;
+  db: ServerDB<TSchema>;
 }) =>
   | Promise<MaterializedLiveType<TShape> | void>
   | MaterializedLiveType<TShape>
   | void;
 
-export type AfterUpdateHook<TShape extends LiveObjectAny> = (opts: {
+export type AfterUpdateHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>> = (opts: {
   ctx?: Record<string, any>;
   value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
   rawValue: MaterializedLiveType<TShape>;
@@ -273,14 +274,14 @@ export type AfterUpdateHook<TShape extends LiveObjectAny> = (opts: {
     id: string;
   };
   previousRawValue?: MaterializedLiveType<TShape>;
-  db: ServerDB<any>;
+  db: ServerDB<TSchema>;
 }) => Promise<void> | void;
 
-export type Hooks<TShape extends LiveObjectAny> = {
-  beforeInsert?: BeforeInsertHook<TShape>;
-  afterInsert?: AfterInsertHook<TShape>;
-  beforeUpdate?: BeforeUpdateHook<TShape>;
-  afterUpdate?: AfterUpdateHook<TShape>;
+export type Hooks<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>> = {
+  beforeInsert?: BeforeInsertHook<TShape, TSchema>;
+  afterInsert?: AfterInsertHook<TShape, TSchema>;
+  beforeUpdate?: BeforeUpdateHook<TShape, TSchema>;
+  afterUpdate?: AfterUpdateHook<TShape, TSchema>;
 };
 
 export class Route<
@@ -288,20 +289,21 @@ export class Route<
   TMiddleware extends Middleware<any>,
   TCustomMutations extends Record<string, Mutation<any, any>>,
   TCustomQueries extends Record<string, Query<any, any>>,
+  TSchema extends Schema<any> = Schema<any>,
 > {
   readonly resourceSchema: TResourceSchema;
   readonly middlewares: Set<TMiddleware>;
   readonly customMutations: TCustomMutations;
   readonly customQueries: TCustomQueries;
   readonly authorization?: Authorization<TResourceSchema>;
-  readonly hooks?: Hooks<TResourceSchema>;
+  readonly hooks?: Hooks<TResourceSchema, TSchema>;
 
   public constructor(
     resourceSchema: TResourceSchema,
     customMutations?: TCustomMutations,
     customQueries?: TCustomQueries,
     authorization?: Authorization<TResourceSchema>,
-    hooks?: Hooks<TResourceSchema>,
+    hooks?: Hooks<TResourceSchema, TSchema>,
   ) {
     this.resourceSchema = resourceSchema;
     this.middlewares = new Set();
@@ -320,13 +322,13 @@ export class Route<
 
   public withProcedures<T extends Record<string, Procedure<any, any>>>(
     procedureFactory: (opts: {
-      mutation: typeof mutationCreator;
-      query: typeof queryCreator;
+      mutation: MutationCreator<TSchema>;
+      query: QueryCreator<TSchema>;
     }) => T,
   ) {
     const procedures = procedureFactory({
-      mutation: mutationCreator,
-      query: queryCreator,
+      mutation: mutationCreator as MutationCreator<TSchema>,
+      query: queryCreator as QueryCreator<TSchema>,
     });
 
     const mutations: Record<string, Mutation<any, any>> = {};
@@ -351,7 +353,8 @@ export class Route<
       TResourceSchema,
       TMiddleware,
       ExtractMutations<T> & Record<string, Mutation<any, any>>,
-      ExtractQueries<T> & Record<string, Query<any, any>>
+      ExtractQueries<T> & Record<string, Query<any, any>>,
+      TSchema
     >(
       this.resourceSchema,
       mutations as ExtractMutations<T> & Record<string, Mutation<any, any>>,
@@ -370,12 +373,13 @@ export class Route<
     return this.withProcedures(({ mutation }) => mutationFactory({ mutation }));
   }
 
-  public withHooks(hooks: Hooks<TResourceSchema>) {
+  public withHooks(hooks: Hooks<TResourceSchema, TSchema>) {
     return new Route<
       TResourceSchema,
       TMiddleware,
       TCustomMutations,
-      TCustomQueries
+      TCustomQueries,
+      TSchema
     >(
       this.resourceSchema,
       this.customMutations,
@@ -814,6 +818,7 @@ export class ProcedureRoute<
   TMiddleware extends Middleware<any>,
   TCustomMutations extends Record<string, Mutation<any, any>>,
   TCustomQueries extends Record<string, Query<any, any>>,
+  TSchema extends Schema<any> = Schema<any>,
 > {
   readonly resourceSchema: undefined = undefined;
   readonly middlewares: Set<TMiddleware>;
@@ -977,7 +982,7 @@ export class ProcedureRoute<
   }
 }
 
-export class RouteFactory {
+export class RouteFactory<TSchema extends Schema<any> = Schema<any>> {
   private middlewares: Middleware<any>[];
 
   private constructor(middlewares: Middleware<any>[] = []) {
@@ -992,7 +997,8 @@ export class RouteFactory {
       T,
       Middleware<any>,
       Record<string, never>,
-      Record<string, never>
+      Record<string, never>,
+      TSchema
     >(shape, undefined, undefined, authorization, undefined).use(
       ...this.middlewares,
     );
@@ -1000,13 +1006,13 @@ export class RouteFactory {
 
   withProcedures<T extends Record<string, Procedure<any, any>>>(
     procedureFactory: (opts: {
-      mutation: typeof mutationCreator;
-      query: typeof queryCreator;
+      mutation: MutationCreator<TSchema>;
+      query: QueryCreator<TSchema>;
     }) => T,
   ) {
     const procedures = procedureFactory({
-      mutation: mutationCreator,
-      query: queryCreator,
+      mutation: mutationCreator as MutationCreator<TSchema>,
+      query: queryCreator as QueryCreator<TSchema>,
     });
 
     const mutations: Record<string, Mutation<any, any>> = {};
@@ -1030,7 +1036,8 @@ export class RouteFactory {
     return new ProcedureRoute<
       Middleware<any>,
       ExtractMutations<T> & Record<string, Mutation<any, any>>,
-      ExtractQueries<T> & Record<string, Query<any, any>>
+      ExtractQueries<T> & Record<string, Query<any, any>>,
+      TSchema
     >(
       mutations as ExtractMutations<T> & Record<string, Mutation<any, any>>,
       queries as ExtractQueries<T> & Record<string, Query<any, any>>,
@@ -1038,11 +1045,11 @@ export class RouteFactory {
   }
 
   use(...middlewares: Middleware<any>[]) {
-    return new RouteFactory([...this.middlewares, ...middlewares]);
+    return new RouteFactory<TSchema>([...this.middlewares, ...middlewares]);
   }
 
-  static create() {
-    return new RouteFactory();
+  static create<TSchema extends Schema<any> = Schema<any>>() {
+    return new RouteFactory<TSchema>();
   }
 }
 
@@ -1052,5 +1059,6 @@ export type AnyRoute = Route<
   LiveObjectAny,
   Middleware<any>,
   Record<string, any>,
-  Record<string, any>
+  Record<string, any>,
+  any
 >;
