@@ -1,4 +1,4 @@
-import { routeFactory, router } from "@live-state/sync/server";
+import { routeFactory, router, createMiddleware } from "@live-state/sync/server";
 
 import { schema } from "./schema";
 import { generateId } from "../../../packages/live-state/src/core/utils";
@@ -7,15 +7,20 @@ import { generateId } from "../../../packages/live-state/src/core/utils";
  * Routes
  */
 
+type AppContext = { user: string };
+
 const publicRoute = routeFactory();
 
-const protectedRoute = routeFactory().use(async ({ req, next }) => {
-  if (!req.context.user) {
-    throw new Error("Unauthorized");
-  }
+const authMiddleware = createMiddleware<Record<string, any>, AppContext>(
+  ({ ctx, next }) => {
+    if (!ctx.user) {
+      throw new Error("Unauthorized");
+    }
+    return next({ user: ctx.user });
+  },
+);
 
-  return next(req as any);
-});
+const protectedRoute = routeFactory<typeof schema>().use(authMiddleware);
 
 export const appRouter = router({
   schema,

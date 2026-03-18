@@ -36,7 +36,7 @@ export class SQLStorage extends Storage {
   private readonly dialectHelpers: DialectHelpers;
   private schema?: Schema<any>;
   private logger?: Logger;
-  private server?: Server<any>;
+  private server?: Server<any, any>;
   private mutationStack: Array<{
     mutation: DefaultMutation;
     entityData: MaterializedLiveType<any>;
@@ -48,13 +48,13 @@ export class SQLStorage extends Storage {
     db: Kysely<{ [x: string]: Selectable<any> }>,
     schema: Schema<any>,
     logger?: Logger,
-    server?: Server<any>,
+    server?: Server<any, any>,
   );
   public constructor(
     poolOrDb: PostgresPool | Kysely<{ [x: string]: Selectable<any> }>,
     schema?: Schema<any>,
     logger?: Logger,
-    server?: Server<any>,
+    server?: Server<any, any>,
   ) {
     super();
 
@@ -81,7 +81,7 @@ export class SQLStorage extends Storage {
   public async init(
     opts: Schema<any>,
     logger?: Logger,
-    server?: Server<any>,
+    server?: Server<any, any>,
   ): Promise<void> {
     this.schema = opts;
     this.logger = logger;
