@@ -172,10 +172,10 @@ describe("live-state mutation broadcast latency benchmarks", () => {
       deepReceiver.store.query.orgs
         .include({
           posts: {
-            comments: {
+            include: {
+              comments: { include: { author: true } },
               author: true,
             },
-            author: true,
           },
         })
         .buildQueryRequest()

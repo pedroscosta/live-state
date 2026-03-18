@@ -8,7 +8,7 @@ import {
 } from "../../schema";
 import type { Storage } from "../../server";
 import { Batcher } from "../../server/storage/batcher";
-import { applyWhere, extractIncludeFromWhere, type Logger } from "../../utils";
+import { applyWhere, extractIncludeFromWhere, isSubQueryInclude, type Logger } from "../../utils";
 import type {
   DefaultMutation,
   RawQueryRequest,
@@ -419,11 +419,17 @@ export class QueryEngine {
 
           const otherResourceName = relation.entity.name;
 
+          const subQuery = isSubQueryInclude(nestedInclude) ? nestedInclude : null;
+
           return this.breakdownQuery({
             query: {
               resource: otherResourceName,
-              include:
-                typeof nestedInclude === "object" ? nestedInclude : undefined,
+              include: subQuery
+                ? subQuery.include
+                : typeof nestedInclude === "object" ? nestedInclude : undefined,
+              where: subQuery?.where,
+              limit: subQuery?.limit,
+              sort: subQuery?.orderBy,
             },
             stepPath: [...stepPath, relName],
             context,

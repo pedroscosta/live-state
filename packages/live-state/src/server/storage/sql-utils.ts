@@ -11,6 +11,7 @@ import type {
   Schema,
   WhereClause,
 } from "../../schema";
+import { isSubQueryInclude } from "../../utils";
 import { type DialectHelpers, detectDialect } from "./dialect-helpers";
 
 function innerApplyWhere<T extends LiveObjectAny>(
@@ -215,19 +216,6 @@ function selectMainColumns(
   }
 
   return eb.selectFrom(tableName).selectAll(tableName);
-}
-
-function isSubQueryInclude(value: unknown): value is {
-  where?: Record<string, any>;
-  limit?: number;
-  orderBy?: { key: string; direction: "asc" | "desc" }[];
-  include?: Record<string, any>;
-} {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const obj = value as Record<string, unknown>;
-  return "where" in obj || "limit" in obj || "orderBy" in obj || "include" in obj;
 }
 
 export function applyInclude<T extends LiveObjectAny>(

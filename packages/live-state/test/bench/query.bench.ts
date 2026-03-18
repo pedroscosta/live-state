@@ -27,10 +27,10 @@ describe("live-state query benchmarks", () => {
       await infra!
         .fetchClient!.query.orgs.include({
           posts: {
-            comments: {
+            include: {
+              comments: { include: { author: true } },
               author: true,
             },
-            author: true,
           },
         })
         .get();

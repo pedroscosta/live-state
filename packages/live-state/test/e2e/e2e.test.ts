@@ -391,9 +391,7 @@ describe("End-to-End Query Tests", () => {
 
         const result = await wsClient.store.query.users
           .include({
-            posts: {
-              author: true,
-            },
+            posts: { include: { author: true } },
           })
           .get();
 
@@ -911,9 +909,7 @@ describe("End-to-End Query Tests", () => {
 
         const result = await fetchClient.query.users
           .include({
-            posts: {
-              author: true,
-            },
+            posts: { include: { author: true } },
           })
           .get();
 

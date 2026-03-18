@@ -15,7 +15,7 @@ import {
   type SubQueryInclude,
   type WhereClause,
 } from "../../schema";
-import { applyWhere, hash, type Logger } from "../../utils";
+import { applyWhere, hash, isSubQueryInclude, type Logger } from "../../utils";
 import type { ClientOptions } from "..";
 import { filterWithLimit } from "../utils";
 import { ObjectGraph } from "./obj-graph";
@@ -654,9 +654,11 @@ export class OptimisticStore {
             k,
             this.materializeOneWithInclude(
               node.references.get(refName),
-              typeof nestedInclude === "object" && nestedInclude !== null
-                ? (nestedInclude as IncludeClause<LiveObjectAny>)
-                : {},
+              isSubQueryInclude(nestedInclude)
+                ? ((nestedInclude.include ?? {}) as IncludeClause<LiveObjectAny>)
+                : typeof nestedInclude === "object" && nestedInclude !== null
+                  ? (nestedInclude as IncludeClause<LiveObjectAny>)
+                  : {},
             ),
           ]),
         ),
@@ -673,18 +675,22 @@ export class OptimisticStore {
                     value: Array.from(referencedBy.values()).map((v) =>
                       this.materializeOneWithInclude(
                         v,
-                        typeof nestedInclude === "object" &&
-                          nestedInclude !== null
-                          ? (nestedInclude as IncludeClause<LiveObjectAny>)
-                          : {},
+                        isSubQueryInclude(nestedInclude)
+                          ? ((nestedInclude.include ?? {}) as IncludeClause<LiveObjectAny>)
+                          : typeof nestedInclude === "object" &&
+                              nestedInclude !== null
+                            ? (nestedInclude as IncludeClause<LiveObjectAny>)
+                            : {},
                       ),
                     ),
                   }
                 : this.materializeOneWithInclude(
                     referencedBy,
-                    typeof nestedInclude === "object" && nestedInclude !== null
-                      ? (nestedInclude as IncludeClause<LiveObjectAny>)
-                      : {},
+                    isSubQueryInclude(nestedInclude)
+                      ? ((nestedInclude.include ?? {}) as IncludeClause<LiveObjectAny>)
+                      : typeof nestedInclude === "object" && nestedInclude !== null
+                        ? (nestedInclude as IncludeClause<LiveObjectAny>)
+                        : {},
                   ),
             ];
           }),
@@ -731,9 +737,10 @@ export class OptimisticStore {
       result.push(targetEntityName);
 
       if (typeof value === "object" && value !== null) {
+        const nestedInclude = isSubQueryInclude(value) ? (value.include ?? {}) : value;
         result.push(
           ...this.flattenIncludes(
-            value as IncludeClause<LiveObjectAny>,
+            nestedInclude as IncludeClause<LiveObjectAny>,
             targetEntityName,
           ),
         );
