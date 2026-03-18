@@ -148,6 +148,18 @@ export const applyWhere = <T extends object>(
   });
 };
 
+// biome-ignore lint/suspicious/noExplicitAny: type guard for unknown values
+export const isSubQueryInclude = (value: unknown): value is {
+	where?: Record<string, any>;
+	limit?: number;
+	orderBy?: { key: string; direction: "asc" | "desc" }[];
+	include?: Record<string, any>;
+} => {
+	if (typeof value !== "object" || value === null) return false;
+	const obj = value as Record<string, unknown>;
+	return "where" in obj || "limit" in obj || "orderBy" in obj || "include" in obj;
+};
+
 export const LogLevel = {
   CRITICAL: 0,
   ERROR: 1,

@@ -22,10 +22,14 @@ import {
 import { hash } from "../../../src/utils";
 
 // Mock the hash function
-vi.mock("../../../src/utils", () => ({
-  hash: vi.fn(),
-  applyWhere: vi.fn(),
-}));
+vi.mock("../../../src/utils", async () => {
+	const actual = await vi.importActual("../../../src/utils");
+	return {
+		...actual,
+		hash: vi.fn(),
+		applyWhere: vi.fn(),
+	};
+});
 
 // Mock fast-deep-equal
 vi.mock("fast-deep-equal", () => ({

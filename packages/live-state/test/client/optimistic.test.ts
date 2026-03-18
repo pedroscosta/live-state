@@ -195,7 +195,7 @@ describe('client-side optimistic mutations', () => {
 			.get();
 		const whereResult = proxy.posts
 			.where({ authorId: 'user-1' })
-			.include({ author: { profile: true } })
+			.include({ author: { include: { profile: true } } })
 			.get();
 
 		expect(oneResult).toEqual(expect.objectContaining({ id: 'post-1' }));
@@ -212,7 +212,7 @@ describe('client-side optimistic mutations', () => {
 			expect.objectContaining({
 				resource: 'posts',
 				where: { authorId: 'user-1' },
-				include: { author: { profile: true } },
+				include: { author: { include: { profile: true } } },
 			})
 		);
 	});
