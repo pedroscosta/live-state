@@ -19,20 +19,20 @@ export * from "./storage";
 
 export type { QueryProcedureRequest };
 
-export interface BaseRequest {
+export interface BaseRequest<TContext = Record<string, any>> {
   headers: Record<string, string>;
   cookies: Record<string, string>;
   queryParams: Record<string, string>;
-  context: Record<string, any>;
+  context: TContext;
 }
 
-export interface QueryRequest extends BaseRequest, RawQueryRequest {
+export interface QueryRequest<TContext = Record<string, any>> extends BaseRequest<TContext>, RawQueryRequest {
   type: "QUERY";
   /** @internal */
   relationalWhere?: WhereClause<any>;
 }
 
-export interface MutationRequest<TInput = any> extends BaseRequest {
+export interface MutationRequest<TInput = any, TContext = Record<string, any>> extends BaseRequest<TContext> {
   type: "MUTATE";
   input: TInput;
   resource: string;
@@ -42,13 +42,13 @@ export interface MutationRequest<TInput = any> extends BaseRequest {
   meta?: { timestamp?: string };
 }
 
-export type Request = QueryRequest | MutationRequest | QueryProcedureRequest;
+export type Request<TContext = Record<string, any>> = QueryRequest<TContext> | MutationRequest<any, TContext> | QueryProcedureRequest<any, TContext>;
 
-export type ContextProvider = (
+export type ContextProvider<TContext = Record<string, any>> = (
   req: Omit<BaseRequest, "context"> & {
     transport: "HTTP" | "WEBSOCKET";
   }
-) => Record<string, any>;
+) => TContext | Promise<TContext>;
 
 export type NextFunction<O, R = Request> = (req: R) => PromiseOrSync<O>;
 
@@ -57,14 +57,14 @@ export type Middleware<T = any> = (opts: {
   next: NextFunction<T>;
 }) => ReturnType<NextFunction<T>>;
 
-export class Server<TRouter extends AnyRouter> {
+export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
   readonly router: TRouter;
   readonly storage: Storage;
   readonly schema: Schema<any>;
   readonly middlewares: Set<Middleware<any>> = new Set();
   readonly logger: Logger;
 
-  contextProvider?: ContextProvider;
+  contextProvider?: ContextProvider<TContext>;
 
   /** @internal */
   readonly queryEngine: QueryEngine;
@@ -74,7 +74,7 @@ export class Server<TRouter extends AnyRouter> {
     storage: Storage;
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
-    contextProvider?: ContextProvider;
+    contextProvider?: ContextProvider<TContext>;
     logLevel?: LogLevel;
   }) {
     this.router = opts.router;
@@ -118,7 +118,7 @@ export class Server<TRouter extends AnyRouter> {
 
           const result = await (
             this.router.routes[query.resource] as
-              | Route<any, any, any, any>
+              | Route<any, any, any, any, any, any>
               | undefined
           )?.handleQuery({
             req,
@@ -130,7 +130,7 @@ export class Server<TRouter extends AnyRouter> {
         incrementQueryStep: (step: CoreQueryStep, context: any = {}) => {
           const authorizationClause = (
             this.router.routes[step.query.resource] as
-              | Route<any, any, any, any>
+              | Route<any, any, any, any, any, any>
               | undefined
           )?.getAuthorizationClause({
             ...step.query,
@@ -175,10 +175,25 @@ export class Server<TRouter extends AnyRouter> {
     storage: Storage;
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
-    contextProvider?: ContextProvider;
+    logLevel?: LogLevel;
+  }): Server<TRouter, Record<string, any>>;
+  public static create<TRouter extends AnyRouter, TContext>(opts: {
+    router: TRouter;
+    storage: Storage;
+    schema: Schema<any>;
+    middlewares?: Middleware<any>[];
+    contextProvider: ContextProvider<TContext>;
+    logLevel?: LogLevel;
+  }): Server<TRouter, TContext>;
+  public static create<TRouter extends AnyRouter, TContext = Record<string, any>>(opts: {
+    router: TRouter;
+    storage: Storage;
+    schema: Schema<any>;
+    middlewares?: Middleware<any>[];
+    contextProvider?: ContextProvider<TContext>;
     logLevel?: LogLevel;
   }) {
-    return new Server<TRouter>(opts);
+    return new Server<TRouter, TContext>(opts);
   }
 
   public handleQuery(opts: {
@@ -307,7 +322,7 @@ export class Server<TRouter extends AnyRouter> {
     return this;
   }
 
-  public context(contextProvider: ContextProvider) {
+  public context(contextProvider: ContextProvider<TContext>) {
     this.contextProvider = contextProvider;
     return this;
   }

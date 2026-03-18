@@ -40,7 +40,7 @@ const normalizeNullValues = (value: any): any => {
 };
 
 export const httpTransportLayer = (
-  server: Server<AnyRouter>
+  server: Server<AnyRouter, any>
 ): ((request: Request) => Promise<Response>) => {
   const logger = server.logger;
 

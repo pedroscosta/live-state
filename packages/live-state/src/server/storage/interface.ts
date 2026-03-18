@@ -51,7 +51,7 @@ export abstract class Storage implements DataSource {
   public abstract init(
     opts: Schema<any>,
     logger?: Logger,
-    server?: Server<any>,
+    server?: Server<any, any>,
   ): Promise<void>;
 
   /** @internal */

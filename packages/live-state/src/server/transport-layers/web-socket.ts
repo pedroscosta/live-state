@@ -15,7 +15,7 @@ import type { LiveObjectAny, MaterializedLiveType } from "../../schema";
 import { hash } from "../../utils";
 import type { AnyRouter, Server } from "../";
 
-export const webSocketAdapter = (server: Server<AnyRouter>) => {
+export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
   const connections: Record<string, WebSocket> = {};
 
   const logger = server.logger;

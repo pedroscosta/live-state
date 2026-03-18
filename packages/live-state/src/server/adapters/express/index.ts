@@ -6,7 +6,7 @@ import { convertRequest } from "./convert-request";
 
 export const expressAdapter = (
   app: Application,
-  server: Server<AnyRouter>,
+  server: Server<AnyRouter, any>,
   options?: {
     basePath?: string;
   }
