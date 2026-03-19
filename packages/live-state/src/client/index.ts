@@ -25,5 +25,6 @@ export type ClientOptions<TSchema extends Schema<any> = Schema<any>> = {
       }
     | false;
   logLevel?: LogLevel;
-  optimisticMutations?: OptimisticMutationsRegistry<TSchema>;
+  // biome-ignore lint/suspicious/noExplicitAny: type-erased at the client boundary; type safety is enforced by defineOptimisticMutations
+  optimisticMutations?: OptimisticMutationsRegistry<any>;
 };
