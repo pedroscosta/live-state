@@ -35,7 +35,7 @@ export abstract class Storage implements DataSource {
   }
 
   /** @internal */
-  protected _getTimestamp(): string {
+  public _getTimestamp(): string {
     return this._mutationTimestamp ?? new Date().toISOString();
   }
 

@@ -245,6 +245,24 @@ export class OptimisticStore {
           (m) => m.id !== mutation.id,
         ) ?? [];
 
+      const originId = (mutation as any).meta?.originMutationId;
+      if (originId && this.customMutationIndex[originId]) {
+        const entries = this.customMutationIndex[originId];
+        for (const entry of entries) {
+          if (entry.resource === routeName) {
+            const optMutation = this.optimisticMutationStack[routeName]?.find(
+              (m) => m.id === entry.mutationId,
+            );
+            if (optMutation && optMutation.resourceId === mutation.resourceId) {
+              this.optimisticMutationStack[routeName] =
+                this.optimisticMutationStack[routeName].filter(
+                  (m) => m.id !== entry.mutationId,
+                );
+            }
+          }
+        }
+      }
+
       this.rawObjPool[routeName] ??= {};
 
       const newRawValue = {
