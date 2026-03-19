@@ -120,7 +120,7 @@ export const routerImpl = router({
           z.object({ id: z.string(), name: z.string() }),
         ).handler(async ({ req, db }) => {
           await new Promise((r) => setTimeout(r, 4_000));
-          return db.insert(schema.groups, {
+          return db.groups.insert({
             id: req.input!.id,
             name: req.input!.name,
           });
@@ -132,9 +132,9 @@ export const routerImpl = router({
         incrementCounter: mutation(z.object({ cardId: z.string() })).handler(
           async ({ req, db }) => {
             await new Promise((r) => setTimeout(r, 4_000));
-            const card = await db.findOne(schema.cards, req.input!.cardId);
+            const card = await db.cards.one(req.input!.cardId).get();
             if (!card) throw new Error("Card not found");
-            return db.update(schema.cards, req.input!.cardId, {
+            return db.cards.update(req.input!.cardId, {
               counter: card.counter + 1,
             });
           },
@@ -142,9 +142,9 @@ export const routerImpl = router({
         decrementCounter: mutation(z.object({ cardId: z.string() })).handler(
           async ({ req, db }) => {
             await new Promise((r) => setTimeout(r, 4_000));
-            const card = await db.findOne(schema.cards, req.input!.cardId);
+            const card = await db.cards.one(req.input!.cardId).get();
             if (!card) throw new Error("Card not found");
-            return db.update(schema.cards, req.input!.cardId, {
+            return db.cards.update(req.input!.cardId, {
               counter: card.counter - 1,
             });
           },

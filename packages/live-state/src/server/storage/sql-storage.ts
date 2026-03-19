@@ -329,6 +329,7 @@ export class SQLStorage extends Storage {
       "INSERT",
       processedValue,
       mutationId,
+      context?.messageId,
     );
 
     if (mutation) {
@@ -458,6 +459,7 @@ export class SQLStorage extends Storage {
       "UPDATE",
       processedValue,
       mutationId,
+      context?.messageId,
     );
 
     // TODO investigate using returning queries
@@ -877,6 +879,7 @@ export class SQLStorage extends Storage {
     procedure: "INSERT" | "UPDATE",
     value: MaterializedLiveType<T>,
     mutationId?: string,
+    originMutationId?: string,
   ): DefaultMutation | null {
     const payload: Record<
       string,
@@ -904,6 +907,7 @@ export class SQLStorage extends Storage {
       resourceId,
       procedure,
       payload,
+      meta: originMutationId ? { originMutationId } : undefined,
     };
   }
 

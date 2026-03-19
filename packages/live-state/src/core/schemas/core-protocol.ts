@@ -39,6 +39,7 @@ const baseMutationSchema = z.object({
 const mutationMetaSchema = z
   .object({
     timestamp: z.string().optional(),
+    originMutationId: z.string().optional(),
   })
   .optional();
 

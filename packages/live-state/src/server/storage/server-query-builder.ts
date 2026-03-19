@@ -132,6 +132,7 @@ export type ServerDB<TSchema extends Schema<any>> = {
 export function createServerDB<TSchema extends Schema<any>>(
 	storage: Storage,
 	schema: TSchema,
+	context?: Record<string, any>,
 ): ServerDB<TSchema> {
 	const executor = new ServerQueryExecutor(storage);
 
@@ -141,11 +142,51 @@ export function createServerDB<TSchema extends Schema<any>>(
 		const queryBuilder = QueryBuilder._init(resourceSchema, executor, true);
 
 		const collection = Object.assign(Object.create(queryBuilder), {
-			insert: (value: Simplify<InferInsert<T>>) =>
-				storage.insert(resourceSchema, value),
+			insert: async (value: Simplify<InferInsert<T>>) => {
+				const now = storage._getTimestamp();
+				const result = await storage.rawInsert(
+					resourceSchema.name,
+					(value as any).id as string,
+					{
+						value: Object.fromEntries(
+							Object.entries(value).map(([k, v]) => [
+								k,
+								{ value: v, _meta: { timestamp: now } },
+							]),
+						),
+					} as unknown as MaterializedLiveType<T>,
+					undefined,
+					context,
+				);
+				return inferValue(result.data) as any;
+			},
 
-			update: (id: string, value: InferUpdate<T>) =>
-				storage.update(resourceSchema, id, value),
+			update: async (id: string, value: InferUpdate<T>) => {
+				const now = storage._getTimestamp();
+				const { id: _, ...rest } = value as any;
+				const result = await storage.rawUpdate(
+					resourceSchema.name,
+					id,
+					{
+						value: Object.fromEntries(
+							Object.entries(rest).map(([k, v]) => [
+								k,
+								{ value: v, _meta: { timestamp: now } },
+							]),
+						),
+					} as unknown as MaterializedLiveType<T>,
+					undefined,
+					context,
+				);
+				const inferred = inferValue(result.data) as any;
+				const filtered: any = {};
+				for (const key of Object.keys(rest)) {
+					if (key in inferred) {
+						filtered[key] = inferred[key];
+					}
+				}
+				return filtered as any;
+			},
 		}) as ServerCollection<T>;
 
 		return collection;
@@ -177,7 +218,7 @@ export function createServerDB<TSchema extends Schema<any>>(
 					}) => Promise<T>,
 				): Promise<T> => {
 					return storage.transaction(async ({ trx, commit, rollback }) => {
-						const trxDB = createServerDB(trx, schema);
+						const trxDB = createServerDB(trx, schema, context);
 						return fn({ trx: trxDB, commit, rollback });
 					});
 				};
