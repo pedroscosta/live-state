@@ -170,13 +170,6 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     });
   }
 
-  public static create<TRouter extends AnyRouter>(opts: {
-    router: TRouter;
-    storage: Storage;
-    schema: Schema<any>;
-    middlewares?: Middleware<any>[];
-    logLevel?: LogLevel;
-  }): Server<TRouter, Record<string, any>>;
   public static create<TRouter extends AnyRouter, TContext>(opts: {
     router: TRouter;
     storage: Storage;
@@ -185,6 +178,13 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     contextProvider: ContextProvider<TContext>;
     logLevel?: LogLevel;
   }): Server<TRouter, TContext>;
+  public static create<TRouter extends AnyRouter>(opts: {
+    router: TRouter;
+    storage: Storage;
+    schema: Schema<any>;
+    middlewares?: Middleware<any>[];
+    logLevel?: LogLevel;
+  }): Server<TRouter, Record<string, any>>;
   public static create<TRouter extends AnyRouter, TContext = Record<string, any>>(opts: {
     router: TRouter;
     storage: Storage;
