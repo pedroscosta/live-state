@@ -410,6 +410,8 @@ describe('broadcast with originMutationId cleans up optimistic mutations', () =>
 		expect(client.store.query.posts.one('server-id-1').get()).toEqual(
 			expect.objectContaining({ id: 'server-id-1', title: 'Server Generates ID' }),
 		);
+		// Client optimistic record is already gone (before REPLY)
+		expect(client.store.query.posts.one('client-id-1').get()).toBeUndefined();
 
 		// REPLY is a no-op — optimistic already gone
 		ws.simulateMessage(

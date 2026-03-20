@@ -271,7 +271,10 @@ export class OptimisticStore {
           );
           if (!optMutation) continue;
 
-          if (optMutation.resourceId === mutation.resourceId) {
+          if (
+            optMutation.resourceId === mutation.resourceId &&
+            optMutation.procedure === mutation.procedure
+          ) {
             this.logger.debug(
               "Removing optimistic mutation (resourceId match)",
               { optimisticMutationId: entry.mutationId, resourceId: mutation.resourceId },
