@@ -202,10 +202,63 @@ export function createServerDB<TSchema extends Schema<any>>(
 				return storage.find.bind(storage);
 			}
 			if (prop === 'insert') {
-				return storage.insert.bind(storage);
+				return <T extends LiveCollectionAny>(
+					resource: T,
+					value: Simplify<InferInsert<T>>,
+				) => {
+					const now = storage._getTimestamp();
+					return storage
+						.rawInsert(
+							resource.name,
+							(value as any).id as string,
+							{
+								value: Object.fromEntries(
+									Object.entries(value).map(([k, v]) => [
+										k,
+										{ value: v, _meta: { timestamp: now } },
+									]),
+								),
+							} as unknown as MaterializedLiveType<T>,
+							undefined,
+							context,
+						)
+						.then((result) => inferValue(result.data));
+				};
 			}
 			if (prop === 'update') {
-				return storage.update.bind(storage);
+				return <T extends LiveCollectionAny>(
+					resource: T,
+					resourceId: string,
+					value: InferUpdate<T>,
+				) => {
+					const now = storage._getTimestamp();
+					const { id: _, ...rest } = value as any;
+					return storage
+						.rawUpdate(
+							resource.name,
+							resourceId,
+							{
+								value: Object.fromEntries(
+									Object.entries(rest).map(([k, v]) => [
+										k,
+										{ value: v, _meta: { timestamp: now } },
+									]),
+								),
+							} as unknown as MaterializedLiveType<T>,
+							undefined,
+							context,
+						)
+						.then((result) => {
+							const inferred = inferValue(result.data) as any;
+							const filtered: any = {};
+							for (const key of Object.keys(rest)) {
+								if (key in inferred) {
+									filtered[key] = inferred[key];
+								}
+							}
+							return filtered;
+						});
+				};
 			}
 
 			// Handle transaction

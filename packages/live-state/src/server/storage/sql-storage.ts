@@ -323,6 +323,18 @@ export class SQLStorage extends Storage {
       .values({ ...metaValues, id: resourceId })
       .execute();
 
+    this.logger?.debug?.(
+      "[rawInsert] Building mutation",
+      {
+        resourceName,
+        resourceId,
+        mutationId: mutationId ?? "(auto-generated)",
+        contextMessageId: context?.messageId ?? "(none)",
+        hasContext: !!context,
+        contextKeys: context ? Object.keys(context) : [],
+      },
+    );
+
     const mutation = this.buildMutation(
       resourceName,
       resourceId,
@@ -333,6 +345,15 @@ export class SQLStorage extends Storage {
     );
 
     if (mutation) {
+      this.logger?.debug?.(
+        "[rawInsert] Mutation built, tracking",
+        {
+          mutationId: mutation.id,
+          hasMeta: !!mutation.meta,
+          originMutationId: mutation.meta?.originMutationId ?? "(none)",
+          isTransaction: !!this.db.isTransaction,
+        },
+      );
       this.trackMutation(mutation, processedValue);
     }
 
@@ -453,6 +474,18 @@ export class SQLStorage extends Storage {
         .execute(),
     ]);
 
+    this.logger?.debug?.(
+      "[rawUpdate] Building mutation",
+      {
+        resourceName,
+        resourceId,
+        mutationId: mutationId ?? "(auto-generated)",
+        contextMessageId: context?.messageId ?? "(none)",
+        hasContext: !!context,
+        contextKeys: context ? Object.keys(context) : [],
+      },
+    );
+
     const mutation = this.buildMutation(
       resourceName,
       resourceId,
@@ -464,6 +497,15 @@ export class SQLStorage extends Storage {
 
     // TODO investigate using returning queries
     if (mutation) {
+      this.logger?.debug?.(
+        "[rawUpdate] Mutation built, tracking",
+        {
+          mutationId: mutation.id,
+          hasMeta: !!mutation.meta,
+          originMutationId: mutation.meta?.originMutationId ?? "(none)",
+          isTransaction: !!this.db.isTransaction,
+        },
+      );
       const completeEntity = await this.rawFindById(resourceName, resourceId);
       if (completeEntity) {
         this.trackMutation(mutation, completeEntity);
@@ -607,6 +649,20 @@ export class SQLStorage extends Storage {
         trx: transactionStorage,
         commit: async () => {
           await trx.commit().execute();
+          this.logger?.debug?.(
+            "[transaction] Explicit commit flushing mutations",
+            {
+              count: transactionStack.length,
+              mutations: transactionStack.map(({ mutation }) => ({
+                id: mutation.id,
+                resource: mutation.resource,
+                resourceId: mutation.resourceId,
+                procedure: mutation.procedure,
+                hasMeta: !!mutation.meta,
+                originMutationId: mutation.meta?.originMutationId ?? "(none)",
+              })),
+            },
+          );
           this.notifyMutations(transactionStack);
         },
         rollback: async () => {
@@ -620,6 +676,20 @@ export class SQLStorage extends Storage {
           .commit()
           .execute()
           .then(() => {
+            this.logger?.debug?.(
+              "[transaction] Auto-commit flushing mutations",
+              {
+                count: transactionStack.length,
+                mutations: transactionStack.map(({ mutation }) => ({
+                  id: mutation.id,
+                  resource: mutation.resource,
+                  resourceId: mutation.resourceId,
+                  procedure: mutation.procedure,
+                  hasMeta: !!mutation.meta,
+                  originMutationId: mutation.meta?.originMutationId ?? "(none)",
+                })),
+              },
+            );
             this.notifyMutations(transactionStack);
             return v;
           });

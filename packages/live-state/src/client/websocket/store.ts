@@ -246,21 +246,65 @@ export class OptimisticStore {
         ) ?? [];
 
       const originId = (mutation as any).meta?.originMutationId;
+      this.logger.debug(
+        "Broadcast mutation received",
+        {
+          mutationId: mutation.id,
+          resource: routeName,
+          resourceId: mutation.resourceId,
+          procedure: mutation.procedure,
+          originMutationId: originId ?? "(none)",
+          hasMeta: !!(mutation as any).meta,
+          metaKeys: (mutation as any).meta ? Object.keys((mutation as any).meta) : [],
+          customMutationIndexKeys: Object.keys(this.customMutationIndex),
+          optimisticStackSize: this.optimisticMutationStack[routeName]?.length ?? 0,
+          optimisticStackIds: this.optimisticMutationStack[routeName]?.map(
+            (m) => ({ id: m.id, resourceId: m.resourceId }),
+          ) ?? [],
+        },
+      );
       if (originId && this.customMutationIndex[originId]) {
         const entries = this.customMutationIndex[originId];
+        this.logger.debug(
+          "originMutationId matched customMutationIndex",
+          { originId, entries },
+        );
         for (const entry of entries) {
           if (entry.resource === routeName) {
             const optMutation = this.optimisticMutationStack[routeName]?.find(
               (m) => m.id === entry.mutationId,
             );
             if (optMutation && optMutation.resourceId === mutation.resourceId) {
+              this.logger.debug(
+                "Removing optimistic mutation via originMutationId",
+                {
+                  optimisticMutationId: entry.mutationId,
+                  resourceId: mutation.resourceId,
+                },
+              );
               this.optimisticMutationStack[routeName] =
                 this.optimisticMutationStack[routeName].filter(
                   (m) => m.id !== entry.mutationId,
                 );
+            } else {
+              this.logger.debug(
+                "originMutationId entry did not match optimistic mutation",
+                {
+                  entryMutationId: entry.mutationId,
+                  entryResource: entry.resource,
+                  foundOptMutation: !!optMutation,
+                  optMutationResourceId: optMutation?.resourceId,
+                  broadcastResourceId: mutation.resourceId,
+                },
+              );
             }
           }
         }
+      } else if (originId) {
+        this.logger.debug(
+          "originMutationId present but not found in customMutationIndex",
+          { originId },
+        );
       }
 
       this.rawObjPool[routeName] ??= {};
@@ -347,9 +391,24 @@ export class OptimisticStore {
 
   public confirmCustomMutation(messageId: string) {
     const mutations = this.customMutationIndex[messageId];
+    this.logger.debug(
+      "confirmCustomMutation called",
+      {
+        messageId,
+        hasIndex: !!mutations,
+        mutations: mutations ?? [],
+      },
+    );
     if (!mutations) return;
 
     for (const { resource, mutationId } of mutations) {
+      const stillInStack = !!this.optimisticMutationStack[resource]?.find(
+        (m) => m.id === mutationId,
+      );
+      this.logger.debug(
+        "confirmCustomMutation: undoing mutation",
+        { resource, mutationId, stillInStack },
+      );
       this.undoMutation(resource, mutationId);
     }
 
