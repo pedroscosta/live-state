@@ -383,6 +383,92 @@ describe('broadcast with originMutationId cleans up optimistic mutations', () =>
 		client.client.ws.disconnect();
 	});
 
+	test('broadcast with different resourceId falls back to resource+procedure match (server-generated ID)', async () => {
+		const { client, ws } = await createTestClient(makeOptimisticMutations());
+
+		// Client creates an optimistic insert with client-generated ID
+		const mutationPromise = client.store.mutate.posts.createPost({
+			id: 'client-id-1',
+			title: 'Server Generates ID',
+			likes: 0,
+		});
+
+		const sentMessage = getLastSentMessage(ws);
+
+		expect(client.store.query.posts.one('client-id-1').get()).toEqual(
+			expect.objectContaining({ id: 'client-id-1', title: 'Server Generates ID' }),
+		);
+
+		// Server creates its own ID (different from client's) — this is the real-world
+		// scenario where the server handler does `const id = ulid(); db.insert({ id, ... })`
+		ws.simulateMessage(
+			makeBroadcast('srv-1', 'server-id-1', 'INSERT', { title: 'Server Generates ID', likes: 0 }, sentMessage.id),
+		);
+
+		// Optimistic mutation should be cleaned up via resource+procedure fallback
+		// Server record now visible
+		expect(client.store.query.posts.one('server-id-1').get()).toEqual(
+			expect.objectContaining({ id: 'server-id-1', title: 'Server Generates ID' }),
+		);
+		// Client optimistic record is already gone (before REPLY)
+		expect(client.store.query.posts.one('client-id-1').get()).toBeUndefined();
+
+		// REPLY is a no-op — optimistic already gone
+		ws.simulateMessage(
+			JSON.stringify({ type: 'REPLY', id: sentMessage.id, data: { ok: true } }),
+		);
+
+		await expect(mutationPromise).resolves.toEqual({ ok: true });
+
+		// Server record survives
+		expect(client.store.query.posts.one('server-id-1').get()).toEqual(
+			expect.objectContaining({ id: 'server-id-1', title: 'Server Generates ID' }),
+		);
+		// Client optimistic record is gone
+		expect(client.store.query.posts.one('client-id-1').get()).toBeUndefined();
+
+		client.client.ws.disconnect();
+	});
+
+	test('resource+procedure fallback matches in order when multiple entries exist', async () => {
+		const { client, ws } = await createTestClient(makeOptimisticMutations());
+
+		// Two optimistic inserts from different custom mutations
+		client.store.mutate.posts.createPost({
+			id: 'client-a',
+			title: 'First',
+			likes: 0,
+		});
+		const sentA = getLastSentMessage(ws);
+
+		client.store.mutate.posts.createPost({
+			id: 'client-b',
+			title: 'Second',
+			likes: 0,
+		});
+		const sentB = getLastSentMessage(ws);
+
+		// Broadcast for first mutation (server used different ID)
+		ws.simulateMessage(
+			makeBroadcast('srv-a', 'server-a', 'INSERT', { title: 'First', likes: 0 }, sentA.id),
+		);
+
+		// First optimistic cleaned up, second still present
+		expect(client.store.query.posts.one('server-a').get()).toBeDefined();
+		expect(client.store.query.posts.one('client-a').get()).toBeUndefined();
+		expect(client.store.query.posts.one('client-b').get()).toBeDefined();
+
+		// Broadcast for second mutation (server used different ID)
+		ws.simulateMessage(
+			makeBroadcast('srv-b', 'server-b', 'INSERT', { title: 'Second', likes: 0 }, sentB.id),
+		);
+
+		expect(client.store.query.posts.one('server-b').get()).toBeDefined();
+		expect(client.store.query.posts.one('client-b').get()).toBeUndefined();
+
+		client.client.ws.disconnect();
+	});
+
 	test('broadcast for different resource does not interfere with optimistic mutation', async () => {
 		const { client, ws } = await createTestClient(makeOptimisticMutations());
 
