@@ -254,57 +254,57 @@ export class OptimisticStore {
           resourceId: mutation.resourceId,
           procedure: mutation.procedure,
           originMutationId: originId ?? "(none)",
-          hasMeta: !!(mutation as any).meta,
-          metaKeys: (mutation as any).meta ? Object.keys((mutation as any).meta) : [],
           customMutationIndexKeys: Object.keys(this.customMutationIndex),
           optimisticStackSize: this.optimisticMutationStack[routeName]?.length ?? 0,
-          optimisticStackIds: this.optimisticMutationStack[routeName]?.map(
-            (m) => ({ id: m.id, resourceId: m.resourceId }),
-          ) ?? [],
         },
       );
       if (originId && this.customMutationIndex[originId]) {
         const entries = this.customMutationIndex[originId];
-        this.logger.debug(
-          "originMutationId matched customMutationIndex",
-          { originId, entries },
-        );
-        for (const entry of entries) {
-          if (entry.resource === routeName) {
-            const optMutation = this.optimisticMutationStack[routeName]?.find(
-              (m) => m.id === entry.mutationId,
+        const matchingEntries = entries.filter((e) => e.resource === routeName);
+
+        let matched = false;
+
+        // Priority 1: exact resourceId match
+        for (const entry of matchingEntries) {
+          const optMutation = this.optimisticMutationStack[routeName]?.find(
+            (m) => m.id === entry.mutationId,
+          );
+          if (!optMutation) continue;
+
+          if (optMutation.resourceId === mutation.resourceId) {
+            this.logger.debug(
+              "Removing optimistic mutation (resourceId match)",
+              { optimisticMutationId: entry.mutationId, resourceId: mutation.resourceId },
             );
-            if (optMutation && optMutation.resourceId === mutation.resourceId) {
+            this.undoMutation(routeName, entry.mutationId);
+            matched = true;
+            break;
+          }
+        }
+
+        // Priority 2: no resourceId match found — match by resource + procedure order
+        // This handles cases where server generates a different ID than the client's
+        // optimistic insert (e.g. server calls ulid() independently).
+        if (!matched) {
+          for (const entry of matchingEntries) {
+            const optMutation = this.optimisticMutationStack[routeName]?.find(
+              (m) => m.id === entry.mutationId && m.procedure === mutation.procedure,
+            );
+            if (optMutation) {
               this.logger.debug(
-                "Removing optimistic mutation via originMutationId",
+                "Removing optimistic mutation (resource+procedure fallback)",
                 {
                   optimisticMutationId: entry.mutationId,
-                  resourceId: mutation.resourceId,
-                },
-              );
-              this.optimisticMutationStack[routeName] =
-                this.optimisticMutationStack[routeName].filter(
-                  (m) => m.id !== entry.mutationId,
-                );
-            } else {
-              this.logger.debug(
-                "originMutationId entry did not match optimistic mutation",
-                {
-                  entryMutationId: entry.mutationId,
-                  entryResource: entry.resource,
-                  foundOptMutation: !!optMutation,
-                  optMutationResourceId: optMutation?.resourceId,
+                  optimisticResourceId: optMutation.resourceId,
                   broadcastResourceId: mutation.resourceId,
                 },
               );
+              this.undoMutation(routeName, entry.mutationId);
+              matched = true;
+              break;
             }
           }
         }
-      } else if (originId) {
-        this.logger.debug(
-          "originMutationId present but not found in customMutationIndex",
-          { originId },
-        );
       }
 
       this.rawObjPool[routeName] ??= {};
