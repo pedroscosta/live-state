@@ -483,6 +483,7 @@ class InnerClient implements QueryExecutor {
     return this.store.subscribe(query, callback);
   }
 
+  /** @deprecated Use custom mutations instead. Default insert/update mutations will be removed in a future version. */
   public mutate(
     routeName: string,
     resourceId: string,
