@@ -124,9 +124,11 @@ type CollectionMutateType<
   TShouldAwait extends boolean,
 > = TRoute["resourceSchema"] extends LiveObjectAny
   ? {
+      /** @deprecated Use custom mutations instead. Default insert will be removed in a future version. */
       insert: (
         input: Simplify<InferInsert<TRoute["resourceSchema"]>>
       ) => ConditionalPromise<void, TShouldAwait>;
+      /** @deprecated Use custom mutations instead. Default update will be removed in a future version. */
       update: (
         id: string,
         value: Simplify<InferUpdate<TRoute["resourceSchema"]>>
