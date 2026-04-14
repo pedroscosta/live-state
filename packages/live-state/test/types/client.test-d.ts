@@ -1953,6 +1953,35 @@ const customMutationRouter = createRouter({
           };
         }),
 
+        // Custom insert/update names that should override legacy default signatures
+        insert: mutation(
+          z.object({
+            name: z.string(),
+            email: z.string().email(),
+            age: z.number(),
+          })
+        ).handler(async ({ req }) => {
+          return {
+            id: "inserted-user-123",
+            name: req.input.name,
+            email: req.input.email,
+            age: req.input.age,
+            source: "custom-insert" as const,
+          };
+        }),
+        update: mutation(
+          z.object({
+            id: z.string(),
+            name: z.string().optional(),
+            age: z.number().optional(),
+          })
+        ).handler(async ({ req }) => {
+          return {
+            id: req.input.id,
+            updated: true as const,
+          };
+        }),
+
         // Optional input mutation
         optionalGreeting: mutation(z.string().optional()).handler(
           async ({ req }) => {
@@ -2084,6 +2113,43 @@ describe("custom mutations websocket client", () => {
         name: string;
         email: string;
         age: number;
+      }>
+    >();
+  });
+
+  test("should use custom insert signature when insert mutation exists", () => {
+    const customInsertMutation = customMutationMutate.customMutationUsers.insert;
+
+    expectTypeOf(customInsertMutation).parameter(0).toEqualTypeOf<{
+      name: string;
+      email: string;
+      age: number;
+    }>();
+
+    expectTypeOf(customInsertMutation).returns.toEqualTypeOf<
+      Promise<{
+        id: string;
+        name: string;
+        email: string;
+        age: number;
+        source: "custom-insert";
+      }>
+    >();
+  });
+
+  test("should use custom update signature when update mutation exists", () => {
+    const customUpdateMutation = customMutationMutate.customMutationUsers.update;
+
+    expectTypeOf(customUpdateMutation).parameter(0).toEqualTypeOf<{
+      id: string;
+      name?: string | undefined;
+      age?: number | undefined;
+    }>();
+
+    expectTypeOf(customUpdateMutation).returns.toEqualTypeOf<
+      Promise<{
+        id: string;
+        updated: true;
       }>
     >();
   });
@@ -2255,6 +2321,45 @@ describe("custom mutations fetch client", () => {
         name: string;
         email: string;
         age: number;
+      }>
+    >();
+  });
+
+  test("should use custom insert signature when insert mutation exists with Promise", () => {
+    const customInsertMutation =
+      customMutationFetchClient.mutate.customMutationUsers.insert;
+
+    expectTypeOf(customInsertMutation).parameter(0).toEqualTypeOf<{
+      name: string;
+      email: string;
+      age: number;
+    }>();
+
+    expectTypeOf(customInsertMutation).returns.toEqualTypeOf<
+      Promise<{
+        id: string;
+        name: string;
+        email: string;
+        age: number;
+        source: "custom-insert";
+      }>
+    >();
+  });
+
+  test("should use custom update signature when update mutation exists with Promise", () => {
+    const customUpdateMutation =
+      customMutationFetchClient.mutate.customMutationUsers.update;
+
+    expectTypeOf(customUpdateMutation).parameter(0).toEqualTypeOf<{
+      id: string;
+      name?: string | undefined;
+      age?: number | undefined;
+    }>();
+
+    expectTypeOf(customUpdateMutation).returns.toEqualTypeOf<
+      Promise<{
+        id: string;
+        updated: true;
       }>
     >();
   });

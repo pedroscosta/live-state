@@ -47,6 +47,28 @@ interface WebSocketClientOptions<TSchema extends Schema<any> = Schema<any>>
   };
 }
 
+const isUnknownProcedureError = (error: unknown): boolean => {
+  // TODO: Remove this helper when default mutation fallback is removed.
+  if (error instanceof Error && error.message.includes("Unknown procedure")) {
+    return true;
+  }
+
+  if (
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "message" in error.cause
+  ) {
+    const causeMessage = (error.cause as { message?: unknown }).message;
+    return (
+      typeof causeMessage === "string" &&
+      causeMessage.includes("Unknown procedure")
+    );
+  }
+
+  return false;
+};
+
 export type ConnectionStateChangeEvent = {
   type: "CONNECTION_STATE_CHANGE";
   open: boolean;
@@ -835,7 +857,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
         },
       }),
       mutate: createObservable(() => {}, {
-        apply: (_, path, argumentsList) => {
+        apply: async (_, path, argumentsList) => {
           if (path.length < 2) return;
           if (path.length > 2)
             throw new Error("Trying to access an invalid path");
@@ -843,12 +865,41 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
           const [route, method] = path;
 
           if (method === "insert") {
-            const { id, ...input } = argumentsList[0];
+            // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
+            try {
+              return await ogClient.genericMutate(route, method, argumentsList[0]);
+            } catch (error) {
+              if (!isUnknownProcedureError(error)) {
+                throw error;
+              }
+            }
+
+            const { id, ...input } = argumentsList[0] ?? {};
             return ogClient.mutate(route, id, "INSERT", input);
           }
 
           if (method === "update") {
-            const [id, input] = argumentsList;
+            // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
+            const customPayload =
+              argumentsList.length > 1 &&
+              typeof argumentsList[0] === "string" &&
+              typeof argumentsList[1] === "object" &&
+              argumentsList[1] !== null
+                ? { id: argumentsList[0], ...argumentsList[1] }
+                : argumentsList[0];
+
+            try {
+              return await ogClient.genericMutate(route, method, customPayload);
+            } catch (error) {
+              if (!isUnknownProcedureError(error)) {
+                throw error;
+              }
+            }
+
+            const [id, input] =
+              argumentsList.length > 1
+                ? argumentsList
+                : [argumentsList[0]?.id, argumentsList[0]];
             return ogClient.mutate(route, id, "UPDATE", input);
           }
 

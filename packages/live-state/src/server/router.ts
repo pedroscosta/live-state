@@ -351,23 +351,29 @@ export class Route<
     }
 
     type ExtractMutations<R> = {
-      [K in keyof R as R[K] extends Mutation<any, any> ? K : never]: R[K];
+      [K in keyof R as R[K] extends Mutation<any, any> ? K : never]: Extract<
+        R[K],
+        Mutation<any, any>
+      >;
     };
     type ExtractQueries<R> = {
-      [K in keyof R as R[K] extends Query<any, any> ? K : never]: R[K];
+      [K in keyof R as R[K] extends Query<any, any> ? K : never]: Extract<
+        R[K],
+        Query<any, any>
+      >;
     };
 
     return new Route<
       TResourceSchema,
       TMiddleware,
-      ExtractMutations<T> & Record<string, Mutation<any, any>>,
-      ExtractQueries<T> & Record<string, Query<any, any>>,
+      ExtractMutations<T>,
+      ExtractQueries<T>,
       TSchema,
       TContext
     >(
       this.resourceSchema,
-      mutations as ExtractMutations<T> & Record<string, Mutation<any, any>>,
-      queries as ExtractQueries<T> & Record<string, Query<any, any>>,
+      mutations as ExtractMutations<T>,
+      queries as ExtractQueries<T>,
       this.authorization,
       this.hooks,
     );
@@ -474,9 +480,25 @@ export class Route<
     return await this.wrapInMiddlewares(async (req: MutationRequest) => {
       if (!req.procedure)
         throw new Error("Procedure is required for mutations");
-      const customProcedure = this.customMutations[req.procedure];
+      // TODO: Remove this INSERT/UPDATE alias resolution when default mutations are removed.
+      const fallbackCustomProcedureName =
+        req.procedure === "INSERT"
+          ? "insert"
+          : req.procedure === "UPDATE"
+            ? "update"
+            : undefined;
+      const resolvedCustomProcedureName =
+        this.customMutations[req.procedure]
+          ? req.procedure
+          : fallbackCustomProcedureName &&
+              this.customMutations[fallbackCustomProcedureName]
+            ? fallbackCustomProcedureName
+            : req.procedure;
+      const customProcedure =
+        this.customMutations[resolvedCustomProcedureName];
 
       if (customProcedure) {
+        req.procedure = resolvedCustomProcedureName;
         const validationResult = customProcedure.inputValidator[
           "~standard"
         ].validate(req.input);
