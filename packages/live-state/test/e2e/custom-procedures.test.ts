@@ -493,15 +493,20 @@ describe("Custom Procedures End-to-End Tests", () => {
         likes: 1,
       });
 
+      await wsClient.store.mutate.posts.update(postId, {
+        title: "Fallback Post Updated",
+        likes: 3,
+      });
+
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const posts = await wsClient.store.query.posts.get();
       const createdPost = posts.find((post) => post.id === postId);
       expect(createdPost).toBeDefined();
-      expect(createdPost?.title).toBe("Fallback Post");
+      expect(createdPost?.title).toBe("Fallback Post Updated");
       expect(createdPost?.content).toBe("Uses default insert");
       expect(createdPost?.authorId).toBe(authorId);
-      expect(createdPost?.likes).toBe(1);
+      expect(createdPost?.likes).toBe(3);
     });
 
     test("should call custom mutation with input", async () => {
@@ -739,13 +744,18 @@ describe("Custom Procedures End-to-End Tests", () => {
         likes: 2,
       });
 
+      await fetchClient.mutate.posts.update(postId, {
+        title: "Fetch Fallback Post Updated",
+        likes: 4,
+      });
+
       const posts = await fetchClient.query.posts.get();
       const createdPost = posts.find((post: any) => post.id === postId);
       expect(createdPost).toBeDefined();
-      expect(createdPost?.title).toBe("Fetch Fallback Post");
+      expect(createdPost?.title).toBe("Fetch Fallback Post Updated");
       expect(createdPost?.content).toBe("Uses default insert");
       expect(createdPost?.authorId).toBe(authorId);
-      expect(createdPost?.likes).toBe(2);
+      expect(createdPost?.likes).toBe(4);
     });
 
     test("should call custom mutation with input", async () => {
