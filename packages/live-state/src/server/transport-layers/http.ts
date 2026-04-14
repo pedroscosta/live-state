@@ -164,21 +164,45 @@ export const httpTransportLayer = (
           const rawBody = request.body ? await request.json() : {};
 
           let body: HttpMutation;
+          let mutationProcedure = procedure;
 
           if (procedure === "insert" || procedure === "update") {
-            const { success, data, error } =
-              httpDefaultMutationSchema.safeParse(rawBody);
-            if (!success) {
-              return Response.json(
-                {
-                  message: "Invalid mutation",
-                  code: "INVALID_REQUEST",
-                  details: error,
-                },
-                { status: 400 }
-              );
+            // TODO: Remove dual parsing (legacy default + generic) when default mutations are removed.
+            const defaultResult = httpDefaultMutationSchema.safeParse(rawBody);
+            if (defaultResult.success) {
+              body = defaultResult.data;
+              mutationProcedure = procedure.toUpperCase();
+            } else {
+              const hasGenericMutationShape =
+                typeof rawBody === "object" &&
+                rawBody !== null &&
+                "payload" in rawBody &&
+                "meta" in rawBody;
+              if (!hasGenericMutationShape) {
+                return Response.json(
+                  {
+                    message: "Invalid mutation",
+                    code: "INVALID_REQUEST",
+                    details: defaultResult.error,
+                  },
+                  { status: 400 }
+                );
+              }
+
+              const genericResult = httpGenericMutationSchema.safeParse(rawBody);
+              if (!genericResult.success) {
+                return Response.json(
+                  {
+                    message: "Invalid mutation",
+                    code: "INVALID_REQUEST",
+                    details: genericResult.error,
+                  },
+                  { status: 400 }
+                );
+              }
+
+              body = genericResult.data;
             }
-            body = data;
           } else {
             const { success, data, error } =
               httpGenericMutationSchema.safeParse(rawBody);
@@ -203,10 +227,7 @@ export const httpTransportLayer = (
               input: body.payload,
               context: initialContext,
               resourceId: (body as DefaultMutation).resourceId,
-              procedure:
-                procedure === "insert" || procedure === "update"
-                  ? procedure.toUpperCase()
-                  : procedure,
+              procedure: mutationProcedure,
               queryParams: {},
               meta: (body as any).meta,
             },
@@ -215,6 +236,17 @@ export const httpTransportLayer = (
           return Response.json(result);
         } catch (e) {
           logger.error("Error parsing mutation from the client:", e);
+
+          if (
+            e instanceof Error &&
+            e.message.includes("Unknown procedure")
+          ) {
+            // TODO: Remove UNKNOWN_PROCEDURE compatibility response when default mutation fallback is removed.
+            return Response.json(
+              { message: e.message, code: "UNKNOWN_PROCEDURE" },
+              { status: 400 }
+            );
+          }
 
           return Response.json(
             { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },

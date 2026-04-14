@@ -123,17 +123,21 @@ type CollectionMutateType<
   TRoute extends ClientRouterConstraint["routes"][string],
   TShouldAwait extends boolean,
 > = TRoute["resourceSchema"] extends LiveObjectAny
-  ? {
-      /** @deprecated Use custom mutations instead. Default insert will be removed in a future version. */
-      insert: (
-        input: Simplify<InferInsert<TRoute["resourceSchema"]>>
-      ) => ConditionalPromise<void, TShouldAwait>;
-      /** @deprecated Use custom mutations instead. Default update will be removed in a future version. */
-      update: (
-        id: string,
-        value: Simplify<InferUpdate<TRoute["resourceSchema"]>>
-      ) => ConditionalPromise<void, TShouldAwait>;
-    } & {
+  ? Omit<
+      {
+        /** @deprecated Use custom mutations instead. Default insert will be removed in a future version. */
+        insert: (
+          input: Simplify<InferInsert<TRoute["resourceSchema"]>>
+        ) => ConditionalPromise<void, TShouldAwait>;
+        /** @deprecated Use custom mutations instead. Default update will be removed in a future version. */
+        update: (
+          id: string,
+          value: Simplify<InferUpdate<TRoute["resourceSchema"]>>
+        ) => ConditionalPromise<void, TShouldAwait>;
+      },
+      // TODO: Remove default-mutation compatibility typing when default mutations are removed.
+      Extract<keyof TRoute["customMutations"], "insert" | "update">
+    > & {
       [K2 in keyof TRoute["customMutations"]]: CustomMutationFunction<
         InferSchema<TRoute["customMutations"][K2]["inputValidator"]>,
         ReturnType<TRoute["customMutations"][K2]["handler"]>

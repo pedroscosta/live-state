@@ -161,6 +161,53 @@ const testRouter = router({
           return { updatedIds: updated, count: updated.length };
         }),
       })),
+    priorityUsers: publicRoute
+      .collectionRoute(testSchema.users)
+      .withProcedures(({ mutation }) => ({
+        insert: mutation(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            email: z.string(),
+            reject: z.boolean().optional(),
+          })
+        ).handler(async ({ req, db }) => {
+          if (req.input.reject) {
+            throw new Error("Custom insert rejected");
+          }
+
+          await db.users.insert({
+            id: req.input.id,
+            name: `[CUSTOM] ${req.input.name}`,
+            email: req.input.email,
+          });
+
+          return { id: req.input.id, source: "custom-insert" };
+        }),
+        update: mutation(
+          z.object({
+            id: z.string(),
+            name: z.string().optional(),
+            email: z.string().optional(),
+            reject: z.boolean().optional(),
+          })
+        ).handler(async ({ req, db }) => {
+          if (req.input.reject) {
+            throw new Error("Custom update rejected");
+          }
+
+          const updateValue = {
+            ...(req.input.name
+              ? { name: `[CUSTOM UPDATE] ${req.input.name}` }
+              : {}),
+            ...(req.input.email ? { email: req.input.email } : {}),
+          };
+
+          await db.users.update(req.input.id, updateValue);
+
+          return { id: req.input.id, source: "custom-update" };
+        }),
+      })),
 
     posts: publicRoute.collectionRoute(testSchema.posts),
   },
@@ -379,6 +426,89 @@ describe("Custom Procedures End-to-End Tests", () => {
   });
 
   describe("WebSocket Client - Custom Mutations", () => {
+    test("should prefer custom insert/update procedures for insert and update methods", async () => {
+      const customUserId = generateId();
+      const insertResult = await wsClient.store.mutate.priorityUsers.insert({
+        id: customUserId,
+        name: "Priority User",
+        email: "priority@example.com",
+      });
+
+      expect(insertResult).toBeDefined();
+      expect(insertResult.id).toBe(customUserId);
+      expect(insertResult.source).toBe("custom-insert");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const updateResult = await wsClient.store.mutate.priorityUsers.update({
+        id: customUserId,
+        name: "Renamed Priority User",
+      });
+
+      expect(updateResult).toBeDefined();
+      expect(updateResult.id).toBe(customUserId);
+      expect(updateResult.source).toBe("custom-update");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const users = await wsClient.store.query.users.get();
+      const updatedUser = users.find((u) => u.id === customUserId);
+      expect(updatedUser).toBeDefined();
+      expect(updatedUser?.name).toBe("[CUSTOM UPDATE] Renamed Priority User");
+      expect(updatedUser?.email).toBe("priority@example.com");
+    });
+
+    test("should not fallback to default mutation when custom procedure rejects", async () => {
+      const rejectedUserId = generateId();
+
+      await expect(
+        wsClient.store.mutate.priorityUsers.insert({
+          id: rejectedUserId,
+          name: "Rejected User",
+          email: "rejected@example.com",
+          reject: true,
+        })
+      ).rejects.toThrow("Custom insert rejected");
+
+      const users = await wsClient.store.query.users.get();
+      const rejectedUser = users.find((u) => u.id === rejectedUserId);
+      expect(rejectedUser).toBeUndefined();
+    });
+
+    test("should fallback to legacy default mutation when custom insert/update does not exist", async () => {
+      const authorId = generateId();
+      const postId = generateId();
+
+      await storage.insert(testSchema.users, {
+        id: authorId,
+        name: "Fallback Author",
+        email: "fallback-author@example.com",
+      });
+
+      await wsClient.store.mutate.posts.insert({
+        id: postId,
+        title: "Fallback Post",
+        content: "Uses default insert",
+        authorId,
+        likes: 1,
+      });
+
+      await wsClient.store.mutate.posts.update(postId, {
+        title: "Fallback Post Updated",
+        likes: 3,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const posts = await wsClient.store.query.posts.get();
+      const createdPost = posts.find((post) => post.id === postId);
+      expect(createdPost).toBeDefined();
+      expect(createdPost?.title).toBe("Fallback Post Updated");
+      expect(createdPost?.content).toBe("Uses default insert");
+      expect(createdPost?.authorId).toBe(authorId);
+      expect(createdPost?.likes).toBe(3);
+    });
+
     test("should call custom mutation with input", async () => {
       const result = await wsClient.store.mutate.users.createUserWithRole({
         name: "Admin User",
@@ -566,6 +696,68 @@ describe("Custom Procedures End-to-End Tests", () => {
   });
 
   describe("Fetch Client - Custom Mutations", () => {
+    test("should prefer custom insert/update procedures for insert and update methods", async () => {
+      const customUserId = generateId();
+      const insertResult = await fetchClient.mutate.priorityUsers.insert({
+        id: customUserId,
+        name: "Fetch Priority User",
+        email: "fetch-priority@example.com",
+      });
+
+      expect(insertResult).toBeDefined();
+      expect(insertResult.id).toBe(customUserId);
+      expect(insertResult.source).toBe("custom-insert");
+
+      const updateResult = await fetchClient.mutate.priorityUsers.update({
+        id: customUserId,
+        name: "Fetch Renamed Priority User",
+      });
+
+      expect(updateResult).toBeDefined();
+      expect(updateResult.id).toBe(customUserId);
+      expect(updateResult.source).toBe("custom-update");
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const users = await fetchClient.query.users.get();
+      const updatedUser = users.find((u: any) => u.id === customUserId);
+      expect(updatedUser).toBeDefined();
+      expect(updatedUser?.name).toBe("[CUSTOM UPDATE] Fetch Renamed Priority User");
+      expect(updatedUser?.email).toBe("fetch-priority@example.com");
+    });
+
+    test("should fallback to legacy default mutation when custom insert/update does not exist", async () => {
+      const authorId = generateId();
+      const postId = generateId();
+
+      await storage.insert(testSchema.users, {
+        id: authorId,
+        name: "Fetch Fallback Author",
+        email: "fetch-fallback-author@example.com",
+      });
+
+      await fetchClient.mutate.posts.insert({
+        id: postId,
+        title: "Fetch Fallback Post",
+        content: "Uses default insert",
+        authorId,
+        likes: 2,
+      });
+
+      await fetchClient.mutate.posts.update(postId, {
+        title: "Fetch Fallback Post Updated",
+        likes: 4,
+      });
+
+      const posts = await fetchClient.query.posts.get();
+      const createdPost = posts.find((post: any) => post.id === postId);
+      expect(createdPost).toBeDefined();
+      expect(createdPost?.title).toBe("Fetch Fallback Post Updated");
+      expect(createdPost?.content).toBe("Uses default insert");
+      expect(createdPost?.authorId).toBe(authorId);
+      expect(createdPost?.likes).toBe(4);
+    });
+
     test("should call custom mutation with input", async () => {
       const result = await fetchClient.mutate.users.createUserWithRole({
         name: "Guest User",
