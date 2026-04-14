@@ -66,6 +66,8 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
   readonly middlewares: Set<Middleware<any>> = new Set();
   readonly logger: Logger;
   readonly hooksRegistry: Map<string, Hooks<any, any, any>> = new Map();
+  private readonly initPromise: Promise<void>;
+  private initError?: unknown;
 
   contextProvider?: ContextProvider<TContext>;
 
@@ -110,7 +112,11 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
       if (merged) this.hooksRegistry.set(key, merged);
     });
 
-    this.storage.init(this.schema, this.logger, this);
+    this.initPromise = this.storage
+      .init(this.schema, this.logger, this)
+      .catch((error) => {
+        this.initError = error;
+      });
     this.contextProvider = opts.contextProvider;
 
     this.queryEngine = new QueryEngine({
@@ -226,10 +232,12 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     return this.hooksRegistry.get(resourceName);
   }
 
-  public handleQuery(opts: {
+  public async handleQuery(opts: {
     req: QueryRequest;
     subscription?: (mutation: DefaultMutation) => void;
   }): Promise<QueryResult<any>> {
+    await this.ensureInitialized();
+
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
       const { headers, cookies, queryParams, context, ...rawQuery } = req;
 
@@ -262,6 +270,8 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
   }
 
   public async handleMutation(opts: { req: MutationRequest }): Promise<any> {
+    await this.ensureInitialized();
+
     const result = await this.wrapInMiddlewares(
       async (req: MutationRequest) => {
         const route = this.router.routes[req.resource] as
@@ -287,6 +297,8 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     req: QueryProcedureRequest;
     subscription?: (mutation: DefaultMutation) => void;
   }): Promise<any> {
+    await this.ensureInitialized();
+
     const result = await this.wrapInMiddlewares(
       async (req: QueryProcedureRequest) => {
         const route = this.router.routes[req.resource] as
@@ -371,6 +383,14 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
           middleware({ req, next: next as NextFunction<any, any> }),
         next
       )(req);
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    await this.initPromise;
+
+    if (this.initError) {
+      throw this.initError;
+    }
   }
 }
 
