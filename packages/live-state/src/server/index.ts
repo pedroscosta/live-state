@@ -9,11 +9,13 @@ import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
 import { inferValue, type Schema, type WhereClause } from "../schema";
 import { createLogger, type Logger, LogLevel } from "../utils";
-import type { AnyRouter, AnyRouteOrProcedure, QueryProcedureRequest, QueryResult, Route } from "./router";
+import { mergeEntityHooks, type HooksRegistry } from "./hooks";
+import type { AnyRouter, AnyRouteOrProcedure, Hooks, QueryProcedureRequest, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import type { Batcher } from "./storage/batcher";
 
 export * from "./adapters/express";
+export * from "./hooks";
 export * from "./router";
 export * from "./storage";
 
@@ -63,6 +65,9 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
   readonly schema: Schema<any>;
   readonly middlewares: Set<Middleware<any>> = new Set();
   readonly logger: Logger;
+  readonly hooksRegistry: Map<string, Hooks<any, any, any>> = new Map();
+  private readonly initPromise: Promise<void>;
+  private initError?: unknown;
 
   contextProvider?: ContextProvider<TContext>;
 
@@ -75,6 +80,7 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
     contextProvider?: ContextProvider<TContext>;
+    hooks?: HooksRegistry<any, TContext>;
     logLevel?: LogLevel;
   }) {
     this.router = opts.router;
@@ -87,7 +93,30 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
       this.middlewares.add(middleware);
     });
 
-    this.storage.init(this.schema, this.logger, this);
+    const routerHooks = this.router.hooksRegistry as
+      | Map<string, Hooks<any, any, any>>
+      | undefined;
+    const entityKeys = new Set<string>();
+    if (routerHooks) {
+      routerHooks.forEach((_, key) => {
+        entityKeys.add(key);
+      });
+    }
+    if (opts.hooks) {
+      for (const key of Object.keys(opts.hooks)) entityKeys.add(key);
+    }
+    entityKeys.forEach((key) => {
+      const v2 = routerHooks?.get(key);
+      const v3 = opts.hooks?.[key] as Hooks<any, any, any> | undefined;
+      const merged = mergeEntityHooks([v2, v3]);
+      if (merged) this.hooksRegistry.set(key, merged);
+    });
+
+    this.initPromise = this.storage
+      .init(this.schema, this.logger, this)
+      .catch((error) => {
+        this.initError = error;
+      });
     this.contextProvider = opts.contextProvider;
 
     this.queryEngine = new QueryEngine({
@@ -176,6 +205,7 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
     contextProvider: ContextProvider<TContext>;
+    hooks?: HooksRegistry<any, TContext>;
     logLevel?: LogLevel;
   }): Server<TRouter, TContext>;
   public static create<TRouter extends AnyRouter>(opts: {
@@ -183,6 +213,7 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     storage: Storage;
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
+    hooks?: HooksRegistry<any, Record<string, any>>;
     logLevel?: LogLevel;
   }): Server<TRouter, Record<string, any>>;
   public static create<TRouter extends AnyRouter, TContext = Record<string, any>>(opts: {
@@ -191,15 +222,22 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     schema: Schema<any>;
     middlewares?: Middleware<any>[];
     contextProvider?: ContextProvider<TContext>;
+    hooks?: HooksRegistry<any, TContext>;
     logLevel?: LogLevel;
   }) {
     return new Server<TRouter, TContext>(opts);
   }
 
-  public handleQuery(opts: {
+  public getHooks(resourceName: string): Hooks<any, any, any> | undefined {
+    return this.hooksRegistry.get(resourceName);
+  }
+
+  public async handleQuery(opts: {
     req: QueryRequest;
     subscription?: (mutation: DefaultMutation) => void;
   }): Promise<QueryResult<any>> {
+    await this.ensureInitialized();
+
     return this.wrapInMiddlewares(async (req: QueryRequest) => {
       const { headers, cookies, queryParams, context, ...rawQuery } = req;
 
@@ -232,6 +270,8 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
   }
 
   public async handleMutation(opts: { req: MutationRequest }): Promise<any> {
+    await this.ensureInitialized();
+
     const result = await this.wrapInMiddlewares(
       async (req: MutationRequest) => {
         const route = this.router.routes[req.resource] as
@@ -257,6 +297,8 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
     req: QueryProcedureRequest;
     subscription?: (mutation: DefaultMutation) => void;
   }): Promise<any> {
+    await this.ensureInitialized();
+
     const result = await this.wrapInMiddlewares(
       async (req: QueryProcedureRequest) => {
         const route = this.router.routes[req.resource] as
@@ -341,6 +383,14 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
           middleware({ req, next: next as NextFunction<any, any> }),
         next
       )(req);
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    await this.initPromise;
+
+    if (this.initError) {
+      throw this.initError;
+    }
   }
 }
 

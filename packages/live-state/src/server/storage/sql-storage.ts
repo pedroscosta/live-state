@@ -260,7 +260,7 @@ export class SQLStorage extends Storage {
     mutationId?: string,
     context?: Record<string, any>,
   ): Promise<RawMutationResult<T>> {
-    const hooks = this.server?.router?.getHooks(resourceName);
+    const hooks: any = this.server?.getHooks(resourceName);
     const entity = this.schema?.[resourceName];
 
     const [mergedRecord, acceptedValues] = entity?.mergeMutation?.(
@@ -387,7 +387,7 @@ export class SQLStorage extends Storage {
     mutationId?: string,
     context?: Record<string, any>,
   ): Promise<RawMutationResult<T>> {
-    const hooks = this.server?.router?.getHooks(resourceName);
+    const hooks: any = this.server?.getHooks(resourceName);
     const entity = this.schema?.[resourceName];
 
     const existingRecord = await this.rawFindById<T>(resourceName, resourceId);

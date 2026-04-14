@@ -382,6 +382,9 @@ export class Route<
     return this.withProcedures(({ mutation }) => mutationFactory({ mutation }));
   }
 
+  /**
+   * @deprecated Declare hooks with `defineHooks` and pass them to `server({ hooks })` instead.
+   */
   public withHooks(hooks: Hooks<TResourceSchema, TSchema, TContext>) {
     return new Route<
       TResourceSchema,
