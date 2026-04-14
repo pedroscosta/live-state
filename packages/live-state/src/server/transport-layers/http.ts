@@ -173,6 +173,22 @@ export const httpTransportLayer = (
               body = defaultResult.data;
               mutationProcedure = procedure.toUpperCase();
             } else {
+              const hasGenericMutationShape =
+                typeof rawBody === "object" &&
+                rawBody !== null &&
+                "payload" in rawBody &&
+                "meta" in rawBody;
+              if (!hasGenericMutationShape) {
+                return Response.json(
+                  {
+                    message: "Invalid mutation",
+                    code: "INVALID_REQUEST",
+                    details: defaultResult.error,
+                  },
+                  { status: 400 }
+                );
+              }
+
               const genericResult = httpGenericMutationSchema.safeParse(rawBody);
               if (!genericResult.success) {
                 return Response.json(

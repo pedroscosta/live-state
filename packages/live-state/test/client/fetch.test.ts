@@ -373,13 +373,19 @@ describe("createClient", () => {
             Authorization: "Bearer token",
             "Content-Type": "application/json",
           },
-          body: expect.stringContaining('"resourceId":"1"'),
+          body: expect.stringContaining('"payload":{"id":"1","name":"John"}'),
         }
       );
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body).toHaveProperty("resourceId", "1");
-      expect(body).toHaveProperty("payload");
+      expect(body).toEqual(
+        expect.objectContaining({
+          payload: { id: "1", name: "John" },
+          meta: expect.objectContaining({
+            timestamp: expect.any(String),
+          }),
+        })
+      );
     });
 
     test("should handle insert without credentials", async () => {
@@ -438,7 +444,9 @@ describe("createClient", () => {
           headers: {
             "Content-Type": "application/json",
           },
-          body: expect.stringContaining('"resourceId":"1"'),
+          body: expect.stringContaining(
+            '"payload":{"id":"1","title":"Test Post","authorId":"user1"}'
+          ),
         }
       );
     });
@@ -471,13 +479,19 @@ describe("createClient", () => {
             Authorization: "Bearer token",
             "Content-Type": "application/json",
           },
-          body: expect.stringContaining('"resourceId":"1"'),
+          body: expect.stringContaining('"payload":{"id":"1","name":"John Updated"}'),
         }
       );
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body).toHaveProperty("resourceId", "1");
-      expect(body).toHaveProperty("payload");
+      expect(body).toEqual(
+        expect.objectContaining({
+          payload: { id: "1", name: "John Updated" },
+          meta: expect.objectContaining({
+            timestamp: expect.any(String),
+          }),
+        })
+      );
     });
 
     test("should exclude id from update payload", async () => {
@@ -499,7 +513,7 @@ describe("createClient", () => {
       await client.mutate.users.update("1", updateData);
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.payload).not.toHaveProperty("id");
+      expect(body.payload).toHaveProperty("id", "1");
     });
 
     test("should handle different routes for update", async () => {
@@ -527,7 +541,7 @@ describe("createClient", () => {
           headers: {
             "Content-Type": "application/json",
           },
-          body: expect.stringContaining('"resourceId":"1"'),
+          body: expect.stringContaining('"payload":{"id":"1","title":"Updated Post"}'),
         }
       );
     });
@@ -786,8 +800,8 @@ describe("createClient", () => {
       await client.mutate.users.insert(userData);
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.payload.name).toHaveProperty("_meta");
-      expect(body.payload.name._meta).toHaveProperty("timestamp");
+      expect(body.payload.name).toBe("John");
+      expect(body.meta).toHaveProperty("timestamp");
     });
 
     test("should handle different mutation types", async () => {
@@ -809,8 +823,8 @@ describe("createClient", () => {
       await client.mutate.users.update("1", updateData);
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.payload.name).toHaveProperty("_meta");
-      expect(body.payload.name._meta).toHaveProperty("timestamp");
+      expect(body.payload.name).toBe("John Updated");
+      expect(body.meta).toHaveProperty("timestamp");
     });
   });
 

@@ -857,7 +857,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
         },
       }),
       mutate: createObservable(() => {}, {
-        apply: async (_, path, argumentsList) => {
+        apply: (_, path, argumentsList) => {
           if (path.length < 2) return;
           if (path.length > 2)
             throw new Error("Trying to access an invalid path");
@@ -866,16 +866,16 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
 
           if (method === "insert") {
             // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
-            try {
-              return await ogClient.genericMutate(route, method, argumentsList[0]);
-            } catch (error) {
-              if (!isUnknownProcedureError(error)) {
-                throw error;
-              }
-            }
+            return ogClient
+              .genericMutate(route, method, argumentsList[0])
+              .catch((error) => {
+                if (!isUnknownProcedureError(error)) {
+                  throw error;
+                }
 
-            const { id, ...input } = argumentsList[0] ?? {};
-            return ogClient.mutate(route, id, "INSERT", input);
+                const { id, ...input } = argumentsList[0] ?? {};
+                return ogClient.mutate(route, id, "INSERT", input);
+              });
           }
 
           if (method === "update") {
@@ -888,19 +888,19 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
                 ? { id: argumentsList[0], ...argumentsList[1] }
                 : argumentsList[0];
 
-            try {
-              return await ogClient.genericMutate(route, method, customPayload);
-            } catch (error) {
-              if (!isUnknownProcedureError(error)) {
-                throw error;
-              }
-            }
+            return ogClient
+              .genericMutate(route, method, customPayload)
+              .catch((error) => {
+                if (!isUnknownProcedureError(error)) {
+                  throw error;
+                }
 
-            const [id, input] =
-              argumentsList.length > 1
-                ? argumentsList
-                : [argumentsList[0]?.id, argumentsList[0]];
-            return ogClient.mutate(route, id, "UPDATE", input);
+                const [id, input] =
+                  argumentsList.length > 1
+                    ? argumentsList
+                    : [argumentsList[0]?.id, argumentsList[0]];
+                return ogClient.mutate(route, id, "UPDATE", input);
+              });
           }
 
           return ogClient.genericMutate(route, method, argumentsList[0]);
