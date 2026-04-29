@@ -9,7 +9,11 @@ import {
   vi,
 } from "vitest";
 import { QueryBuilder } from "../../src/core/query";
-import { useLiveQuery, useLoadData } from "../../src/client/react";
+import {
+  useClientState,
+  useLiveQuery,
+  useLoadData,
+} from "../../src/client/react";
 import { Client } from "../../src/client/websocket/client";
 import { AnyRouter } from "../../src/server";
 
@@ -308,5 +312,96 @@ describe("useLoadData", () => {
     unmount();
 
     expect(mockUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useClientState", () => {
+  type Listener = (event: any) => void;
+
+  const makeMockClient = (initial: {
+    bootstrapStatus?: "pending" | "local" | "remote";
+    connected?: boolean;
+  } = {}) => {
+    let bootstrapStatus = initial.bootstrapStatus ?? "pending";
+    let connected = initial.connected ?? false;
+    const listeners = new Set<Listener>();
+
+    const client = {
+      get bootstrapStatus() {
+        return bootstrapStatus;
+      },
+      ws: { connected: () => connected },
+      addEventListener: (cb: Listener) => {
+        listeners.add(cb);
+        return () => listeners.delete(cb);
+      },
+    };
+
+    const emit = (event: any) => {
+      for (const cb of listeners) cb(event);
+    };
+
+    return {
+      client,
+      emit,
+      setBootstrapStatus: (s: typeof bootstrapStatus) => {
+        bootstrapStatus = s;
+      },
+      setConnected: (c: boolean) => {
+        connected = c;
+      },
+    };
+  };
+
+  test("returns initial state", () => {
+    const { client } = makeMockClient({
+      bootstrapStatus: "local",
+      connected: true,
+    });
+
+    const { result } = renderHook(() => useClientState(client as any));
+
+    expect(result.current).toEqual({
+      bootstrapStatus: "local",
+      connected: true,
+    });
+  });
+
+  test("updates when bootstrap status changes", () => {
+    const ctx = makeMockClient();
+
+    const { result } = renderHook(() => useClientState(ctx.client as any));
+
+    expect(result.current.bootstrapStatus).toBe("pending");
+
+    ctx.setBootstrapStatus("remote");
+    ctx.emit({ type: "BOOTSTRAP_STATUS_CHANGE", bootstrapStatus: "remote" });
+
+    expect(result.current.bootstrapStatus).toBe("remote");
+  });
+
+  test("updates when connection state changes", () => {
+    const ctx = makeMockClient({ connected: false });
+
+    const { result } = renderHook(() => useClientState(ctx.client as any));
+
+    expect(result.current.connected).toBe(false);
+
+    ctx.setConnected(true);
+    ctx.emit({ type: "CONNECTION_STATE_CHANGE", open: true });
+
+    expect(result.current.connected).toBe(true);
+  });
+
+  test("ignores unrelated events", () => {
+    const ctx = makeMockClient();
+
+    const { result } = renderHook(() => useClientState(ctx.client as any));
+    const before = result.current;
+
+    ctx.emit({ type: "MESSAGE_RECEIVED", message: {} });
+
+    // Same reference — no re-render
+    expect(result.current).toBe(before);
   });
 });

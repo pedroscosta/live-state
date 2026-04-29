@@ -168,6 +168,19 @@ export type OptimisticMutationUndoneEvent = {
   pendingMutations: number;
 };
 
+export type ClientBootstrapStatus = "pending" | "local" | "remote";
+
+export type BootstrapStatusChangeEvent = {
+  type: "BOOTSTRAP_STATUS_CHANGE";
+  bootstrapStatus: ClientBootstrapStatus;
+};
+
+const BOOTSTRAP_STATUS_RANK: Record<ClientBootstrapStatus, number> = {
+  pending: 0,
+  local: 1,
+  remote: 2,
+};
+
 export type ClientEvents =
   | ConnectionStateChangeEvent
   | MessageReceivedEvent
@@ -183,7 +196,8 @@ export type ClientEvents =
   | QuerySubscriptionTriggeredEvent
   | StoreStateUpdatedEvent
   | OptimisticMutationAppliedEvent
-  | OptimisticMutationUndoneEvent;
+  | OptimisticMutationUndoneEvent
+  | BootstrapStatusChangeEvent;
 
 class CustomQueryCall<TOutput> implements PromiseLike<TOutput> {
   public constructor(
@@ -233,12 +247,18 @@ class InnerClient implements QueryExecutor {
     }
   > = {};
 
+  private _bootstrapStatus: ClientBootstrapStatus = "pending";
+  private storageLoadedCount = 0;
+  private readonly expectedStorageLoads: number;
+
   public constructor(opts: WebSocketClientOptions) {
     this.url = opts.url;
     this.logger = createLogger({
       level: opts.logLevel ?? LogLevel.INFO,
     });
     this.optimisticMutations = opts.optimisticMutations;
+    this.expectedStorageLoads =
+      opts.storage === false ? 0 : Object.keys(opts.schema).length;
 
     this.store = new OptimisticStore(
       opts.schema,
@@ -269,6 +289,13 @@ class InnerClient implements QueryExecutor {
           resource,
           itemCount,
         });
+        this.storageLoadedCount += 1;
+        if (
+          this.expectedStorageLoads > 0 &&
+          this.storageLoadedCount >= this.expectedStorageLoads
+        ) {
+          this.setBootstrapStatus("local");
+        }
       },
       (query) => {
         this.emitEvent({
@@ -434,6 +461,8 @@ class InnerClient implements QueryExecutor {
           resource: parsedSyncData.resource,
           itemCount: parsedSyncData.data.length,
         });
+
+        this.setBootstrapStatus("remote");
       }
     } catch (e) {
       this.logger.error("Error parsing message from the server:", e);
@@ -741,6 +770,19 @@ class InnerClient implements QueryExecutor {
     });
   }
 
+  public get bootstrapStatus(): ClientBootstrapStatus {
+    return this._bootstrapStatus;
+  }
+
+  private setBootstrapStatus(next: ClientBootstrapStatus) {
+    if (
+      BOOTSTRAP_STATUS_RANK[next] <= BOOTSTRAP_STATUS_RANK[this._bootstrapStatus]
+    )
+      return;
+    this._bootstrapStatus = next;
+    this.emitEvent({ type: "BOOTSTRAP_STATUS_CHANGE", bootstrapStatus: next });
+  }
+
   public addEventListener(listener: (event: ClientEvents) => void) {
     this.eventListeners.add(listener);
     return () => {
@@ -783,6 +825,7 @@ class InnerClient implements QueryExecutor {
 export type Client<TRouter extends ClientRouterConstraint> = {
   client: {
     ws: WebSocketClient;
+    readonly bootstrapStatus: ClientBootstrapStatus;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
     load: (query: RawQueryRequest | CustomQueryRequest) => () => void;
   };
@@ -820,6 +863,9 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
   return {
     client: {
       ws: ogClient.ws,
+      get bootstrapStatus() {
+        return ogClient.bootstrapStatus;
+      },
       load: (query: RawQueryRequest) => {
         return ogClient.load(query);
       },
