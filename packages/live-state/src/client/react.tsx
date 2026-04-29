@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { QueryBuilder } from '../core/query';
 import type {
 	CustomQueryRequest,
@@ -7,6 +7,7 @@ import type {
 import { hash } from '../utils';
 import type { Client } from '.';
 import type { ClientRouterConstraint } from './types';
+import type { ClientBootstrapStatus } from './websocket/client';
 
 class Store {
 	private subscriptions: Map<
@@ -80,6 +81,52 @@ export const useLiveQuery = <
 		),
 		observable.get,
 	) as ReturnType<T['get']>;
+};
+
+export type ClientState = {
+	bootstrapStatus: ClientBootstrapStatus;
+	connected: boolean;
+};
+
+export const useClientState = (
+	client: Client<ClientRouterConstraint>['client'],
+): ClientState => {
+	const { subscribe, getSnapshot } = useMemo(() => {
+		let snapshot: ClientState = {
+			bootstrapStatus: client.bootstrapStatus,
+			connected: client.ws.connected(),
+		};
+
+		const recompute = () => {
+			const next: ClientState = {
+				bootstrapStatus: client.bootstrapStatus,
+				connected: client.ws.connected(),
+			};
+			if (
+				next.bootstrapStatus !== snapshot.bootstrapStatus ||
+				next.connected !== snapshot.connected
+			) {
+				snapshot = next;
+			}
+		};
+
+		return {
+			subscribe: (cb: () => void) => {
+				return client.addEventListener((event) => {
+					if (
+						event.type === 'BOOTSTRAP_STATUS_CHANGE' ||
+						event.type === 'CONNECTION_STATE_CHANGE'
+					) {
+						recompute();
+						cb();
+					}
+				});
+			},
+			getSnapshot: () => snapshot,
+		};
+	}, [client]);
+
+	return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
 export const useLoadData = (
