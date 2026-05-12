@@ -185,6 +185,40 @@ describe("httpTransportLayer", () => {
     });
   });
 
+  test("should handle POST request for insert mutation with generic shape", async () => {
+    const requestBody = {
+      payload: {
+        name: {
+          value: "John Generic",
+          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
+        },
+      },
+      meta: { timestamp: "2023-01-03T00:00:00.000Z" },
+    };
+
+    const request = new Request("http://localhost/users/insert", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+
+    (mockServer.handleMutation as Mock).mockResolvedValue({
+      data: { name: "John Generic" },
+      acceptedValues: { name: "John Generic" },
+    });
+
+    const response = await httpHandler(request);
+
+    expect(response.status).toBe(200);
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        procedure: "INSERT",
+      }),
+    });
+  });
+
   test("should handle POST request with custom mutation", async () => {
     const requestBody = {
       payload: { action: "approve" },
