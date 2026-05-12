@@ -215,6 +215,15 @@ export const httpTransportLayer = (
               if (!hasCustomProcedure) {
                 const rawPayload = (body.payload ?? {}) as Record<string, any>;
                 const { id, ...rest } = rawPayload;
+                if (procedure === "update" && typeof id !== "string") {
+                  return Response.json(
+                    {
+                      message: "Invalid mutation: payload.id is required for update",
+                      code: "INVALID_REQUEST",
+                    },
+                    { status: 400 }
+                  );
+                }
                 resourceIdOverride =
                   typeof id === "string" ? id : undefined;
                 const collection = (server.schema as any)?.[resource];
