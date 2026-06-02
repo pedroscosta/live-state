@@ -223,17 +223,12 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
                 const rawPayload =
                   (parsedMessage.payload ?? {}) as Record<string, any>;
                 const { id, ...rest } = rawPayload;
-                if (
-                  mutationProcedure === "update" &&
-                  typeof id !== "string"
-                ) {
+                if (typeof id !== "string") {
                   throw new Error(
-                    "Invalid mutation: payload.id is required for update",
+                    `Invalid mutation: payload.id is required for ${mutationProcedure}`,
                   );
                 }
-                if (typeof id === "string") {
-                  mutationResourceId = id;
-                }
+                mutationResourceId = id;
                 const collection = (server.schema as any)?.[resource];
                 if (
                   collection &&

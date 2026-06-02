@@ -700,14 +700,34 @@ class InnerClient implements QueryExecutor {
       this.replyHandlers[mutationMessage.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[mutationMessage.id];
-          this.emitUndoEvents(
-            this.store.undoCustomMutation(mutationMessage.id),
-          );
+          // Default insert/update optimistic state lives under its own message
+          // id (no custom-mutation index), so roll it back directly on timeout.
+          if (defaultMutationFallback) {
+            const pendingMutations =
+              this.store.optimisticMutationStack[routeName]?.length ?? 0;
+            this.store.undoMutation(routeName, mutationMessage.id);
+            this.emitEvent({
+              type: "OPTIMISTIC_MUTATION_UNDONE",
+              mutationId: mutationMessage.id,
+              resource: routeName,
+              resourceId: defaultMutationFallback.id,
+              pendingMutations: Math.max(pendingMutations - 1, 0),
+            });
+          } else {
+            this.emitUndoEvents(
+              this.store.undoCustomMutation(mutationMessage.id),
+            );
+          }
           reject(new Error("Reply timeout"));
         }, 5000),
         handler: (data: any) => {
           delete this.replyHandlers[mutationMessage.id];
-          this.store.confirmCustomMutation(mutationMessage.id);
+          // Default insert/update optimistic state is reconciled by the server
+          // broadcast (matching the legacy default-mutation path), so leave it
+          // in place here; only custom mutations confirm via the index.
+          if (!defaultMutationFallback) {
+            this.store.confirmCustomMutation(mutationMessage.id);
+          }
           resolve(data);
         },
         reject,
