@@ -590,7 +590,29 @@ class InnerClient implements QueryExecutor {
       procedure,
     );
 
-    if (!isConnected && !optimisticHandler) {
+    // TODO: Remove default-insert/update fallback optimistic when default mutations are removed.
+    const isDefaultMutationAlias =
+      (procedure === "insert" || procedure === "update") && !optimisticHandler;
+    const defaultMutationFallback =
+      isDefaultMutationAlias && this.store.schema[routeName]
+        ? (() => {
+            const rawPayload = (payload ?? {}) as Record<string, any>;
+            const { id, ...input } = rawPayload;
+            if (typeof id !== "string") return undefined;
+            try {
+              const encoded = this.store.schema[routeName].encodeMutation(
+                "set",
+                input as LiveObjectMutationInput<LiveObjectAny>,
+                new Date().toISOString(),
+              );
+              return { id, input, encoded };
+            } catch {
+              return undefined;
+            }
+          })()
+        : undefined;
+
+    if (!isConnected && !optimisticHandler && !defaultMutationFallback) {
       throw new Error("WebSocket not connected");
     }
 
@@ -603,7 +625,34 @@ class InnerClient implements QueryExecutor {
       meta: { timestamp: new Date().toISOString() },
     };
 
-    if (optimisticHandler) {
+    if (defaultMutationFallback) {
+      const defaultOptimisticMessage: DefaultMutationMessage = {
+        id: mutationMessage.id,
+        type: "MUTATE",
+        resource: routeName,
+        resourceId: defaultMutationFallback.id,
+        procedure: procedure === "insert" ? "INSERT" : "UPDATE",
+        payload: defaultMutationFallback.encoded,
+      };
+      this.store?.addMutation(routeName, defaultOptimisticMessage, true);
+      this.emitEvent({
+        type: "OPTIMISTIC_MUTATION_APPLIED",
+        mutationId: mutationMessage.id,
+        resource: routeName,
+        resourceId: defaultMutationFallback.id,
+        procedure: defaultOptimisticMessage.procedure,
+        pendingMutations:
+          (this.store.optimisticMutationStack[routeName]?.length ?? 0),
+      });
+      this.emitEvent({
+        type: "MUTATION_SENT",
+        mutationId: mutationMessage.id,
+        resource: routeName,
+        resourceId: defaultMutationFallback.id,
+        procedure,
+        optimistic: true,
+      });
+    } else if (optimisticHandler) {
       try {
         const { proxy, getOperations } = createOptimisticStorageProxy(
           this.store,

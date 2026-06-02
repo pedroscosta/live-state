@@ -202,27 +202,82 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
           const { resource } = parsedMessage;
           logger.debug("Received mutation from client:", parsedMessage);
           try {
+            const originalProcedure = (parsedMessage as GenericMutation)
+              .procedure;
+            let mutationProcedure = originalProcedure;
+            let mutationInput: any = parsedMessage.payload;
+            let mutationResourceId: string | undefined = (
+              parsedMessage as DefaultMutation
+            ).resourceId;
+
+            // TODO: Remove generic insert/update shape resolution when default mutations are removed.
+            if (
+              mutationProcedure === "insert" ||
+              mutationProcedure === "update"
+            ) {
+              const route = (server.router as any)?.routes?.[resource];
+              const hasCustomProcedure =
+                !!route?.customMutations?.[mutationProcedure];
+
+              if (!hasCustomProcedure) {
+                const rawPayload =
+                  (parsedMessage.payload ?? {}) as Record<string, any>;
+                const { id, ...rest } = rawPayload;
+                if (
+                  mutationProcedure === "update" &&
+                  typeof id !== "string"
+                ) {
+                  throw new Error(
+                    "Invalid mutation: payload.id is required for update",
+                  );
+                }
+                if (typeof id === "string") {
+                  mutationResourceId = id;
+                }
+                const collection = (server.schema as any)?.[resource];
+                if (
+                  collection &&
+                  typeof collection.encodeMutation === "function"
+                ) {
+                  const timestamp =
+                    (parsedMessage as GenericMutation).meta?.timestamp ??
+                    new Date().toISOString();
+                  mutationInput = collection.encodeMutation(
+                    "set",
+                    rest,
+                    timestamp,
+                  );
+                } else {
+                  mutationInput = rest;
+                }
+                mutationProcedure = mutationProcedure.toUpperCase();
+              }
+            }
+
             const result = await server.handleMutation({
               req: {
                 ...requestContext,
                 type: "MUTATE",
                 resource: resource,
-                input: parsedMessage.payload,
+                input: mutationInput,
                 context: {
                   messageId: parsedMessage.id,
                   ...((await initialContext) ?? {}),
                 },
-                resourceId: (parsedMessage as DefaultMutation).resourceId,
-                procedure: (parsedMessage as GenericMutation).procedure,
+                resourceId: mutationResourceId,
+                procedure: mutationProcedure,
                 queryParams: parsedQs,
                 meta: (parsedMessage as GenericMutation).meta,
               },
             });
 
             if (
-              (parsedMessage as GenericMutation).procedure &&
-              (parsedMessage as GenericMutation).procedure !== "INSERT" &&
-              (parsedMessage as GenericMutation).procedure !== "UPDATE"
+              (originalProcedure &&
+                originalProcedure !== "INSERT" &&
+                originalProcedure !== "UPDATE") ||
+              (mutationProcedure !== originalProcedure &&
+                (mutationProcedure === "INSERT" ||
+                  mutationProcedure === "UPDATE"))
             ) {
               reply({
                 id: parsedMessage.id,
