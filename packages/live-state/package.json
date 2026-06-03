@@ -1,6 +1,6 @@
 {
   "name": "@live-state/sync",
-  "version": "0.0.7-pr-3",
+  "version": "0.0.7-pr-4",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -17,7 +17,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist/**"
+    "dist/**",
+    "skills/**"
   ],
   "type": "module",
   "scripts": {
