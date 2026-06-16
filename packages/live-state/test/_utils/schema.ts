@@ -11,7 +11,7 @@ import {
   object,
   reference,
   string,
-} from "@live-state/sync";
+} from "../../src";
 
 const group = object("groups", {
   id: id(),
