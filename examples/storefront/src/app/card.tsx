@@ -56,19 +56,37 @@ export const Card = ({
 
       <div className="flex gap-2 items-center">
         <p className="text-lg border bg-muted p-2 rounded-lg">{card.counter}</p>
+        {/* [OPTIMISTIC] counter bumps instantly. */}
         <Button
+          title="Increment (optimistic)"
           onClick={() => {
             store.mutate.cards.incrementCounter({ cardId });
           }}
         >
           +
         </Button>
+        {/* [NON-OPTIMISTIC] counter only changes after the server delay. */}
         <Button
+          variant="outline"
+          title="Decrement (non-optimistic)"
           onClick={() => {
             store.mutate.cards.decrementCounter({ cardId });
           }}
         >
           -
+        </Button>
+        {/* [NON-OPTIMISTIC] rename waits for the server. */}
+        <Button
+          variant="outline"
+          title="Rename (non-optimistic)"
+          onClick={() => {
+            store.mutate.cards.renameCard({
+              cardId,
+              name: `${card.name} *`,
+            });
+          }}
+        >
+          ✎
         </Button>
       </div>
     </div>

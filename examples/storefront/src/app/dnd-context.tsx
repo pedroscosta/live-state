@@ -27,8 +27,8 @@ export function DndProvider({ children }: { children: ReactNode }) {
       const newGroupId = over.id as string;
       const cardId = active.id as string;
 
-      // Update the card's groupId in the store
-      store.mutate.cards.update(cardId, { groupId: newGroupId });
+      // [OPTIMISTIC] move the card to the new group with instant feedback.
+      store.mutate.cards.moveCard({ cardId, groupId: newGroupId });
     }
 
     setActiveId(null);
