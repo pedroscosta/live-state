@@ -8,7 +8,10 @@ import { DndProvider } from "./dnd-context";
 import { client, store } from "./live-client";
 
 export default function Store(): JSX.Element {
-  useLoadData(client, store.query.groups.include({ cards: true }));
+  // Load via a custom query procedure (returns an unresolved builder server-side),
+  // instead of the default collection query. Data still lands in the `groups`
+  // store, so Board's `useLiveQuery(store.query.groups)` renders it as usual.
+  useLoadData(client, store.query.groups.listGroups());
 
   const isConnected = useSyncExternalStore(
     (cb) => {

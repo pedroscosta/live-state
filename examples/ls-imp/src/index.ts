@@ -69,6 +69,14 @@ export const routerImpl = router({
           return { success: true, groupId };
         }),
 
+        // [LIVE QUERY] returns an UNRESOLVED query builder (no `.get()`), so the
+        // client can subscribe to it: `store.query.groups.listGroups()` is a
+        // loadable that feeds the store and stays live. Use it with useLoadData
+        // (or useLiveQuery) instead of the default collection query.
+        listGroups: query().handler(async ({ db }) =>
+          db.groups.where({}).include({ cards: true }),
+        ),
+
         getStats: query().handler(async ({ db }) => {
           const allGroups = await db.find(schema.groups, {
             include: { cards: true },
