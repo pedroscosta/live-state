@@ -19,7 +19,7 @@ import { schema } from "./schema";
  * A few procedures keep an artificial delay so the difference is obvious.
  */
 
-const publicRoute = routeFactory();
+const publicRoute = routeFactory<typeof schema>();
 
 const SERVER_DELAY_MS = 2_000;
 const delay = (ms = SERVER_DELAY_MS) => new Promise((r) => setTimeout(r, ms));

@@ -1,3 +1,4 @@
+import { QueryBuilder, type QueryExecutor } from "../../core/query";
 import { Storage } from "./interface";
 import {
 	createServerDB,
@@ -6,4 +7,12 @@ import {
 } from "./server-query-builder";
 import { SQLStorage } from "./sql-storage";
 
-export { Storage, SQLStorage, createServerDB, type ServerDB, type ServerCollection };
+export {
+	Storage,
+	SQLStorage,
+	createServerDB,
+	type ServerDB,
+	type ServerCollection,
+	QueryBuilder,
+	type QueryExecutor,
+};
