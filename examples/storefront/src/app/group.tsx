@@ -40,17 +40,30 @@ export const Group = ({ groupId }: { groupId: string }) => {
       {Object.values(group.cards ?? {}).map((card) => (
         <MemoItem key={card.id} cardId={card.id} />
       ))}
+      {/* [OPTIMISTIC] card appears instantly inside this group. */}
       <Button
         onClick={() => {
-          store.mutate.cards.insert({
+          store.mutate.cards.createCard({
             id: ulid().toLowerCase(),
             name: "New Card",
-            counter: 0,
             groupId: group.id,
           });
         }}
       >
-        Add Card
+        Add Card (optimistic)
+      </Button>
+
+      {/* [NON-OPTIMISTIC] rename lags by the server delay on purpose. */}
+      <Button
+        variant="outline"
+        onClick={() => {
+          store.mutate.groups.renameGroup({
+            id: group.id,
+            name: `${group.name} *`,
+          });
+        }}
+      >
+        Rename group (non-optimistic)
       </Button>
     </div>
   );
