@@ -1,11 +1,12 @@
 name: CodSpeed
 
+# Temporarily disabled — restore push/pull_request triggers to re-enable CI.
 on:
-  push:
-    branches:
-      - "main"
-  pull_request:
   workflow_dispatch:
+  # push:
+  #   branches:
+  #     - "main"
+  # pull_request:
 
 permissions:
   contents: read
