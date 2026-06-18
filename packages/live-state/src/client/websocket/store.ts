@@ -234,6 +234,7 @@ export class OptimisticStore {
 
     const prevValue =
       this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
+    let undidMatchingOptimistic = false;
 
     if (optimistic) {
       this.optimisticMutationStack[routeName] ??=
@@ -280,6 +281,7 @@ export class OptimisticStore {
               { optimisticMutationId: entry.mutationId, resourceId: mutation.resourceId },
             );
             this.undoMutation(routeName, entry.mutationId);
+            undidMatchingOptimistic = true;
             matched = true;
             break;
           }
@@ -303,6 +305,7 @@ export class OptimisticStore {
                 },
               );
               this.undoMutation(routeName, entry.mutationId);
+              undidMatchingOptimistic = true;
               matched = true;
               break;
             }
@@ -339,11 +342,15 @@ export class OptimisticStore {
 
     this.kvStorage.setMeta("mutationStack", this.optimisticMutationStack);
 
+    const relationPrevValue = undidMatchingOptimistic
+      ? this.optimisticRawObjPool[routeName]?.[mutation.resourceId]
+      : prevValue;
+
     this.updateRawObjPool(
       routeName,
       mutation.resourceId,
       mutation.payload,
-      prevValue,
+      relationPrevValue,
     );
   }
 
