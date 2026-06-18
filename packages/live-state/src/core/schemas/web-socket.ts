@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import {
 	customQuerySchema,
-	defaultMutationSchema,
 	genericMutationSchema,
 	queryPayloadSchema,
 	querySchema,
+	syncDeltaSchema,
 } from './core-protocol';
 
 export const msgId = z.string();
@@ -46,25 +46,11 @@ export const clCustomQueryMsgSchema = z.object({
 
 export type CustomQueryMessage = z.infer<typeof clCustomQueryMsgSchema>;
 
-export const defaultMutationMsgSchema = defaultMutationSchema.extend({
-	id: msgId,
-});
-
-export type DefaultMutationMessage = Omit<
-	z.infer<typeof defaultMutationMsgSchema>,
-	'resourceId'
-> & {
-	resourceId: string;
-};
-
 export const genericMutationMsgSchema = genericMutationSchema.extend({
 	id: msgId,
 });
 
-export const mutationMsgSchema = z.union([
-	genericMutationMsgSchema,
-	defaultMutationMsgSchema,
-]);
+export const mutationMsgSchema = genericMutationMsgSchema;
 
 export type MutationMessage = z.infer<typeof mutationMsgSchema>;
 
@@ -95,10 +81,21 @@ export const svReplyMsgSchema = z.object({
 	data: z.any(),
 });
 
+export const syncDeltaMsgSchema = syncDeltaSchema.extend({
+	id: msgId,
+});
+
+export type SyncDeltaMessage = Omit<
+	z.infer<typeof syncDeltaMsgSchema>,
+	'resourceId'
+> & {
+	resourceId: string;
+};
+
 export const serverMessageSchema = z.union([
 	svRejectMsgSchema,
 	svReplyMsgSchema,
-	defaultMutationMsgSchema,
+	syncDeltaMsgSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;

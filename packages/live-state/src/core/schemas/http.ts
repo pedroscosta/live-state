@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
-  defaultMutationSchema,
   genericMutationSchema,
   querySchema,
+  syncDeltaSchema,
 } from "./core-protocol";
 
 export const httpQuerySchema = querySchema.omit({
@@ -20,11 +20,11 @@ export const httpGenericMutationSchema = genericMutationSchema
     meta: genericMutationSchema.shape.meta,
   });
 
-export const httpDefaultMutationSchema = defaultMutationSchema.omit({
+export const httpDefaultMutationSchema = syncDeltaSchema.omit({
   id: true,
   type: true,
   resource: true,
-  procedure: true,
+  op: true,
 });
 
 export const httpMutationSchema = z.union([

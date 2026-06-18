@@ -147,16 +147,16 @@ const makeOptimisticMutations = () =>
 const makeBroadcast = (
 	id: string,
 	resourceId: string,
-	procedure: 'INSERT' | 'UPDATE',
+	op: 'INSERT' | 'UPDATE',
 	payload: Record<string, any>,
 	originMutationId?: string,
 ) =>
 	JSON.stringify({
-		type: 'MUTATE',
+		type: 'SYNC',
 		id,
 		resource: 'posts',
 		resourceId,
-		procedure,
+		op,
 		payload: Object.fromEntries(
 			Object.entries(payload).map(([k, v]) => [
 				k,

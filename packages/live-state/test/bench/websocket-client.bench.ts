@@ -9,7 +9,7 @@ import {
 	object,
 } from "../../src/schema";
 import { OptimisticStore } from "../../src/client/websocket/store";
-import type { DefaultMutationMessage } from "../../src/core/schemas/web-socket";
+import type { SyncDeltaMessage } from "../../src/core/schemas/web-socket";
 import { generateId } from "../../src/core/utils";
 import { createLogger, LogLevel } from "../../src/utils";
 
@@ -106,15 +106,15 @@ function createMutation(
 	resource: string,
 	resourceId: string,
 	payload: Record<string, unknown>,
-	procedure: "INSERT" | "UPDATE" = "INSERT"
-): DefaultMutationMessage {
+	op: "INSERT" | "UPDATE" = "INSERT"
+): SyncDeltaMessage {
 	const timestamp = new Date().toISOString();
 	return {
 		id: generateId(),
-		type: "MUTATE",
+		type: "SYNC",
 		resource,
 		resourceId,
-		procedure,
+		op,
 		payload: Object.fromEntries(
 			Object.entries(payload).map(([k, v]) => [
 				k,

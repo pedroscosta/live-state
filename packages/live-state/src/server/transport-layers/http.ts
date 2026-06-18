@@ -1,6 +1,5 @@
 import cookie from "cookie";
 import qs from "qs";
-import type { DefaultMutation } from "../../core/schemas/core-protocol";
 import {
   type HttpMutation,
   httpDefaultMutationSchema,
@@ -267,7 +266,8 @@ export const httpTransportLayer = (
               input: inputOverride ?? body.payload,
               context: initialContext,
               resourceId:
-                resourceIdOverride ?? (body as DefaultMutation).resourceId,
+                resourceIdOverride ??
+                (body as { resourceId?: string }).resourceId,
               procedure: mutationProcedure,
               queryParams: {},
               meta: (body as any).meta,

@@ -2,10 +2,7 @@
 import cookie from "cookie";
 import { parse } from "qs";
 import type WebSocket from "ws";
-import type {
-  DefaultMutation,
-  GenericMutation,
-} from "../../core/schemas/core-protocol";
+import type { GenericMutation } from "../../core/schemas/core-protocol";
 import {
   clientMessageSchema,
   type ServerMessage,
@@ -206,9 +203,8 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
               .procedure;
             let mutationProcedure = originalProcedure;
             let mutationInput: any = parsedMessage.payload;
-            let mutationResourceId: string | undefined = (
-              parsedMessage as DefaultMutation
-            ).resourceId;
+            let mutationResourceId: string | undefined =
+              parsedMessage.resourceId;
 
             // TODO: Remove generic insert/update shape resolution when default mutations are removed.
             if (
@@ -266,20 +262,11 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
               },
             });
 
-            if (
-              (originalProcedure &&
-                originalProcedure !== "INSERT" &&
-                originalProcedure !== "UPDATE") ||
-              (mutationProcedure !== originalProcedure &&
-                (mutationProcedure === "INSERT" ||
-                  mutationProcedure === "UPDATE"))
-            ) {
-              reply({
-                id: parsedMessage.id,
-                type: "REPLY",
-                data: result,
-              });
-            }
+            reply({
+              id: parsedMessage.id,
+              type: "REPLY",
+              data: result,
+            });
           } catch (e) {
             reply({
               id: parsedMessage.id,

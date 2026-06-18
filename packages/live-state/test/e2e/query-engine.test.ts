@@ -558,7 +558,7 @@ describe("Query Engine Functional Requirements", () => {
       expect(mutations.length).toBe(1);
       expect(mutations[0].resource).toBe("posts");
       expect(mutations[0].resourceId).toBe(newPostId);
-      expect(mutations[0].procedure).toBe("INSERT");
+      expect(mutations[0].op).toBe("INSERT");
       expect(mutations[0].payload.title.value).toBe(newPostTitle);
 
       if (result.unsubscribe) {
@@ -722,7 +722,7 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(mutations.length).toBe(1);
-      expect(mutations[0].procedure).toBe("UPDATE");
+      expect(mutations[0].op).toBe("UPDATE");
       expect(mutations[0].resourceId).toBe(postId1);
       expect(mutations[0].payload.title.value).toBe(updatedTitle);
       expect(mutations[0].payload.likes.value).toBe(updatedLikes);
@@ -769,7 +769,7 @@ describe("Query Engine Functional Requirements", () => {
 
       // Should receive INSERT mutation (object now matches)
       expect(mutations.length).toBe(1);
-      expect(mutations[0].procedure).toBe("INSERT");
+      expect(mutations[0].op).toBe("INSERT");
       expect(mutations[0].resourceId).toBe(postId2);
       expect(mutations[0].payload.likes.value).toBe(15);
 
@@ -815,7 +815,7 @@ describe("Query Engine Functional Requirements", () => {
 
       // Should receive UPDATE mutation (object no longer matches)
       expect(mutations.length).toBe(1);
-      expect(mutations[0].procedure).toBe("UPDATE");
+      expect(mutations[0].op).toBe("UPDATE");
       expect(mutations[0].resourceId).toBe(postId3);
       expect(mutations[0].payload.likes.value).toBe(5);
 
@@ -860,7 +860,7 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(mutations.length).toBe(1);
-      expect(mutations[0].procedure).toBe("UPDATE");
+      expect(mutations[0].op).toBe("UPDATE");
       expect(mutations[0].payload.likes.value).toBe(5);
 
       // Transition 2: Non-matching -> Matching
@@ -871,7 +871,7 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(mutations.length).toBe(2);
-      expect(mutations[1].procedure).toBe("INSERT");
+      expect(mutations[1].op).toBe("INSERT");
       expect(mutations[1].payload.likes.value).toBe(15);
 
       if (result.unsubscribe) {
@@ -915,7 +915,7 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(mutations.length).toBe(1);
-      expect(mutations[0].procedure).toBe("UPDATE");
+      expect(mutations[0].op).toBe("UPDATE");
       expect(mutations[0].payload.authorId.value).toBe(userId2);
 
       // Change post author back to John Doe (matches again)
@@ -926,7 +926,7 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(mutations.length).toBe(2);
-      expect(mutations[1].procedure).toBe("INSERT");
+      expect(mutations[1].op).toBe("INSERT");
       expect(mutations[1].payload.authorId.value).toBe(userId1);
 
       if (result.unsubscribe) {
@@ -985,7 +985,7 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(query1Mutations.length).toBe(1);
-      expect(query1Mutations[0].procedure).toBe("UPDATE");
+      expect(query1Mutations[0].op).toBe("UPDATE");
       expect(query2Mutations.length).toBe(0);
 
       // Update postId3 to likes = 25 (matches both)
@@ -996,9 +996,9 @@ describe("Query Engine Functional Requirements", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       expect(query1Mutations.length).toBe(2);
-      expect(query1Mutations[1].procedure).toBe("UPDATE");
+      expect(query1Mutations[1].op).toBe("UPDATE");
       expect(query2Mutations.length).toBe(1);
-      expect(query2Mutations[0].procedure).toBe("INSERT");
+      expect(query2Mutations[0].op).toBe("INSERT");
 
       if (result1.unsubscribe) {
         result1.unsubscribe();
@@ -1054,7 +1054,7 @@ describe("Query Engine Functional Requirements", () => {
       expect(mutations.length).toBe(1);
       expect(mutations[0].resource).toBe("comments");
       expect(mutations[0].resourceId).toBe(newCommentId);
-      expect(mutations[0].procedure).toBe("INSERT");
+      expect(mutations[0].op).toBe("INSERT");
 
       if (result.unsubscribe) {
         result.unsubscribe();
@@ -1096,7 +1096,7 @@ describe("Query Engine Functional Requirements", () => {
       expect(mutations.length).toBe(1);
       expect(mutations[0].resource).toBe("users");
       expect(mutations[0].resourceId).toBe(userId1);
-      expect(mutations[0].procedure).toBe("UPDATE");
+      expect(mutations[0].op).toBe("UPDATE");
 
       if (result.unsubscribe) {
         result.unsubscribe();
@@ -1148,7 +1148,7 @@ describe("Query Engine Functional Requirements", () => {
         (m) => m.resource === "orgs" && m.resourceId === orgId1
       );
       expect(orgMutation).toBeDefined();
-      expect(orgMutation!.procedure).toBe("UPDATE");
+      expect(orgMutation!.op).toBe("UPDATE");
 
       if (result.unsubscribe) {
         result.unsubscribe();
@@ -1208,7 +1208,7 @@ describe("Query Engine Functional Requirements", () => {
         (m) => m.resource === "posts" && m.resourceId === postId3
       );
       expect(postMutation).toBeDefined();
-      expect(postMutation!.procedure).toBe("INSERT");
+      expect(postMutation!.op).toBe("INSERT");
       expect(postMutation!.payload.authorId.value).toBe(userId1);
 
       if (result.unsubscribe) {
@@ -1263,7 +1263,7 @@ describe("Query Engine Functional Requirements", () => {
         (m) => m.resource === "posts" && m.resourceId === postId1
       );
       expect(postMutation).toBeDefined();
-      expect(postMutation!.procedure).toBe("UPDATE");
+      expect(postMutation!.op).toBe("UPDATE");
       expect(postMutation!.payload.authorId.value).toBe(userId3);
 
       // Verify subsequent updates to out-of-scope object don't trigger notifications
@@ -1335,7 +1335,7 @@ describe("Query Engine Functional Requirements", () => {
         (m) => m.resource === "posts" && m.resourceId === postId3
       );
       expect(postMutation).toBeDefined();
-      expect(postMutation!.procedure).toBe("INSERT");
+      expect(postMutation!.op).toBe("INSERT");
 
       // Should receive INSERTs for all comments on the post
       for (const commentId of post3CommentIds) {
@@ -1343,7 +1343,7 @@ describe("Query Engine Functional Requirements", () => {
           (m) => m.resource === "comments" && m.resourceId === commentId
         );
         expect(commentMutation).toBeDefined();
-        expect(commentMutation!.procedure).toBe("INSERT");
+        expect(commentMutation!.op).toBe("INSERT");
         expect(commentMutation!.payload.postId.value).toBe(postId3);
       }
 
@@ -1404,7 +1404,7 @@ describe("Query Engine Functional Requirements", () => {
         (m) => m.resource === "comments" && m.resourceId === commentId1
       );
       expect(commentMutation).toBeDefined();
-      expect(commentMutation!.procedure).toBe("UPDATE");
+      expect(commentMutation!.op).toBe("UPDATE");
       expect(commentMutation!.payload.postId.value).toBe(postId4);
 
       // Verify subsequent updates to out-of-scope comment don't trigger notifications
@@ -1511,9 +1511,9 @@ describe("Query Engine Functional Requirements", () => {
       expect(client2Mutations.length).toBe(2);
       expect(client3Mutations.length).toBe(2);
 
-      expect(client1Mutations[1].procedure).toBe("UPDATE");
-      expect(client2Mutations[1].procedure).toBe("UPDATE");
-      expect(client3Mutations[1].procedure).toBe("UPDATE");
+      expect(client1Mutations[1].op).toBe("UPDATE");
+      expect(client2Mutations[1].op).toBe("UPDATE");
+      expect(client3Mutations[1].op).toBe("UPDATE");
 
       if (result1.unsubscribe) {
         result1.unsubscribe();
@@ -1632,8 +1632,8 @@ describe("Query Engine Functional Requirements", () => {
 
       expect(authorUpdate1).toBeDefined();
       expect(authorUpdate2).toBeDefined();
-      expect(authorUpdate1!.procedure).toBe("UPDATE");
-      expect(authorUpdate2!.procedure).toBe("UPDATE");
+      expect(authorUpdate1!.op).toBe("UPDATE");
+      expect(authorUpdate2!.op).toBe("UPDATE");
 
       if (result1.unsubscribe) {
         result1.unsubscribe();

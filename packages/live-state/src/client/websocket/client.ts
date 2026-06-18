@@ -7,10 +7,10 @@ import type {
 import {
   type ClientMessage,
   type clQueryMsgSchema,
-  type DefaultMutationMessage,
   type MutationMessage,
   type ServerMessage,
   serverMessageSchema,
+  type SyncDeltaMessage,
   syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
@@ -278,7 +278,7 @@ class InnerClient implements QueryExecutor {
           ?.flat()
           ?.forEach((m) => {
             if (customMutationIds.has(m.id)) return;
-            this.sendWsMessage(m);
+            this.sendWsMessage(this.syncDeltaToMutationMessage(m));
           });
 
         this.replayCustomMutationStack();
@@ -345,10 +345,10 @@ class InnerClient implements QueryExecutor {
                   mutationId: m.id,
                   resource: m.resource,
                   resourceId: m.resourceId,
-                  procedure: m.procedure ?? "UNKNOWN",
+                  procedure: m.op ?? "UNKNOWN",
                   optimistic: true,
                 });
-                this.sendWsMessage(m);
+                this.sendWsMessage(this.syncDeltaToMutationMessage(m));
               });
           },
         );
@@ -380,25 +380,22 @@ class InnerClient implements QueryExecutor {
         message: parsedMessage,
       });
 
-      if (parsedMessage.type === "MUTATE") {
-        const { resource, id, resourceId, procedure } =
-          parsedMessage as DefaultMutationMessage;
+      if (parsedMessage.type === "SYNC") {
+        const { resource, id, resourceId, op } =
+          parsedMessage as SyncDeltaMessage;
 
         this.emitEvent({
           type: "MUTATION_RECEIVED",
           mutationId: id,
           resource,
           resourceId,
-          procedure: procedure ?? "UNKNOWN",
+          procedure: op ?? "UNKNOWN",
         });
 
         try {
-          this.store.addMutation(
-            resource,
-            parsedMessage as DefaultMutationMessage,
-          );
+          this.store.addMutation(resource, parsedMessage as SyncDeltaMessage);
         } catch (e) {
-          this.logger.error("Error merging mutation from the server:", e);
+          this.logger.error("Error merging sync delta from the server:", e);
         }
       } else if (parsedMessage.type === "REJECT") {
         if (this.replyHandlers[parsedMessage.id]) {
@@ -534,6 +531,21 @@ class InnerClient implements QueryExecutor {
     return this.store.subscribe(query, callback);
   }
 
+  /**
+   * Converts a locally-stored optimistic sync delta back into the client→server
+   * MUTATE request used to replay default insert/update mutations on reconnect.
+   */
+  private syncDeltaToMutationMessage(m: SyncDeltaMessage): MutationMessage {
+    return {
+      id: m.id,
+      type: "MUTATE",
+      resource: m.resource,
+      procedure: m.op,
+      payload: m.payload,
+      resourceId: m.resourceId,
+    };
+  }
+
   /** @deprecated Use custom mutations instead. Default insert/update mutations will be removed in a future version. */
   public mutate(
     routeName: string,
@@ -543,27 +555,40 @@ class InnerClient implements QueryExecutor {
       Omit<Simplify<LiveObjectMutationInput<LiveObjectAny>>["value"], "id">
     >,
   ) {
-    const mutationMessage: DefaultMutationMessage = {
-      id: generateId(),
+    const mutationId = generateId();
+    const encodedPayload = this.store.schema[routeName].encodeMutation(
+      "set",
+      payload as LiveObjectMutationInput<LiveObjectAny>,
+      new Date().toISOString(),
+    );
+
+    // Optimistic state is reconciled by the server's SYNC broadcast.
+    const optimisticDelta: SyncDeltaMessage = {
+      id: mutationId,
+      type: "SYNC",
+      resource: routeName,
+      payload: encodedPayload,
+      resourceId,
+      op: procedure,
+    };
+
+    // The client→server request remains a MUTATE message.
+    const mutationMessage: MutationMessage = {
+      id: mutationId,
       type: "MUTATE",
       resource: routeName,
-      payload: this.store.schema[routeName].encodeMutation(
-        "set",
-        payload as LiveObjectMutationInput<LiveObjectAny>,
-        new Date().toISOString(),
-      ),
-      resourceId,
       procedure,
+      payload: encodedPayload,
     };
 
     const pendingMutations =
       (this.store.optimisticMutationStack[routeName]?.length ?? 0) + 1;
 
-    this.store?.addMutation(routeName, mutationMessage, true);
+    this.store?.addMutation(routeName, optimisticDelta, true);
 
     this.emitEvent({
       type: "OPTIMISTIC_MUTATION_APPLIED",
-      mutationId: mutationMessage.id,
+      mutationId,
       resource: routeName,
       resourceId,
       procedure,
@@ -572,7 +597,7 @@ class InnerClient implements QueryExecutor {
 
     this.emitEvent({
       type: "MUTATION_SENT",
-      mutationId: mutationMessage.id,
+      mutationId,
       resource: routeName,
       resourceId,
       procedure,
@@ -580,6 +605,20 @@ class InnerClient implements QueryExecutor {
     });
 
     this.sendWsMessage(mutationMessage);
+
+    // Every MUTATE now receives a REPLY; the optimistic state is still
+    // reconciled by the SYNC broadcast, so just swallow the acknowledgement.
+    this.replyHandlers[mutationId] = {
+      timeoutHandle: setTimeout(() => {
+        delete this.replyHandlers[mutationId];
+      }, 5000),
+      handler: () => {
+        delete this.replyHandlers[mutationId];
+      },
+      reject: () => {
+        delete this.replyHandlers[mutationId];
+      },
+    };
   }
 
   public genericMutate(routeName: string, procedure: string, payload: any) {
@@ -626,12 +665,12 @@ class InnerClient implements QueryExecutor {
     };
 
     if (defaultMutationFallback) {
-      const defaultOptimisticMessage: DefaultMutationMessage = {
+      const defaultOptimisticMessage: SyncDeltaMessage = {
         id: mutationMessage.id,
-        type: "MUTATE",
+        type: "SYNC",
         resource: routeName,
         resourceId: defaultMutationFallback.id,
-        procedure: procedure === "insert" ? "INSERT" : "UPDATE",
+        op: procedure === "insert" ? "INSERT" : "UPDATE",
         payload: defaultMutationFallback.encoded,
       };
       this.store?.addMutation(routeName, defaultOptimisticMessage, true);
@@ -640,7 +679,7 @@ class InnerClient implements QueryExecutor {
         mutationId: mutationMessage.id,
         resource: routeName,
         resourceId: defaultMutationFallback.id,
-        procedure: defaultOptimisticMessage.procedure,
+        procedure: defaultOptimisticMessage.op,
         pendingMutations:
           (this.store.optimisticMutationStack[routeName]?.length ?? 0),
       });
@@ -746,12 +785,12 @@ class InnerClient implements QueryExecutor {
         const mutationId = generateId();
         const timestamp = new Date().toISOString();
 
-        const mutationMessage: DefaultMutationMessage = {
+        const mutationMessage: SyncDeltaMessage = {
           id: mutationId,
-          type: "MUTATE",
+          type: "SYNC",
           resource: op.resource,
           resourceId: op.id,
-          procedure: op.type === "insert" ? "INSERT" : "UPDATE",
+          op: op.type === "insert" ? "INSERT" : "UPDATE",
           payload: this.store.schema[op.resource].encodeMutation(
             "set",
             op.data as LiveObjectMutationInput<LiveObjectAny>,
