@@ -72,7 +72,7 @@ type CustomQueryFunction<
 
 /**
  * Simplified router constraint for client-side usage.
- * This avoids importing server-internal types like Storage and Hooks,
+ * This avoids importing server-internal types like Storage,
  * which can cause type incompatibilities when the package is bundled.
  */
 export type ClientRouterConstraint = {

@@ -1,16 +1,98 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: hooks operate generically over any entity shape */
 
-import { inferValue, type LiveObjectAny, type MaterializedLiveType, type Schema } from "../schema";
-import type {
-	AfterInsertHook,
-	AfterUpdateHook,
-	BeforeInsertHook,
-	BeforeUpdateHook,
-	Hooks,
-} from "./router";
+import {
+	type InferLiveObjectWithRelationalIds,
+	inferValue,
+	type LiveObjectAny,
+	type MaterializedLiveType,
+	type Schema,
+} from "../schema";
+import type { Simplify } from "../utils";
+import type { ServerDB } from "./storage/server-query-builder";
 
 /**
- * Schema-keyed registry of lifecycle hooks.
+ * Database lifecycle hooks.
+ *
+ * These fire from the storage layer around every committed write (insert /
+ * update), regardless of how the write was produced — a custom mutation
+ * handler calling `db.x.insert(...)`, a transaction, etc. They are *not* tied
+ * to a particular mutation procedure.
+ *
+ * `before*` handlers may return a transformed raw value to replace what gets
+ * persisted; returning `void` leaves the value unchanged. `after*` handlers run
+ * once the write is committed.
+ */
+export type BeforeInsertHook<
+	TShape extends LiveObjectAny,
+	TSchema extends Schema<any> = Schema<any>,
+	TContext = Record<string, any>,
+> = (opts: {
+	ctx?: TContext;
+	value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+	rawValue: MaterializedLiveType<TShape>;
+	db: ServerDB<TSchema>;
+}) =>
+	| Promise<MaterializedLiveType<TShape> | void>
+	| MaterializedLiveType<TShape>
+	| void;
+
+export type AfterInsertHook<
+	TShape extends LiveObjectAny,
+	TSchema extends Schema<any> = Schema<any>,
+	TContext = Record<string, any>,
+> = (opts: {
+	ctx?: TContext;
+	value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+	rawValue: MaterializedLiveType<TShape>;
+	db: ServerDB<TSchema>;
+}) => Promise<void> | void;
+
+export type BeforeUpdateHook<
+	TShape extends LiveObjectAny,
+	TSchema extends Schema<any> = Schema<any>,
+	TContext = Record<string, any>,
+> = (opts: {
+	ctx?: TContext;
+	value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+	rawValue: MaterializedLiveType<TShape>;
+	previousValue?: Simplify<InferLiveObjectWithRelationalIds<TShape>> & {
+		id: string;
+	};
+	previousRawValue?: MaterializedLiveType<TShape>;
+	db: ServerDB<TSchema>;
+}) =>
+	| Promise<MaterializedLiveType<TShape> | void>
+	| MaterializedLiveType<TShape>
+	| void;
+
+export type AfterUpdateHook<
+	TShape extends LiveObjectAny,
+	TSchema extends Schema<any> = Schema<any>,
+	TContext = Record<string, any>,
+> = (opts: {
+	ctx?: TContext;
+	value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
+	rawValue: MaterializedLiveType<TShape>;
+	previousValue?: Simplify<InferLiveObjectWithRelationalIds<TShape>> & {
+		id: string;
+	};
+	previousRawValue?: MaterializedLiveType<TShape>;
+	db: ServerDB<TSchema>;
+}) => Promise<void> | void;
+
+export type Hooks<
+	TShape extends LiveObjectAny,
+	TSchema extends Schema<any> = Schema<any>,
+	TContext = Record<string, any>,
+> = {
+	beforeInsert?: BeforeInsertHook<TShape, TSchema, TContext>;
+	afterInsert?: AfterInsertHook<TShape, TSchema, TContext>;
+	beforeUpdate?: BeforeUpdateHook<TShape, TSchema, TContext>;
+	afterUpdate?: AfterUpdateHook<TShape, TSchema, TContext>;
+};
+
+/**
+ * Schema-keyed registry of database lifecycle hooks.
  *
  * Top-level keys are constrained to entity names on `TSchema`. Per-entity
  * payloads (`value`, `rawValue`, `previousValue`, …) are inferred from the
@@ -26,11 +108,11 @@ export type HooksRegistry<
 };
 
 /**
- * Declares lifecycle hooks for a schema.
+ * Declares database lifecycle hooks for a schema.
  *
  * Identity function whose generic parameters constrain the returned object's
  * top-level keys to schema entity names and thread `TContext` through to
- * handler payloads.
+ * handler payloads. Pass the result to `server({ hooks })`.
  *
  * @example
  * ```ts

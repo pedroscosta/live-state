@@ -10,10 +10,7 @@ import {
 	routeFactory,
 	createMiddleware,
 	type TypedMiddleware,
-	type Authorization,
-	type Hooks,
 	type ReadAuthorizationHandler,
-	type MutationAuthorizationHandler,
 } from "../../src/server/router";
 import type {
 	BaseRequest,
@@ -70,64 +67,21 @@ describe("Typed Context", () => {
 		});
 	});
 
-	describe("Phase 1: Authorization handlers receive TContext", () => {
+	describe("Phase 1: Read authorization handlers receive TContext", () => {
 		test("ReadAuthorizationHandler ctx is typed", () => {
 			type Handler = ReadAuthorizationHandler<typeof user, AppContext>;
 			expectTypeOf<Parameters<Handler>[0]["ctx"]>().toEqualTypeOf<AppContext>();
 		});
-
-		test("MutationAuthorizationHandler ctx is typed", () => {
-			type Handler = MutationAuthorizationHandler<typeof user, AppContext>;
-			expectTypeOf<Parameters<Handler>[0]["ctx"]>().toEqualTypeOf<AppContext>();
-		});
-
-		test("Authorization propagates TContext", () => {
-			type Auth = Authorization<typeof user, AppContext>;
-			const auth: Auth = {
-				read: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext>();
-					return true;
-				},
-				insert: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext>();
-					return true;
-				},
-			};
-		});
-	});
-
-	describe("Phase 1: Hooks receive TContext", () => {
-		test("Hooks ctx is typed", () => {
-			type H = Hooks<typeof user, typeof schema, AppContext>;
-			const hooks: H = {
-				beforeInsert: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext | undefined>();
-				},
-				afterInsert: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext | undefined>();
-				},
-				beforeUpdate: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext | undefined>();
-				},
-				afterUpdate: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext | undefined>();
-				},
-			};
-		});
 	});
 
 	describe("Phase 1: RouteFactory flows TContext to Route", () => {
-		test("collectionRoute authorization receives TContext", () => {
+		test("collectionRoute read authorization receives TContext", () => {
 			const factory = routeFactory<typeof schema, AppContext>();
 
 			factory.collectionRoute(schema.posts, {
 				read: ({ ctx }) => {
 					expectTypeOf(ctx).toEqualTypeOf<AppContext>();
 					return { authorId: ctx.user };
-				},
-				insert: ({ ctx, value }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext>();
-					return true;
 				},
 			});
 		});
