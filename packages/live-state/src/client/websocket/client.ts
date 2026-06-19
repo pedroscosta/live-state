@@ -577,6 +577,7 @@ class InnerClient implements QueryExecutor {
       id: mutationId,
       type: "MUTATE",
       resource: routeName,
+      resourceId,
       procedure,
       payload: encodedPayload,
     };

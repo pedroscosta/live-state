@@ -85,12 +85,7 @@ export const syncDeltaMsgSchema = syncDeltaSchema.extend({
 	id: msgId,
 });
 
-export type SyncDeltaMessage = Omit<
-	z.infer<typeof syncDeltaMsgSchema>,
-	'resourceId'
-> & {
-	resourceId: string;
-};
+export type SyncDeltaMessage = z.infer<typeof syncDeltaMsgSchema>;
 
 export const serverMessageSchema = z.union([
 	svRejectMsgSchema,

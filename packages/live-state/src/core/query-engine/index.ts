@@ -966,18 +966,21 @@ export class QueryEngine {
   private sendInsertsForTree(
     queryNode: QueryNode,
     data: any,
-    resourceName: string
+    resourceName: string,
+    meta?: SyncDelta["meta"]
   ): void {
     const id = data?.value?.id?.value as string | undefined;
     if (!id) return;
 
-    // Send INSERT for this object
+    // Send INSERT for this object. Carry the source mutation's meta so the
+    // originating client can reconcile optimistic state via originMutationId.
     const insertMutation: SyncDelta = {
       op: "INSERT",
       resource: resourceName,
       resourceId: id,
       type: "SYNC",
       payload: data.value,
+      meta,
     };
 
     for (const subscription of Array.from(queryNode.subscriptions)) {
@@ -1017,10 +1020,15 @@ export class QueryEngine {
       const relatedItems = relatedData.value;
       if (Array.isArray(relatedItems)) {
         for (const item of relatedItems) {
-          this.sendInsertsForTree(childQueryNode, item, childResource);
+          this.sendInsertsForTree(childQueryNode, item, childResource, meta);
         }
       } else if (relatedItems && typeof relatedItems === "object") {
-        this.sendInsertsForTree(childQueryNode, relatedItems, childResource);
+        this.sendInsertsForTree(
+          childQueryNode,
+          relatedItems,
+          childResource,
+          meta
+        );
       }
     }
   }
@@ -1234,7 +1242,8 @@ export class QueryEngine {
                 this.sendInsertsForTree(
                   queryNode,
                   results[0],
-                  mutation.resource
+                  mutation.resource,
+                  mutation.meta
                 );
               });
             }

@@ -31,4 +31,4 @@ A client-side handler (registered via `defineOptimisticMutations`) that predicts
 The CRDT merge that folds a field-level payload into existing state. Used on both server (applying writes) and client (applying Sync Deltas). Core to sync — not tied to any mutation kind.
 
 **Encode** (`encodeMutation`):
-Converts a plain input object into the field-level `{ value, _meta }` payload shape. Only ever served the Default Mutation request path; retired with it.
+Converts a plain input object into the field-level `{ value, _meta }` payload shape. Deprecated alongside Default Mutation, but still used in the legacy server insert/update compatibility path.

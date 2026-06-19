@@ -31,4 +31,4 @@ The field-level CRDT `mergeMutation` logic is unchanged and shared by server and
 
 - Removing Default Mutations is now cleanly scoped to the client→server request side.
 - The conditional REPLY-skip logic in the WebSocket transport disappears: every `MUTATE` replies unconditionally.
-- This is a breaking wire-protocol change (client and server must upgrade together) and ships as a major/minor version bump.
+- This is a breaking wire-protocol change (client and server must upgrade together) and requires a major version bump.

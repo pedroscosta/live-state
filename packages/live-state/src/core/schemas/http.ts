@@ -20,12 +20,17 @@ export const httpGenericMutationSchema = genericMutationSchema
     meta: genericMutationSchema.shape.meta,
   });
 
-export const httpDefaultMutationSchema = syncDeltaSchema.omit({
-  id: true,
-  type: true,
-  resource: true,
-  op: true,
-});
+export const httpDefaultMutationSchema = syncDeltaSchema
+  .omit({
+    id: true,
+    type: true,
+    resource: true,
+    op: true,
+  })
+  .extend({
+    // resourceId may be supplied via the URL path / payload id instead of the body.
+    resourceId: z.string().optional(),
+  });
 
 export const httpMutationSchema = z.union([
   httpDefaultMutationSchema,

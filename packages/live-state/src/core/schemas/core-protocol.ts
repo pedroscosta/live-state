@@ -61,15 +61,13 @@ export const syncDeltaSchema = z.object({
   id: z.string().optional(),
   type: z.literal("SYNC"),
   resource: z.string(),
-  resourceId: z.string().optional(),
+  resourceId: z.string(),
   op: z.enum(["INSERT", "UPDATE"]),
   payload: mutationPayloadSchema,
   meta: mutationMetaSchema,
 });
 
-export type SyncDelta = Omit<z.infer<typeof syncDeltaSchema>, "resourceId"> & {
-  resourceId: string;
-};
+export type SyncDelta = z.infer<typeof syncDeltaSchema>;
 
 export const mutationSchema = genericMutationSchema;
 
