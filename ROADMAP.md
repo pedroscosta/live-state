@@ -1,8 +1,0 @@
-- [ ] Add documentation
-- [ ] Add tests
-- [ ] Improve subscription boundary
-- [ ] Broadcast mutations from the storage instead of the server + transactional support
-- [ ] uWebSocket adapter
-- [ ] Add default expression support (e.g. `now()`, `uuid()`, etc)
-- [ ] Mutation lifecycle hooks
-- [ ] Row level security (policies for each resource lifecycle step)
