@@ -2,8 +2,8 @@
 import { QueryEngine } from "../core/query-engine";
 import type { QueryStep as CoreQueryStep } from "../core/query-engine/types";
 import type {
-  DefaultMutation,
   RawQueryRequest,
+  SyncDelta,
 } from "../core/schemas/core-protocol";
 import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
@@ -234,7 +234,7 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
 
   public async handleQuery(opts: {
     req: QueryRequest;
-    subscription?: (mutation: DefaultMutation) => void;
+    subscription?: (mutation: SyncDelta) => void;
   }): Promise<QueryResult<any>> {
     await this.ensureInitialized();
 
@@ -295,7 +295,7 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
 
   public async handleCustomQuery(opts: {
     req: QueryProcedureRequest;
-    subscription?: (mutation: DefaultMutation) => void;
+    subscription?: (mutation: SyncDelta) => void;
   }): Promise<any> {
     await this.ensureInitialized();
 
@@ -370,7 +370,7 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
   }
 
   /** @internal */
-  public notifySubscribers(mutation: DefaultMutation, entityData: any) {
+  public notifySubscribers(mutation: SyncDelta, entityData: any) {
     this.queryEngine.handleMutation(mutation, entityData);
   }
 

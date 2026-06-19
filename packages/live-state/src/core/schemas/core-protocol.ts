@@ -51,23 +51,25 @@ export const genericMutationSchema = baseMutationSchema.extend({
 
 export type GenericMutation = z.infer<typeof genericMutationSchema>;
 
-export const defaultMutationSchema = baseMutationSchema.extend({
-  procedure: z.enum(["INSERT", "UPDATE"]),
+/**
+ * Server→client field-level sync delta. Carries a committed storage write to
+ * subscribed clients. `op` is a storage-operation marker (not a client
+ * procedure) retained because client optimistic reconciliation still matches
+ * on it. See ADR-0001.
+ */
+export const syncDeltaSchema = z.object({
+  id: z.string().optional(),
+  type: z.literal("SYNC"),
+  resource: z.string(),
+  resourceId: z.string(),
+  op: z.enum(["INSERT", "UPDATE"]),
   payload: mutationPayloadSchema,
   meta: mutationMetaSchema,
 });
 
-export type DefaultMutation = Omit<
-  z.infer<typeof defaultMutationSchema>,
-  "resourceId"
-> & {
-  resourceId: string;
-};
+export type SyncDelta = z.infer<typeof syncDeltaSchema>;
 
-export const mutationSchema = z.union([
-  defaultMutationSchema,
-  genericMutationSchema,
-]);
+export const mutationSchema = genericMutationSchema;
 
 export type RawMutationRequest = z.infer<typeof mutationSchema>;
 

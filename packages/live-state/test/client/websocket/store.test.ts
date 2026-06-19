@@ -10,7 +10,7 @@ import {
 import { ObjectGraph } from "../../../src/client/websocket/obj-graph";
 import { KVStorage } from "../../../src/client/websocket/storage";
 import { OptimisticStore } from "../../../src/client/websocket/store";
-import { DefaultMutationMessage } from "../../../src/core/schemas/web-socket";
+import { SyncDeltaMessage } from "../../../src/core/schemas/web-socket";
 import {
   createRelations,
   id,
@@ -139,7 +139,7 @@ describe("OptimisticStore", () => {
       users: [
         {
           id: "mut1",
-          type: "MUTATE",
+          type: "SYNC",
           resource: "users",
           resourceId: "user1",
           payload: {},
@@ -435,9 +435,9 @@ describe("OptimisticStore", () => {
       mockLogger,
     );
 
-    const mutation: DefaultMutationMessage = {
+    const mutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user1",
       payload: {
@@ -469,9 +469,9 @@ describe("OptimisticStore", () => {
     );
 
     // Add optimistic mutation first
-    const optimisticMutation: DefaultMutationMessage = {
+    const optimisticMutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user1",
       payload: {
@@ -482,9 +482,9 @@ describe("OptimisticStore", () => {
     store.optimisticMutationStack["users"] = [optimisticMutation];
 
     // Add server mutation with same id
-    const serverMutation: DefaultMutationMessage = {
+    const serverMutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user1",
       payload: {
@@ -519,9 +519,9 @@ describe("OptimisticStore", () => {
       mockLogger,
     );
 
-    const mutation: DefaultMutationMessage = {
+    const mutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "nonexistent",
       resourceId: "item1",
       payload: {},
@@ -539,9 +539,9 @@ describe("OptimisticStore", () => {
       mockLogger,
     );
 
-    const mutation: DefaultMutationMessage = {
+    const mutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "posts",
       resourceId: "post1",
       payload: {
@@ -581,9 +581,9 @@ describe("OptimisticStore", () => {
       mockLogger,
     );
 
-    const mutation: DefaultMutationMessage = {
+    const mutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "posts",
       resourceId: "post1",
       payload: {
@@ -632,9 +632,9 @@ describe("OptimisticStore", () => {
     // Subscribe to the users resource to set up the listener
     store.subscribe({ resource: "users" }, listener);
 
-    const mutation: DefaultMutationMessage = {
+    const mutation: SyncDeltaMessage = {
       id: "mut1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user1",
       payload: {
@@ -675,19 +675,19 @@ describe("OptimisticStore", () => {
     expect(addMutationSpy).toHaveBeenCalledTimes(2);
     expect(addMutationSpy).toHaveBeenCalledWith("users", {
       id: "user1",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user1",
       payload: data[0],
-      procedure: "INSERT",
+      op: "INSERT",
     });
     expect(addMutationSpy).toHaveBeenCalledWith("users", {
       id: "user2",
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user2",
       payload: data[1],
-      procedure: "INSERT",
+      op: "INSERT",
     });
   });
 
@@ -1023,15 +1023,15 @@ describe("OptimisticStore", () => {
     });
 
     test("should undo optimistic mutation", () => {
-      const mutation: DefaultMutationMessage = {
+      const mutation: SyncDeltaMessage = {
         id: "mut1",
-        type: "MUTATE",
+        type: "SYNC",
         resource: "users",
         resourceId: "user1",
         payload: {
           name: { value: "John", _meta: { timestamp: "2023-01-01" } },
         },
-        procedure: "UPDATE",
+        op: "UPDATE",
       };
 
       // Add optimistic mutation

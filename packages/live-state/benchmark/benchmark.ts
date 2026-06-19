@@ -117,7 +117,7 @@ interface BenchmarkOptions {
 }
 
 const calculateStats = (
-  times: number[]
+  times: number[],
 ): Omit<BenchmarkResult, "mode" | "iterations" | "throughput"> => {
   const sorted = [...times].sort((a, b) => a - b);
   const totalTime = times.reduce((sum, time) => sum + time, 0);
@@ -177,7 +177,7 @@ class BenchmarkRunner {
     // Clean up all tables
     try {
       await this.pool.query(
-        "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE"
+        "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE",
       );
     } catch (error) {
       // Ignore errors if tables don't exist yet
@@ -232,7 +232,7 @@ class BenchmarkRunner {
         if (this.wsClient!.client.ws.connected()) {
           this.wsClient!.client.ws.removeEventListener(
             "connectionChange",
-            listener
+            listener,
           );
           resolve();
         }
@@ -260,7 +260,7 @@ class BenchmarkRunner {
     if (this.pool) {
       try {
         await this.pool.query(
-          "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE"
+          "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE",
         );
       } catch (error) {
         // Ignore errors during cleanup
@@ -344,7 +344,7 @@ class BenchmarkRunner {
    * Queries orgs with nested includes: orgs -> posts -> comments -> author
    */
   async benchmarkNestedIncludeQuery(
-    iterations: number
+    iterations: number,
   ): Promise<BenchmarkResult> {
     const times: number[] = [];
 
@@ -381,7 +381,7 @@ class BenchmarkRunner {
    * the latency between sending the mutation and receiving it on the client
    */
   async benchmarkIncrementalQueryLatency(
-    iterations: number
+    iterations: number,
   ): Promise<BenchmarkResult> {
     const times: number[] = [];
 
@@ -400,7 +400,7 @@ class BenchmarkRunner {
             },
           },
         })
-        .buildQueryRequest()
+        .buildQueryRequest(),
     );
 
     // Track pending mutations by resourceId
@@ -408,11 +408,7 @@ class BenchmarkRunner {
 
     // Set up event listener to track when mutations are received
     const eventUnsubscribe = this.wsClient!.client.addEventListener((event) => {
-      if (
-        event.type === "MESSAGE_RECEIVED" &&
-        event.message.type === "MUTATE"
-      ) {
-        console.log("Mutation received:", event.message);
+      if (event.type === "MESSAGE_RECEIVED" && event.message.type === "SYNC") {
         const resourceId = event.message.resourceId;
         if (resourceId && pendingMutations.has(resourceId)) {
           const pending = pendingMutations.get(resourceId)!;
@@ -431,7 +427,7 @@ class BenchmarkRunner {
 
     if (orgs.length === 0 || users.length === 0 || posts.length === 0) {
       throw new Error(
-        "Database must be primed with data before running incremental query latency benchmark"
+        "Database must be primed with data before running incremental query latency benchmark",
       );
     }
 
@@ -482,7 +478,7 @@ class BenchmarkRunner {
       // Drop all data
       try {
         await this.pool.query(
-          "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE"
+          "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE",
         );
       } catch (error) {
         // Ignore errors
@@ -497,7 +493,7 @@ class BenchmarkRunner {
       // Drop all data
       try {
         await this.pool.query(
-          "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE"
+          "TRUNCATE TABLE orgs, orgs_meta, users, users_meta, posts, posts_meta, comments, comments_meta RESTART IDENTITY CASCADE",
         );
       } catch (error) {
         // Ignore errors
@@ -547,11 +543,13 @@ const main = async () => {
     "incremental-query-latency";
   const iterations =
     parseInt(
-      args.find((arg) => arg.startsWith("--iterations="))?.split("=")[1] || "10"
+      args.find((arg) => arg.startsWith("--iterations="))?.split("=")[1] ||
+        "10",
     ) || 10;
   const dataSize =
     parseInt(
-      args.find((arg) => arg.startsWith("--data-size="))?.split("=")[1] || "100"
+      args.find((arg) => arg.startsWith("--data-size="))?.split("=")[1] ||
+        "100",
     ) || 100;
 
   console.log("Live-State Benchmark Suite");

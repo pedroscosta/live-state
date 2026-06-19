@@ -7,8 +7,8 @@ import {
   type Selectable,
 } from "kysely";
 import type {
-  DefaultMutation,
   RawQueryRequest,
+  SyncDelta,
 } from "../../core/schemas/core-protocol";
 import { generateId } from "../../core/utils";
 import {
@@ -38,7 +38,7 @@ export class SQLStorage extends Storage {
   private logger?: Logger;
   private server?: Server<any, any>;
   private mutationStack: Array<{
-    mutation: DefaultMutation;
+    mutation: SyncDelta;
     entityData: MaterializedLiveType<any>;
   }> = [];
 
@@ -568,7 +568,7 @@ export class SQLStorage extends Storage {
       const savepointName = Math.random().toString(36).substring(2, 15);
       const parentStack = this.mutationStack;
       const nestedStack: Array<{
-        mutation: DefaultMutation;
+        mutation: SyncDelta;
         entityData: MaterializedLiveType<any>;
       }> = [];
       this.mutationStack = nestedStack;
@@ -628,7 +628,7 @@ export class SQLStorage extends Storage {
     }
 
     const transactionStack: Array<{
-      mutation: DefaultMutation;
+      mutation: SyncDelta;
       entityData: MaterializedLiveType<any>;
     }> = [];
     const previousStack = this.mutationStack;
@@ -657,7 +657,7 @@ export class SQLStorage extends Storage {
                 id: mutation.id,
                 resource: mutation.resource,
                 resourceId: mutation.resourceId,
-                procedure: mutation.procedure,
+                op: mutation.op,
                 hasMeta: !!mutation.meta,
                 originMutationId: mutation.meta?.originMutationId ?? "(none)",
               })),
@@ -684,7 +684,7 @@ export class SQLStorage extends Storage {
                   id: mutation.id,
                   resource: mutation.resource,
                   resourceId: mutation.resourceId,
-                  procedure: mutation.procedure,
+                  op: mutation.op,
                   hasMeta: !!mutation.meta,
                   originMutationId: mutation.meta?.originMutationId ?? "(none)",
                 })),
@@ -946,11 +946,11 @@ export class SQLStorage extends Storage {
   private buildMutation<T extends LiveObjectAny>(
     resourceName: string,
     resourceId: string,
-    procedure: "INSERT" | "UPDATE",
+    op: "INSERT" | "UPDATE",
     value: MaterializedLiveType<T>,
     mutationId?: string,
     originMutationId?: string,
-  ): DefaultMutation | null {
+  ): SyncDelta | null {
     const payload: Record<
       string,
       { value: any; _meta?: { timestamp: string } }
@@ -972,17 +972,17 @@ export class SQLStorage extends Storage {
 
     return {
       id: mutationId ?? generateId(),
-      type: "MUTATE",
+      type: "SYNC",
       resource: resourceName,
       resourceId,
-      procedure,
+      op,
       payload,
       meta: originMutationId ? { originMutationId } : undefined,
     };
   }
 
   private trackMutation(
-    mutation: DefaultMutation,
+    mutation: SyncDelta,
     entityData: MaterializedLiveType<any>,
   ): void {
     if (this.db.isTransaction) {
@@ -993,20 +993,20 @@ export class SQLStorage extends Storage {
   }
 
   private notifyMutations(
-    mutations: DefaultMutation[],
+    mutations: SyncDelta[],
     entityData: MaterializedLiveType<any>,
   ): void;
   private notifyMutations(
     mutationEntries: Array<{
-      mutation: DefaultMutation;
+      mutation: SyncDelta;
       entityData: MaterializedLiveType<any>;
     }>,
   ): void;
   private notifyMutations(
     mutationsOrEntries:
-      | DefaultMutation[]
+      | SyncDelta[]
       | Array<{
-          mutation: DefaultMutation;
+          mutation: SyncDelta;
           entityData: MaterializedLiveType<any>;
         }>,
     entityData?: MaterializedLiveType<any>,
@@ -1014,13 +1014,13 @@ export class SQLStorage extends Storage {
     if (!this.server) return;
 
     if (entityData !== undefined) {
-      const mutations = mutationsOrEntries as DefaultMutation[];
+      const mutations = mutationsOrEntries as SyncDelta[];
       for (const mutation of mutations) {
         this.server.notifySubscribers(mutation, entityData);
       }
     } else {
       const entries = mutationsOrEntries as Array<{
-        mutation: DefaultMutation;
+        mutation: SyncDelta;
         entityData: MaterializedLiveType<any>;
       }>;
       for (const { mutation, entityData: data } of entries) {

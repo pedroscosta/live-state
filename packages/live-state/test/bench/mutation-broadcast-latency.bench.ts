@@ -71,7 +71,7 @@ function measureMutationLatency(
     eventUnsubscribe = receiver.client.addEventListener((event) => {
       if (
         event.type === "MESSAGE_RECEIVED" &&
-        event.message.type === "MUTATE" &&
+        event.message.type === "SYNC" &&
         event.message.resourceId === resourceId &&
         !resolved
       ) {

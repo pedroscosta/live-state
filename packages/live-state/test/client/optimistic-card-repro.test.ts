@@ -271,10 +271,10 @@ describe('optimistic createCard with group include (storefront repro)', () => {
 		ws.simulateMessage(
 			JSON.stringify({
 				id: 'broadcast-1',
-				type: 'MUTATE',
+				type: 'SYNC',
 				resource: 'cards',
 				resourceId: newCardId,
-				procedure: 'INSERT',
+				op: 'INSERT',
 				meta: { originMutationId: sentMessage.id },
 				payload: {
 					name: { value: 'New Card', _meta: { timestamp: '2026-01-01' } },
@@ -350,10 +350,10 @@ describe('optimistic createCard with group include (storefront repro)', () => {
 		ws.simulateMessage(
 			JSON.stringify({
 				id: 'broadcast-1',
-				type: 'MUTATE',
+				type: 'SYNC',
 				resource: 'cards',
 				resourceId: newCardId,
-				procedure: 'INSERT',
+				op: 'INSERT',
 				meta: { originMutationId: sentMessage.id },
 				payload: {
 					name: { value: 'New Card', _meta: { timestamp: '2026-01-01' } },

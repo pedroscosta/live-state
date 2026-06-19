@@ -10,20 +10,20 @@ import type { Storage } from "../../server";
 import { Batcher } from "../../server/storage/batcher";
 import { applyWhere, extractIncludeFromWhere, isSubQueryInclude, type Logger } from "../../utils";
 import type {
-  DefaultMutation,
   RawQueryRequest,
+  SyncDelta,
 } from "../schemas/core-protocol";
 import { mergeWhereClauses, toPromiseLike } from "../utils";
 import type { DataRouter, DataSource, QueryStep } from "./types";
 import { hashStep } from "./utils";
 
-export type MutationHandler = (mutation: DefaultMutation) => void;
+export type SyncDeltaHandler = (delta: SyncDelta) => void;
 
 interface QueryNode {
   hash: string;
   queryStep: QueryStep;
   trackedObjects: Set<string>;
-  subscriptions: Set<MutationHandler>;
+  subscriptions: Set<SyncDeltaHandler>;
   parentQuery?: string;
   relationName?: string;
   childQueries: Set<string>;
@@ -271,7 +271,7 @@ export class QueryEngine {
 
   subscribe(
     query: RawQueryRequest,
-    callback: MutationHandler,
+    callback: SyncDeltaHandler,
     context: any = {}
   ): () => void {
     const queryPlan = this.breakdownQuery({ query, context });
@@ -966,18 +966,21 @@ export class QueryEngine {
   private sendInsertsForTree(
     queryNode: QueryNode,
     data: any,
-    resourceName: string
+    resourceName: string,
+    meta?: SyncDelta["meta"]
   ): void {
     const id = data?.value?.id?.value as string | undefined;
     if (!id) return;
 
-    // Send INSERT for this object
-    const insertMutation: DefaultMutation = {
-      procedure: "INSERT",
+    // Send INSERT for this object. Carry the source mutation's meta so the
+    // originating client can reconcile optimistic state via originMutationId.
+    const insertMutation: SyncDelta = {
+      op: "INSERT",
       resource: resourceName,
       resourceId: id,
-      type: "MUTATE",
+      type: "SYNC",
       payload: data.value,
+      meta,
     };
 
     for (const subscription of Array.from(queryNode.subscriptions)) {
@@ -1017,19 +1020,24 @@ export class QueryEngine {
       const relatedItems = relatedData.value;
       if (Array.isArray(relatedItems)) {
         for (const item of relatedItems) {
-          this.sendInsertsForTree(childQueryNode, item, childResource);
+          this.sendInsertsForTree(childQueryNode, item, childResource, meta);
         }
       } else if (relatedItems && typeof relatedItems === "object") {
-        this.sendInsertsForTree(childQueryNode, relatedItems, childResource);
+        this.sendInsertsForTree(
+          childQueryNode,
+          relatedItems,
+          childResource,
+          meta
+        );
       }
     }
   }
 
   public handleMutation(
-    mutation: DefaultMutation,
+    mutation: SyncDelta,
     entityValue: MaterializedLiveType<LiveObjectAny>
   ) {
-    if (mutation.procedure === "INSERT") {
+    if (mutation.op === "INSERT") {
       if (this.objectNodes.has(mutation.resourceId)) return;
 
       const objValue = inferValue(entityValue);
@@ -1104,7 +1112,7 @@ export class QueryEngine {
 
       return;
     }
-    if (mutation.procedure === "UPDATE") {
+    if (mutation.op === "UPDATE") {
       const objValue = inferValue(entityValue);
 
       if (!objValue) return;
@@ -1234,7 +1242,8 @@ export class QueryEngine {
                 this.sendInsertsForTree(
                   queryNode,
                   results[0],
-                  mutation.resource
+                  mutation.resource,
+                  mutation.meta
                 );
               });
             }
@@ -1247,7 +1256,7 @@ export class QueryEngine {
   }
 
   getMatchingQueries(
-    mutation: DefaultMutation,
+    mutation: SyncDelta,
     objValue: any
   ): PromiseLike<string[]> {
     const queriesToCheck: QueryNode[] = [];

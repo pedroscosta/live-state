@@ -1,8 +1,8 @@
 import fastDeepEqual from "fast-deep-equal";
 import type { RawQueryRequest } from "../../core/schemas/core-protocol";
 import type {
-  DefaultMutationMessage,
   MutationMessage,
+  SyncDeltaMessage,
 } from "../../core/schemas/web-socket";
 import {
   type IncludeClause,
@@ -28,7 +28,7 @@ type RawObjPool = Record<
 
 export class OptimisticStore {
   private rawObjPool: RawObjPool = {} as RawObjPool;
-  public optimisticMutationStack: Record<string, DefaultMutationMessage[]> = {};
+  public optimisticMutationStack: Record<string, SyncDeltaMessage[]> = {};
   public customMutationStack: MutationMessage[] = [];
   private optimisticObjGraph: ObjectGraph;
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
@@ -223,7 +223,7 @@ export class OptimisticStore {
 
   public addMutation(
     routeName: string,
-    mutation: DefaultMutationMessage,
+    mutation: SyncDeltaMessage,
     optimistic: boolean = false,
   ) {
     const schema = this.schema[routeName];
@@ -238,7 +238,7 @@ export class OptimisticStore {
 
     if (optimistic) {
       this.optimisticMutationStack[routeName] ??=
-        [] as DefaultMutationMessage[];
+        [] as SyncDeltaMessage[];
       this.optimisticMutationStack[routeName].push(mutation);
     } else {
       this.optimisticMutationStack[routeName] =
@@ -253,7 +253,7 @@ export class OptimisticStore {
           mutationId: mutation.id,
           resource: routeName,
           resourceId: mutation.resourceId,
-          procedure: mutation.procedure,
+          op: mutation.op,
           originMutationId: originId ?? "(none)",
           customMutationIndexKeys: Object.keys(this.customMutationIndex),
           optimisticStackSize: this.optimisticMutationStack[routeName]?.length ?? 0,
@@ -274,7 +274,7 @@ export class OptimisticStore {
 
           if (
             optMutation.resourceId === mutation.resourceId &&
-            optMutation.procedure === mutation.procedure
+            optMutation.op === mutation.op
           ) {
             this.logger.debug(
               "Removing optimistic mutation (resourceId match)",
@@ -293,7 +293,7 @@ export class OptimisticStore {
         if (!matched) {
           for (const entry of matchingEntries) {
             const optMutation = this.optimisticMutationStack[routeName]?.find(
-              (m) => m.id === entry.mutationId && m.procedure === mutation.procedure,
+              (m) => m.id === entry.mutationId && m.op === mutation.op,
             );
             if (optMutation) {
               this.logger.debug(
@@ -478,7 +478,7 @@ export class OptimisticStore {
 
   public loadConsolidatedState(
     resourceType: string,
-    data: DefaultMutationMessage["payload"][],
+    data: SyncDeltaMessage["payload"][],
   ) {
     data.forEach((payload) => {
       const id = payload.id?.value as string | undefined;
@@ -495,10 +495,10 @@ export class OptimisticStore {
 
       this.addMutation(resourceType, {
         id,
-        type: "MUTATE",
+        type: "SYNC",
         resource: resourceType,
         resourceId: id,
-        procedure: "INSERT",
+        op: "INSERT",
         payload: cleanedPayload,
       });
     });
@@ -506,14 +506,14 @@ export class OptimisticStore {
 
   private extractNestedRelations(
     resourceType: string,
-    payload: DefaultMutationMessage["payload"],
+    payload: SyncDeltaMessage["payload"],
   ): {
-    cleanedPayload: DefaultMutationMessage["payload"];
-    nestedMutations: DefaultMutationMessage[];
+    cleanedPayload: SyncDeltaMessage["payload"];
+    nestedMutations: SyncDeltaMessage[];
   } {
     const schema = this.schema[resourceType];
-    const cleanedPayload: DefaultMutationMessage["payload"] = { ...payload };
-    const nestedMutations: DefaultMutationMessage[] = [];
+    const cleanedPayload: SyncDeltaMessage["payload"] = { ...payload };
+    const nestedMutations: SyncDeltaMessage[] = [];
 
     if (!schema?.relations) {
       return { cleanedPayload, nestedMutations };
@@ -538,7 +538,7 @@ export class OptimisticStore {
 
           const nestedPayload = {
             ...nestedData,
-          } as DefaultMutationMessage["payload"];
+          } as SyncDeltaMessage["payload"];
           const {
             cleanedPayload: cleanedNestedPayload,
             nestedMutations: deeperMutations,
@@ -548,10 +548,10 @@ export class OptimisticStore {
 
           nestedMutations.push({
             id: nestedId,
-            type: "MUTATE",
+            type: "SYNC",
             resource: targetResource,
             resourceId: nestedId,
-            procedure: "INSERT",
+            op: "INSERT",
             payload: cleanedNestedPayload,
           });
 
@@ -570,7 +570,7 @@ export class OptimisticStore {
 
               const nestedPayload = {
                 ...item.value,
-              } as DefaultMutationMessage["payload"];
+              } as SyncDeltaMessage["payload"];
               const {
                 cleanedPayload: cleanedNestedPayload,
                 nestedMutations: deeperMutations,
@@ -580,10 +580,10 @@ export class OptimisticStore {
 
               nestedMutations.push({
                 id: nestedId,
-                type: "MUTATE",
+                type: "SYNC",
                 resource: targetResource,
                 resourceId: nestedId,
-                procedure: "INSERT",
+                op: "INSERT",
                 payload: cleanedNestedPayload,
               });
             }
@@ -600,7 +600,7 @@ export class OptimisticStore {
   private updateRawObjPool(
     routeName: string,
     resourceId: string,
-    payload: DefaultMutationMessage["payload"],
+    payload: SyncDeltaMessage["payload"],
     prevValue?: MaterializedLiveType<LiveObjectAny>,
   ) {
     if (!this.schema[routeName]) return;

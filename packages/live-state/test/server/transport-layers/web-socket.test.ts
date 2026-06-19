@@ -223,7 +223,7 @@ describe("webSocketAdapter", () => {
     });
   });
 
-  test("should handle MUTATE message with default mutation", async () => {
+  test("should reply to MUTATE message with default insert/update procedure", async () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
@@ -271,8 +271,17 @@ describe("webSocketAdapter", () => {
       }),
     });
 
-    // Should not send reply for default mutations
-    expect(mockWebSocket.send).not.toHaveBeenCalled();
+    // Every MUTATE now receives a reply unconditionally
+    expect(mockWebSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        id: "msg-1",
+        type: "REPLY",
+        data: {
+          data: { name: "John Updated" },
+          acceptedValues: { name: "John Updated" },
+        },
+      }),
+    );
   });
 
   test("should handle MUTATE message with custom procedure", async () => {
@@ -527,7 +536,7 @@ describe("webSocketAdapter", () => {
 
     // Try to propagate mutation without resourceId
     const mutation = {
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       payload: {
         name: {
@@ -542,10 +551,10 @@ describe("webSocketAdapter", () => {
       subscriptionHandler(mutation);
     }
 
-    // Should not propagate MUTATE messages because resourceId is missing
+    // Should not propagate SYNC messages because resourceId is missing
     const forwardedMutations = (ws.send as Mock).mock.calls
       .map((call) => JSON.parse(call[0] as string))
-      .filter((message) => message.type === "MUTATE");
+      .filter((message) => message.type === "SYNC");
 
     expect(forwardedMutations).toHaveLength(0);
   });
@@ -577,7 +586,7 @@ describe("webSocketAdapter", () => {
 
     // Try to propagate mutation without payload
     const mutation = {
-      type: "MUTATE",
+      type: "SYNC",
       resource: "users",
       resourceId: "user1",
       // Missing payload
@@ -587,10 +596,10 @@ describe("webSocketAdapter", () => {
       subscriptionHandler(mutation);
     }
 
-    // Should not propagate MUTATE messages because payload is missing
+    // Should not propagate SYNC messages because payload is missing
     const forwardedMutations = (ws.send as Mock).mock.calls
       .map((call) => JSON.parse(call[0] as string))
-      .filter((message) => message.type === "MUTATE");
+      .filter((message) => message.type === "SYNC");
 
     expect(forwardedMutations).toHaveLength(0);
   });
