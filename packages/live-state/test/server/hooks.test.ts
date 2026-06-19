@@ -152,7 +152,9 @@ describe("Server hooks registry", () => {
 					insert: mutation(z.record(z.string(), z.any())).handler(
 						async ({ req, db }) => db.groups.insert(req.input),
 					),
-					update: mutation(z.record(z.string(), z.any())).handler(
+					update: mutation(
+						z.object({ id: z.string() }).and(z.record(z.string(), z.any())),
+					).handler(
 						async ({ req, db }) => db.groups.update(req.input.id, req.input),
 					),
 				})),

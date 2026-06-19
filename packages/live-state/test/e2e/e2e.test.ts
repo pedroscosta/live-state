@@ -41,11 +41,16 @@ import { z } from "zod";
  */
 const crud =
   (resource: string) =>
+  // biome-ignore lint/suspicious/noExplicitAny: e2e helper accepts the generic mutation builder
   ({ mutation }: any) => ({
     insert: mutation(z.record(z.string(), z.any())).handler(
+      // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in test helper
       async ({ req, db }: any) => db[resource].insert(req.input)
     ),
-    update: mutation(z.record(z.string(), z.any())).handler(
+    update: mutation(
+      z.object({ id: z.string() }).and(z.record(z.string(), z.any()))
+    ).handler(
+      // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in test helper
       async ({ req, db }: any) => db[resource].update(req.input.id, req.input)
     ),
   });
