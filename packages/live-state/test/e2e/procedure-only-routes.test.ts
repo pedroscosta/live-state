@@ -66,7 +66,17 @@ const publicRoute = routeFactory();
 const testRouter = router({
 	schema: testSchema,
 	routes: {
-		users: publicRoute.collectionRoute(testSchema.users),
+		users: publicRoute
+			.collectionRoute(testSchema.users)
+			.withProcedures(({ mutation }) => ({
+				insert: mutation(
+					z.object({
+						id: z.string(),
+						name: z.string(),
+						email: z.string(),
+					})
+				).handler(async ({ req, db }) => db.users.insert(req.input)),
+			})),
 		posts: publicRoute.collectionRoute(testSchema.posts),
 
 		// Procedure-only route

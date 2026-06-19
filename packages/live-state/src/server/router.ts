@@ -5,21 +5,12 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
 import type { RawQueryRequest } from "../core/schemas/core-protocol";
 import {
-  type InferLiveObjectWithRelationalIds,
-  inferValue,
   type LiveObjectAny,
-  type LiveObjectMutationInput,
-  type LiveTypeAny,
   type MaterializedLiveType,
   type Schema,
   type WhereClause,
 } from "../schema";
-import {
-  applyWhere,
-  extractIncludeFromWhere,
-  hash,
-  type Simplify,
-} from "../utils";
+import { hash } from "../utils";
 import type {
   BaseRequest,
   Middleware,
@@ -44,30 +35,13 @@ export type RouteRecord = Record<string, AnyRouteOrProcedure>;
 
 export class Router<TRoutes extends RouteRecord> {
   readonly routes: TRoutes;
-  readonly hooksRegistry: Map<string, Hooks<any, any, any>> = new Map();
 
   private constructor(opts: { routes: TRoutes }) {
     this.routes = opts.routes;
-
-    for (const route of Object.values(opts.routes)) {
-      if (route.resourceSchema === undefined) continue;
-      const typedRoute = route as AnyRoute;
-
-      if (typedRoute.hooks) {
-        this.hooksRegistry.set(
-          typedRoute.resourceSchema.name,
-          typedRoute.hooks,
-        );
-      }
-    }
   }
 
   public static create<TRoutes extends RouteRecord>(opts: { routes: TRoutes }) {
     return new Router<TRoutes>(opts);
-  }
-
-  public getHooks(resourceName: string): Hooks<any, any, any> | undefined {
-    return this.hooksRegistry.get(resourceName);
   }
 }
 
@@ -226,69 +200,8 @@ export type ReadAuthorizationHandler<TShape extends LiveObjectAny, TContext = Re
   ctx: TContext;
 }) => WhereClause<TShape> | boolean;
 
-export type MutationAuthorizationHandler<TShape extends LiveObjectAny, TContext = Record<string, any>> =
-  (opts: {
-    ctx: TContext;
-    value: Simplify<InferLiveObjectWithRelationalIds<TShape>>;
-  }) => WhereClause<TShape> | boolean;
-
-export type Authorization<TShape extends LiveObjectAny, TContext = Record<string, any>> = {
+export type RouteAuthorization<TShape extends LiveObjectAny, TContext = Record<string, any>> = {
   read?: ReadAuthorizationHandler<TShape, TContext>;
-  insert?: MutationAuthorizationHandler<TShape, TContext>;
-  update?: {
-    preMutation?: MutationAuthorizationHandler<TShape, TContext>;
-    postMutation?: MutationAuthorizationHandler<TShape, TContext>;
-  };
-};
-
-// Lifecycle Hook Types
-export type BeforeInsertHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>, TContext = Record<string, any>> = (opts: {
-  ctx?: TContext;
-  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
-  rawValue: MaterializedLiveType<TShape>;
-  db: ServerDB<TSchema>;
-}) =>
-  | Promise<MaterializedLiveType<TShape> | void>
-  | MaterializedLiveType<TShape>
-  | void;
-
-export type AfterInsertHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>, TContext = Record<string, any>> = (opts: {
-  ctx?: TContext;
-  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
-  rawValue: MaterializedLiveType<TShape>;
-  db: ServerDB<TSchema>;
-}) => Promise<void> | void;
-
-export type BeforeUpdateHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>, TContext = Record<string, any>> = (opts: {
-  ctx?: TContext;
-  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
-  rawValue: MaterializedLiveType<TShape>;
-  previousValue?: Simplify<InferLiveObjectWithRelationalIds<TShape>> & {
-    id: string;
-  };
-  previousRawValue?: MaterializedLiveType<TShape>;
-  db: ServerDB<TSchema>;
-}) =>
-  | Promise<MaterializedLiveType<TShape> | void>
-  | MaterializedLiveType<TShape>
-  | void;
-
-export type AfterUpdateHook<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>, TContext = Record<string, any>> = (opts: {
-  ctx?: TContext;
-  value: Simplify<InferLiveObjectWithRelationalIds<TShape>> & { id: string };
-  rawValue: MaterializedLiveType<TShape>;
-  previousValue?: Simplify<InferLiveObjectWithRelationalIds<TShape>> & {
-    id: string;
-  };
-  previousRawValue?: MaterializedLiveType<TShape>;
-  db: ServerDB<TSchema>;
-}) => Promise<void> | void;
-
-export type Hooks<TShape extends LiveObjectAny, TSchema extends Schema<any> = Schema<any>, TContext = Record<string, any>> = {
-  beforeInsert?: BeforeInsertHook<TShape, TSchema, TContext>;
-  afterInsert?: AfterInsertHook<TShape, TSchema, TContext>;
-  beforeUpdate?: BeforeUpdateHook<TShape, TSchema, TContext>;
-  afterUpdate?: AfterUpdateHook<TShape, TSchema, TContext>;
 };
 
 export class Route<
@@ -303,22 +216,19 @@ export class Route<
   readonly middlewares: Set<TMiddleware>;
   readonly customMutations: TCustomMutations;
   readonly customQueries: TCustomQueries;
-  readonly authorization?: Authorization<TResourceSchema, TContext>;
-  readonly hooks?: Hooks<TResourceSchema, TSchema, TContext>;
+  readonly authorization?: RouteAuthorization<TResourceSchema, TContext>;
 
   public constructor(
     resourceSchema: TResourceSchema,
     customMutations?: TCustomMutations,
     customQueries?: TCustomQueries,
-    authorization?: Authorization<TResourceSchema, TContext>,
-    hooks?: Hooks<TResourceSchema, TSchema, TContext>,
+    authorization?: RouteAuthorization<TResourceSchema, TContext>,
   ) {
     this.resourceSchema = resourceSchema;
     this.middlewares = new Set();
     this.customMutations = customMutations ?? ({} as TCustomMutations);
     this.customQueries = customQueries ?? ({} as TCustomQueries);
     this.authorization = authorization;
-    this.hooks = hooks;
   }
 
   public use(...middlewares: TMiddleware[]) {
@@ -375,7 +285,6 @@ export class Route<
       mutations as ExtractMutations<T>,
       queries as ExtractQueries<T>,
       this.authorization,
-      this.hooks,
     );
   }
 
@@ -386,26 +295,6 @@ export class Route<
     mutationFactory: (opts: { mutation: MutationCreator<TSchema, TContext> }) => T,
   ) {
     return this.withProcedures(({ mutation }) => mutationFactory({ mutation }));
-  }
-
-  /**
-   * @deprecated Declare hooks with `defineHooks` and pass them to `server({ hooks })` instead.
-   */
-  public withHooks(hooks: Hooks<TResourceSchema, TSchema, TContext>) {
-    return new Route<
-      TResourceSchema,
-      TMiddleware,
-      TCustomMutations,
-      TCustomQueries,
-      TSchema,
-      TContext
-    >(
-      this.resourceSchema,
-      this.customMutations,
-      this.customQueries,
-      this.authorization,
-      hooks,
-    );
   }
 
   /** @internal */
@@ -480,74 +369,50 @@ export class Route<
     return await this.wrapInMiddlewares(async (req: MutationRequest) => {
       if (!req.procedure)
         throw new Error("Procedure is required for mutations");
-      // TODO: Remove this INSERT/UPDATE alias resolution when default mutations are removed.
-      const fallbackCustomProcedureName =
-        req.procedure === "INSERT"
-          ? "insert"
-          : req.procedure === "UPDATE"
-            ? "update"
-            : undefined;
-      const resolvedCustomProcedureName =
-        this.customMutations[req.procedure]
-          ? req.procedure
-          : fallbackCustomProcedureName &&
-              this.customMutations[fallbackCustomProcedureName]
-            ? fallbackCustomProcedureName
-            : req.procedure;
-      const customProcedure =
-        this.customMutations[resolvedCustomProcedureName];
 
-      if (customProcedure) {
-        req.procedure = resolvedCustomProcedureName;
-        const validationResult = customProcedure.inputValidator[
-          "~standard"
-        ].validate(req.input);
+      const customProcedure = this.customMutations[req.procedure];
 
-        // Handle both sync and async validation
-        const result =
-          validationResult instanceof Promise
-            ? await validationResult
-            : validationResult;
-
-        if (result.issues) {
-          const errorMessage = result.issues
-            .map(
-              (issue: {
-                message: string;
-                path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
-              }) => {
-                const path = issue.path
-                  ?.map((p) =>
-                    typeof p === "object" && "key" in p
-                      ? String(p.key)
-                      : String(p),
-                  )
-                  .join(".");
-                return path ? `${path}: ${issue.message}` : issue.message;
-              },
-            )
-            .join(", ");
-          throw new Error(`Validation failed: ${errorMessage}`);
-        }
-
-        req.input = result.value;
-
-        return customProcedure.handler({
-          req,
-          db: serverDB,
-        });
-      } else if (req.procedure === "INSERT" || req.procedure === "UPDATE") {
-        return this.handleSet({
-          req: req as MutationRequest<
-            LiveObjectMutationInput<TResourceSchema>
-          >,
-          db: mutationDb,
-          operation: req.procedure,
-          schema,
-        });
-      } else {
+      if (!customProcedure) {
         throw new Error(`Unknown procedure: ${req.procedure}`);
       }
+
+      const validationResult = customProcedure.inputValidator[
+        "~standard"
+      ].validate(req.input);
+
+      // Handle both sync and async validation
+      const result =
+        validationResult instanceof Promise
+          ? await validationResult
+          : validationResult;
+
+      if (result.issues) {
+        const errorMessage = result.issues
+          .map(
+            (issue: {
+              message: string;
+              path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+            }) => {
+              const path = issue.path
+                ?.map((p) =>
+                  typeof p === "object" && "key" in p
+                    ? String(p.key)
+                    : String(p),
+                )
+                .join(".");
+              return path ? `${path}: ${issue.message}` : issue.message;
+            },
+          )
+          .join(", ");
+        throw new Error(`Validation failed: ${errorMessage}`);
+      }
+
+      req.input = result.value;
+
+      return customProcedure.handler({
+        req,
+        db: serverDB,
+      });
     })(req);
   };
 
@@ -616,223 +481,6 @@ export class Route<
       ctx: req.context as TContext,
     });
   }
-
-  private handleSet = async ({
-    req,
-    db,
-    operation,
-    schema,
-  }: {
-    req: MutationRequest;
-    db: Storage;
-    operation: "INSERT" | "UPDATE";
-    schema: Schema<any>;
-  }): Promise<MutationResult<TResourceSchema>> => {
-    if (!req.input) throw new Error("Payload is required");
-    if (!req.resourceId) throw new Error("ResourceId is required");
-
-    const target = await db.rawFindById<TResourceSchema>(
-      req.resource,
-      req.resourceId,
-    );
-
-    if (operation === "INSERT" && target) {
-      throw new Error("Resource already exists");
-    } else if (operation === "UPDATE" && !target) {
-      throw new Error("Resource not found");
-    }
-
-    const inputValue = {
-      value: req.input as Record<string, MaterializedLiveType<LiveTypeAny>>,
-    } as MaterializedLiveType<TResourceSchema>;
-
-    return db.transaction(async ({ trx }) => {
-      if (operation === "INSERT") {
-        const { data: result, acceptedValues } =
-          await trx.rawInsert<TResourceSchema>(
-            req.resource,
-            req.resourceId!,
-            inputValue,
-            req.context?.messageId,
-            req.context,
-          );
-
-        if (!acceptedValues) {
-          throw new Error("Mutation rejected");
-        }
-
-        const inferredResultValue = inferValue(result) as Simplify<
-          InferLiveObjectWithRelationalIds<TResourceSchema>
-        >;
-        (inferredResultValue as any)["id"] =
-          (inferredResultValue as any)["id"] ?? req.resourceId!;
-
-        if (this.authorization?.insert) {
-          const authorizationClause = this.authorization.insert({
-            ctx: req.context as TContext,
-            value: inferredResultValue as Simplify<
-              InferLiveObjectWithRelationalIds<TResourceSchema>
-            >,
-          });
-
-          if (typeof authorizationClause === "boolean") {
-            if (!authorizationClause) {
-              throw new Error("Not authorized");
-            }
-          } else {
-            const includeClause = extractIncludeFromWhere(
-              authorizationClause,
-              req.resource,
-              schema,
-            );
-
-            const authorizationTarget =
-              Object.keys(includeClause).length > 0
-                ? await trx.rawFindById<TResourceSchema>(
-                    req.resource,
-                    req.resourceId!,
-                    includeClause,
-                  )
-                : result;
-
-            const inferredValue = inferValue(authorizationTarget) as Simplify<
-              InferLiveObjectWithRelationalIds<TResourceSchema>
-            >;
-
-            (inferredValue as any)["id"] =
-              (inferredValue as any)["id"] ?? req.resourceId!;
-
-            const authorized = applyWhere(inferredValue, authorizationClause);
-
-            if (!authorized) {
-              throw new Error("Not authorized");
-            }
-          }
-        }
-
-        return {
-          data: result,
-          acceptedValues,
-        };
-      }
-
-      if (this.authorization?.update?.preMutation) {
-        const inferredTargetValue = inferValue(target) as Simplify<
-          InferLiveObjectWithRelationalIds<TResourceSchema>
-        >;
-        (inferredTargetValue as any)["id"] =
-          (inferredTargetValue as any)["id"] ?? req.resourceId!;
-
-        const authorizationClause = this.authorization.update.preMutation({
-          ctx: req.context as TContext,
-          value: inferredTargetValue as Simplify<
-            InferLiveObjectWithRelationalIds<TResourceSchema>
-          >,
-        });
-
-        if (typeof authorizationClause === "boolean") {
-          if (!authorizationClause) {
-            throw new Error("Not authorized");
-          }
-        } else {
-          const includeClause = extractIncludeFromWhere(
-            authorizationClause,
-            req.resource,
-            schema,
-          );
-
-          const authorizationTarget =
-            Object.keys(includeClause).length > 0
-              ? await trx.rawFindById<TResourceSchema>(
-                  req.resource,
-                  req.resourceId!,
-                  includeClause,
-                )
-              : target;
-
-          const inferredValue = inferValue(authorizationTarget) as Simplify<
-            InferLiveObjectWithRelationalIds<TResourceSchema>
-          >;
-
-          (inferredValue as any)["id"] =
-            (inferredValue as any)["id"] ?? req.resourceId!;
-
-          const authorized = applyWhere(inferredValue, authorizationClause);
-
-          if (!authorized) {
-            throw new Error("Not authorized");
-          }
-        }
-      }
-
-      const { data: result, acceptedValues } =
-        await trx.rawUpdate<TResourceSchema>(
-          req.resource,
-          req.resourceId!,
-          inputValue,
-          req.context?.messageId,
-          req.context,
-        );
-
-      if (!acceptedValues) {
-        throw new Error("Mutation rejected");
-      }
-
-      if (this.authorization?.update?.postMutation) {
-        const inferredResultValue = inferValue(result) as Simplify<
-          InferLiveObjectWithRelationalIds<TResourceSchema>
-        >;
-        (inferredResultValue as any)["id"] =
-          (inferredResultValue as any)["id"] ?? req.resourceId!;
-
-        const authorizationClause = this.authorization.update.postMutation({
-          ctx: req.context as TContext,
-          value: inferredResultValue as Simplify<
-            InferLiveObjectWithRelationalIds<TResourceSchema>
-          >,
-        });
-
-        if (typeof authorizationClause === "boolean") {
-          if (!authorizationClause) {
-            throw new Error("Not authorized");
-          }
-        } else {
-          const includeClause = extractIncludeFromWhere(
-            authorizationClause,
-            req.resource,
-            schema,
-          );
-
-          const authorizationTarget =
-            Object.keys(includeClause).length > 0
-              ? await trx.rawFindById<TResourceSchema>(
-                  req.resource,
-                  req.resourceId!,
-                  includeClause,
-                )
-              : result;
-
-          const inferredValue = inferValue(authorizationTarget) as Simplify<
-            InferLiveObjectWithRelationalIds<TResourceSchema>
-          >;
-
-          (inferredValue as any)["id"] =
-            (inferredValue as any)["id"] ?? req.resourceId!;
-
-          const authorized = applyWhere(inferredValue, authorizationClause);
-
-          if (!authorized) {
-            throw new Error("Not authorized");
-          }
-        }
-      }
-
-      return {
-        data: result,
-        acceptedValues,
-      };
-    });
-  };
 
   private wrapInMiddlewares<T extends Request>(
     next: NextFunction<any, T>,
@@ -1057,7 +705,7 @@ export class RouteFactory<TSchema extends Schema<any> = Schema<any>, TContext = 
 
   collectionRoute<T extends LiveObjectAny>(
     shape: T,
-    authorization?: Authorization<T, TContext>,
+    opts?: { read?: ReadAuthorizationHandler<T, TContext> },
   ) {
     return new Route<
       T,
@@ -1066,9 +714,7 @@ export class RouteFactory<TSchema extends Schema<any> = Schema<any>, TContext = 
       Record<string, never>,
       TSchema,
       TContext
-    >(shape, undefined, undefined, authorization, undefined).use(
-      ...this.middlewares,
-    );
+    >(shape, undefined, undefined, opts).use(...this.middlewares);
   }
 
   withProcedures<T extends Record<string, Procedure<any, any, any>>>(

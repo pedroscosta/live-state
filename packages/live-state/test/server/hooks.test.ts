@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { Kysely, SqliteDialect, type Selectable } from "kysely";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import {
 	createRelations,
 	createSchema,
@@ -143,13 +144,21 @@ describe("Server hooks registry", () => {
 	const testRouter = router({
 		schema,
 		routes: {
-			groups: publicRoute.collectionRoute(schema.groups),
+			// Database lifecycle hooks fire on the storage writes these custom
+			// mutations perform via `db.groups.insert` / `db.groups.update`.
+			groups: publicRoute
+				.collectionRoute(schema.groups)
+				.withProcedures(({ mutation }) => ({
+					insert: mutation(z.record(z.string(), z.any())).handler(
+						async ({ req, db }) => db.groups.insert(req.input),
+					),
+					update: mutation(z.record(z.string(), z.any())).handler(
+						async ({ req, db }) => db.groups.update(req.input.id, req.input),
+					),
+				})),
 			cards: publicRoute.collectionRoute(schema.cards),
 		},
 	});
-
-	const encode = (input: Record<string, unknown>) =>
-		schema.groups.encodeMutation("set", input as any, new Date().toISOString());
 
 	const insertGroup = (srv: Server<any, any>, id: string, name: string) =>
 		srv.handleMutation({
@@ -157,8 +166,8 @@ describe("Server hooks registry", () => {
 				type: "MUTATE",
 				resource: "groups",
 				resourceId: id,
-				procedure: "INSERT",
-				input: encode({ name }),
+				procedure: "insert",
+				input: { id, name },
 				headers: {},
 				cookies: {},
 				queryParams: {},
@@ -172,8 +181,8 @@ describe("Server hooks registry", () => {
 				type: "MUTATE",
 				resource: "groups",
 				resourceId: id,
-				procedure: "UPDATE",
-				input: encode({ name }),
+				procedure: "update",
+				input: { id, name },
 				headers: {},
 				cookies: {},
 				queryParams: {},
@@ -210,7 +219,7 @@ describe("Server hooks registry", () => {
 		expect(testServer.getHooks("nonexistent")).toBeUndefined();
 	});
 
-	test("beforeInsert and afterInsert fire on INSERT mutation", async () => {
+	test("beforeInsert and afterInsert fire on insert", async () => {
 		const beforeInsert = vi.fn();
 		const afterInsert = vi.fn();
 		testServer = server({
@@ -231,7 +240,7 @@ describe("Server hooks registry", () => {
 		expect(beforeArgs.value.name).toBe("Alpha");
 	});
 
-	test("beforeUpdate and afterUpdate fire on UPDATE mutation", async () => {
+	test("beforeUpdate and afterUpdate fire on update", async () => {
 		const beforeUpdate = vi.fn();
 		const afterUpdate = vi.fn();
 		testServer = server({
@@ -253,7 +262,7 @@ describe("Server hooks registry", () => {
 		expect(args.value.name).toBe("Beta");
 	});
 
-	test("mergeHooks slices both run on the same mutation in order", async () => {
+	test("mergeHooks slices both run on the same write in order", async () => {
 		const calls: string[] = [];
 		const sliceA = defineHooks<typeof schema>({
 			groups: {
@@ -279,40 +288,5 @@ describe("Server hooks registry", () => {
 		await insertGroup(testServer, "g1", "Alpha");
 
 		expect(calls).toEqual(["A", "B"]);
-	});
-
-	test("V3 hooks chain with V2 route-level hooks (V2 runs first)", async () => {
-		const calls: string[] = [];
-		const v2Route = routeFactory<typeof schema>()
-			.collectionRoute(schema.groups)
-			.withHooks({
-				beforeInsert: async () => {
-					calls.push("v2");
-				},
-			});
-		const mixedRouter = router({
-			schema,
-			routes: {
-				groups: v2Route,
-				cards: publicRoute.collectionRoute(schema.cards),
-			},
-		});
-
-		testServer = server({
-			router: mixedRouter,
-			storage,
-			schema,
-			hooks: defineHooks<typeof schema>({
-				groups: {
-					beforeInsert: async () => {
-						calls.push("v3");
-					},
-				},
-			}),
-		});
-
-		await insertGroup(testServer, "g1", "Alpha");
-
-		expect(calls).toEqual(["v2", "v3"]);
 	});
 });

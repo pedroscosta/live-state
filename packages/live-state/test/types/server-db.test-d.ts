@@ -10,7 +10,6 @@ import {
 import {
   router as createRouter,
   routeFactory,
-  type Hooks,
 } from "../../src/server/router";
 import type { ServerDB, ServerCollection } from "../../src/server/storage";
 import { describe, expectTypeOf, test } from "vitest";
@@ -179,49 +178,6 @@ describe("routeFactory() without schema - backwards compatibility", () => {
   });
 });
 
-describe("routeFactory<TSchema>() - typed hooks", () => {
-  const typedRoute = routeFactory<TestSchema>();
-
-  test("beforeInsert hook should have typed db", () => {
-    typedRoute.collectionRoute(schema.users).withHooks({
-      beforeInsert: ({ db }) => {
-        expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
-      },
-    });
-  });
-
-  test("afterInsert hook should have typed db", () => {
-    typedRoute.collectionRoute(schema.users).withHooks({
-      afterInsert: ({ db }) => {
-        expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
-      },
-    });
-  });
-
-  test("beforeUpdate hook should have typed db", () => {
-    typedRoute.collectionRoute(schema.users).withHooks({
-      beforeUpdate: ({ db }) => {
-        expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
-      },
-    });
-  });
-
-  test("afterUpdate hook should have typed db", () => {
-    typedRoute.collectionRoute(schema.users).withHooks({
-      afterUpdate: ({ db }) => {
-        expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
-      },
-    });
-  });
-
-  test("Hooks type should accept TSchema parameter", () => {
-    type TypedHooks = Hooks<typeof user, TestSchema>;
-    type UntypedHooks = Hooks<typeof user>;
-
-    expectTypeOf<TypedHooks>().not.toEqualTypeOf<UntypedHooks>();
-  });
-});
-
 describe("routeFactory<TSchema>() - middleware chaining preserves schema type", () => {
   test("use() should preserve TSchema through middleware chain", () => {
     const typedFactory = routeFactory<TestSchema>().use(
@@ -304,25 +260,5 @@ describe("routeFactory<TSchema>() - detached routes compose into router", () => 
     });
 
     expectTypeOf(testRouter).toHaveProperty("routes");
-  });
-});
-
-describe("routeFactory<TSchema>() - withProcedures then withHooks chain", () => {
-  const typedRoute = routeFactory<TestSchema>();
-
-  test("chaining withProcedures then withHooks preserves TSchema", () => {
-    typedRoute
-      .collectionRoute(schema.users)
-      .withProcedures(({ mutation }) => ({
-        create: mutation().handler(async ({ db }) => {
-          expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
-          return {};
-        }),
-      }))
-      .withHooks({
-        beforeInsert: ({ db }) => {
-          expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
-        },
-      });
   });
 });

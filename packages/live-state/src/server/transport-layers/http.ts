@@ -164,14 +164,12 @@ export const httpTransportLayer = (
 
           let body: HttpMutation;
           let mutationProcedure = procedure;
-          let resourceIdOverride: string | undefined;
-          let inputOverride: any;
 
           if (procedure === "insert" || procedure === "update") {
             // TODO: Remove dual parsing (legacy default + generic) when default mutations are removed.
             const defaultResult = httpDefaultMutationSchema.safeParse(rawBody);
-            mutationProcedure = procedure.toUpperCase();
             if (defaultResult.success) {
+              mutationProcedure = procedure.toUpperCase();
               body = defaultResult.data;
             } else {
               const hasGenericMutationShape =
@@ -203,44 +201,9 @@ export const httpTransportLayer = (
               }
 
               body = genericResult.data;
-
-              const route = (server.router as any)?.routes?.[resource];
-              const customProcedureName =
-                procedure === "insert" ? "insert" : "update";
-              const hasCustomProcedure = !!route?.customMutations?.[
-                customProcedureName
-              ];
-
-              if (!hasCustomProcedure) {
-                const rawPayload = (body.payload ?? {}) as Record<string, any>;
-                const { id, ...rest } = rawPayload;
-                if (procedure === "update" && typeof id !== "string") {
-                  return Response.json(
-                    {
-                      message: "Invalid mutation: payload.id is required for update",
-                      code: "INVALID_REQUEST",
-                    },
-                    { status: 400 }
-                  );
-                }
-                resourceIdOverride =
-                  typeof id === "string" ? id : undefined;
-                const collection = (server.schema as any)?.[resource];
-                if (
-                  collection &&
-                  typeof collection.encodeMutation === "function"
-                ) {
-                  const timestamp =
-                    (body as any).meta?.timestamp ?? new Date().toISOString();
-                  inputOverride = collection.encodeMutation(
-                    "set",
-                    rest,
-                    timestamp
-                  );
-                } else {
-                  inputOverride = rest;
-                }
-              }
+              // A custom mutation named `insert`/`update` is dispatched by its
+              // real (lowercase) name; the legacy `INSERT`/`UPDATE` alias is gone.
+              mutationProcedure = procedure;
             }
           } else {
             const { success, data, error } =
@@ -263,11 +226,9 @@ export const httpTransportLayer = (
               ...baseRequestData,
               type: "MUTATE",
               resource: resource,
-              input: inputOverride ?? body.payload,
+              input: body.payload,
               context: initialContext,
-              resourceId:
-                resourceIdOverride ??
-                (body as { resourceId?: string }).resourceId,
+              resourceId: (body as { resourceId?: string }).resourceId,
               procedure: mutationProcedure,
               queryParams: {},
               meta: (body as any).meta,

@@ -9,8 +9,8 @@ import type { PromiseOrSync } from "../core/utils";
 import { mergeWhereClauses } from "../core/utils";
 import { inferValue, type Schema, type WhereClause } from "../schema";
 import { createLogger, type Logger, LogLevel } from "../utils";
-import { mergeEntityHooks, type HooksRegistry } from "./hooks";
-import type { AnyRouter, AnyRouteOrProcedure, Hooks, QueryProcedureRequest, QueryResult, Route } from "./router";
+import { type Hooks, type HooksRegistry, mergeEntityHooks } from "./hooks";
+import type { AnyRouter, AnyRouteOrProcedure, QueryProcedureRequest, QueryResult, Route } from "./router";
 import type { Storage } from "./storage";
 import type { Batcher } from "./storage/batcher";
 
@@ -93,24 +93,14 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
       this.middlewares.add(middleware);
     });
 
-    const routerHooks = this.router.hooksRegistry as
-      | Map<string, Hooks<any, any, any>>
-      | undefined;
-    const entityKeys = new Set<string>();
-    if (routerHooks) {
-      routerHooks.forEach((_, key) => {
-        entityKeys.add(key);
-      });
-    }
     if (opts.hooks) {
-      for (const key of Object.keys(opts.hooks)) entityKeys.add(key);
+      for (const [key, entityHooks] of Object.entries(opts.hooks)) {
+        const merged = mergeEntityHooks([
+          entityHooks as Hooks<any, any, any> | undefined,
+        ]);
+        if (merged) this.hooksRegistry.set(key, merged);
+      }
     }
-    entityKeys.forEach((key) => {
-      const v2 = routerHooks?.get(key);
-      const v3 = opts.hooks?.[key] as Hooks<any, any, any> | undefined;
-      const merged = mergeEntityHooks([v2, v3]);
-      if (merged) this.hooksRegistry.set(key, merged);
-    });
 
     this.initPromise = this.storage
       .init(this.schema, this.logger, this)

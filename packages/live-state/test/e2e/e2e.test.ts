@@ -33,6 +33,22 @@ import { createClient } from "../../src/client";
 import { createClient as createFetchClient } from "../../src/client/fetch";
 import type { Server as HttpServer } from "http";
 import { LogLevel } from "../../src/utils";
+import { z } from "zod";
+
+/**
+ * Custom insert/update mutations that replace the removed default mutations.
+ * They forward the incoming payload straight to the ServerDB.
+ */
+const crud =
+  (resource: string) =>
+  ({ mutation }: any) => ({
+    insert: mutation(z.record(z.string(), z.any())).handler(
+      async ({ req, db }: any) => db[resource].insert(req.input)
+    ),
+    update: mutation(z.record(z.string(), z.any())).handler(
+      async ({ req, db }: any) => db[resource].update(req.input.id, req.input)
+    ),
+  });
 
 /**
  * Test schema
@@ -71,8 +87,12 @@ const publicRoute = routeFactory();
 const testRouter = router({
   schema: testSchema,
   routes: {
-    users: publicRoute.collectionRoute(testSchema.users),
-    posts: publicRoute.collectionRoute(testSchema.posts),
+    users: publicRoute
+      .collectionRoute(testSchema.users)
+      .withProcedures(crud("users")),
+    posts: publicRoute
+      .collectionRoute(testSchema.posts)
+      .withProcedures(crud("posts")),
   },
 });
 
@@ -953,16 +973,20 @@ describe("End-to-End Query Tests", () => {
       authorizedRouter = router({
         schema: testSchema,
         routes: {
-          users: authorizedRoute.collectionRoute(testSchema.users, {
-            read: ({ ctx }) => {
-              // Only allow users to see their own data
-              if (ctx.userId) {
-                return { id: ctx.userId };
-              }
-              return false;
-            },
-          }),
-          posts: authorizedRoute.collectionRoute(testSchema.posts),
+          users: authorizedRoute
+            .collectionRoute(testSchema.users, {
+              read: ({ ctx }) => {
+                // Only allow users to see their own data
+                if (ctx.userId) {
+                  return { id: ctx.userId };
+                }
+                return false;
+              },
+            })
+            .withProcedures(crud("users")),
+          posts: authorizedRoute
+            .collectionRoute(testSchema.posts)
+            .withProcedures(crud("posts")),
         },
       });
 
@@ -1433,7 +1457,9 @@ describe("End-to-End Query Tests", () => {
     const orderRouter = router({
       schema: orderSchema,
       routes: {
-        orders: orderRoute.collectionRoute(orderSchema.orders),
+        orders: orderRoute
+          .collectionRoute(orderSchema.orders)
+          .withProcedures(crud("orders")),
       },
     });
 
@@ -1811,7 +1837,9 @@ describe("End-to-End Query Tests", () => {
     const productRouter = router({
       schema: productSchema,
       routes: {
-        products: productRoute.collectionRoute(productSchema.products),
+        products: productRoute
+          .collectionRoute(productSchema.products)
+          .withProcedures(crud("products")),
       },
     });
 
