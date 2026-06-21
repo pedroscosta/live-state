@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { z } from "zod";
 import express from "express";
 import expressWs from "express-ws";
 import {
@@ -86,8 +87,24 @@ export const benchmarkRouter = router({
   routes: {
     orgs: publicRoute.collectionRoute(benchmarkSchema.orgs),
     users: publicRoute.collectionRoute(benchmarkSchema.users),
-    posts: publicRoute.collectionRoute(benchmarkSchema.posts),
-    comments: publicRoute.collectionRoute(benchmarkSchema.comments),
+    posts: publicRoute
+      .collectionRoute(benchmarkSchema.posts)
+      .withProcedures(({ mutation }) => ({
+        update: mutation(
+          z.object({ id: z.string() }).and(z.record(z.string(), z.any()))
+        ).handler(
+          // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in bench helper
+          async ({ req, db }: any) => db.posts.update(req.input.id, req.input)
+        ),
+      })),
+    comments: publicRoute
+      .collectionRoute(benchmarkSchema.comments)
+      .withProcedures(({ mutation }) => ({
+        insert: mutation(z.record(z.string(), z.any())).handler(
+          // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in bench helper
+          async ({ req, db }: any) => db.comments.insert(req.input)
+        ),
+      })),
   },
 });
 

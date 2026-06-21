@@ -1,11 +1,7 @@
 import { stringify } from "qs";
 import { QueryBuilder, type QueryExecutor } from "../../core/query";
 import { consumeGeneratable } from "../../core/utils";
-import {
-  inferValue,
-  type LiveObjectAny,
-  type LiveObjectMutationInput,
-} from "../../schema";
+import { inferValue } from "../../schema";
 import type { ClientOptions } from "..";
 import type { Client, ClientRouterConstraint } from "../types";
 import { createObservable } from "../utils";
@@ -62,32 +58,6 @@ const safeFetch = async (
     });
   }
   return data;
-};
-
-const isUnknownProcedureError = (error: unknown): boolean => {
-  // TODO: Remove this helper when default mutation fallback is removed.
-  if (error instanceof Error && error.message.includes("Unknown procedure")) {
-    return true;
-  }
-
-  if (
-    error instanceof Error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    ("message" in error.cause || "code" in error.cause)
-  ) {
-    const cause = error.cause as { message?: unknown; code?: unknown };
-    const causeMessage = cause.message;
-    const hasUnknownProcedureCode =
-      cause.code === "UNKNOWN_PROCEDURE" ||
-      cause.code === "unknown_procedure";
-    const hasUnknownProcedureMessage =
-      typeof causeMessage === "string" &&
-      causeMessage.includes("Unknown procedure");
-    return hasUnknownProcedureCode || hasUnknownProcedureMessage;
-  }
-
-  return false;
 };
 
 const serializeNullValues = (value: any): any => {
@@ -241,110 +211,6 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
         const [route, method] = path;
 
         const headers = (await consumeGeneratable(opts.credentials)) ?? {};
-
-        if (method === "insert") {
-          // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
-          try {
-            return await safeFetch(
-              `${opts.url}/${route}/${method}`,
-              {
-                method: "POST",
-                headers: {
-                  ...headers,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  payload: argumentsList[0],
-                  meta: { timestamp: new Date().toISOString() },
-                }),
-              },
-              opts.fetchOptions,
-            );
-          } catch (error) {
-            if (!isUnknownProcedureError(error)) {
-              throw error;
-            }
-          }
-
-          const { id, ...input } = argumentsList[0] ?? {};
-          return await safeFetch(
-            `${opts.url}/${route}/insert`,
-            {
-              method: "POST",
-              headers: {
-                ...headers,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                resourceId: id,
-                payload: opts.schema[route].encodeMutation(
-                  "set",
-                  input as LiveObjectMutationInput<LiveObjectAny>,
-                  new Date().toISOString(),
-                ),
-              }),
-            },
-            opts.fetchOptions,
-          );
-        }
-
-        if (method === "update") {
-          // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
-          const customPayload =
-            argumentsList.length > 1 &&
-            typeof argumentsList[0] === "string" &&
-            typeof argumentsList[1] === "object" &&
-            argumentsList[1] !== null
-              ? { id: argumentsList[0], ...argumentsList[1] }
-              : argumentsList[0];
-
-          try {
-            return await safeFetch(
-              `${opts.url}/${route}/${method}`,
-              {
-                method: "POST",
-                headers: {
-                  ...headers,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  payload: customPayload,
-                  meta: { timestamp: new Date().toISOString() },
-                }),
-              },
-              opts.fetchOptions,
-            );
-          } catch (error) {
-            if (!isUnknownProcedureError(error)) {
-              throw error;
-            }
-          }
-
-          const [id, input] =
-            argumentsList.length > 1
-              ? argumentsList
-              : [argumentsList[0]?.id, argumentsList[0]];
-          const { id: _id, ...rest } = input ?? {};
-          return await safeFetch(
-            `${opts.url}/${route}/update`,
-            {
-              method: "POST",
-              headers: {
-                ...headers,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                resourceId: id,
-                payload: opts.schema[route].encodeMutation(
-                  "set",
-                  rest as LiveObjectMutationInput<LiveObjectAny>,
-                  new Date().toISOString(),
-                ),
-              }),
-            },
-            opts.fetchOptions,
-          );
-        }
 
         return await safeFetch(
           `${opts.url}/${route}/${method}`,

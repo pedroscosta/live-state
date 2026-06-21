@@ -179,7 +179,7 @@ describe("httpTransportLayer", () => {
           },
         },
         resourceId: "user1",
-        procedure: "INSERT",
+        procedure: "insert",
         meta: { timestamp: "2023-01-03T00:00:00.000Z" },
       }),
     });
@@ -214,7 +214,7 @@ describe("httpTransportLayer", () => {
       req: expect.objectContaining({
         type: "MUTATE",
         resource: "users",
-        procedure: "INSERT",
+        procedure: "insert",
       }),
     });
   });
@@ -251,18 +251,13 @@ describe("httpTransportLayer", () => {
     });
   });
 
-  test("should return 400 for invalid set mutation payload", async () => {
-    const requestBody = {
-      // Missing required fields for set mutation
-      payload: { name: "John" },
-    };
-
+  test("should return 400 for non-object mutation body", async () => {
     const request = new Request("http://localhost/users/insert", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify("not-an-object"),
     });
 
     const response = await httpHandler(request);
@@ -374,19 +369,27 @@ describe("httpTransportLayer", () => {
     });
   });
 
-  test("should handle POST request without body", async () => {
-    const request = new Request("http://localhost/users/insert", {
+  test("should treat a POST request without body as a no-input mutation", async () => {
+    const request = new Request("http://localhost/users/doThing", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
     });
 
-    const response = await httpHandler(request);
-    const responseData = await response.json();
+    (mockServer.handleMutation as Mock).mockResolvedValue({ ok: true });
 
-    expect(response.status).toBe(400);
-    expect(responseData.code).toBe("INVALID_REQUEST");
+    const response = await httpHandler(request);
+
+    expect(response.status).toBe(200);
+    expect(mockServer.handleMutation).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        type: "MUTATE",
+        resource: "users",
+        procedure: "doThing",
+        input: undefined,
+      }),
+    });
   });
 
   test("should return 500 for unexpected errors", async () => {

@@ -198,35 +198,6 @@ describe("websocket client", () => {
     });
   });
 
-  test("should infer insert types", () => {
-    const userMutate = mutate.users.insert;
-    const postMutate = mutate.posts.insert;
-    const commentMutate = mutate.comments.insert;
-
-    expectTypeOf(userMutate)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; name: string }>();
-    expectTypeOf(postMutate)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; title: string; authorId: string }>();
-    expectTypeOf(commentMutate)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; content: string; postId: string }>();
-  });
-
-  test("should infer update types", () => {
-    const userMutate = mutate.users.update;
-    const postMutate = mutate.posts.update;
-    const commentMutate = mutate.comments.update;
-
-    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{ name?: string }>();
-    expectTypeOf(postMutate)
-      .parameter(1)
-      .toEqualTypeOf<{ title?: string; authorId?: string }>();
-    expectTypeOf(commentMutate)
-      .parameter(1)
-      .toEqualTypeOf<{ content?: string; postId?: string }>();
-  });
 });
 
 /*
@@ -837,93 +808,6 @@ describe("complex websocket client", () => {
     >();
   });
 
-  test("should infer complex insert types with defaults", () => {
-    const userMutate = complexMutate.complexUsers.insert;
-    const postMutate = complexMutate.complexPosts.insert;
-    const commentMutate = complexMutate.complexComments.insert;
-
-    // Nullable fields without explicit default now default to null, making them optional
-    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      name: string;
-      email?: string | null | undefined;
-      age?: number | null | undefined;
-      updatedAt?: Date | null | undefined;
-      tags?: string | null | undefined;
-      isActive?: boolean | undefined;
-      score?: number | undefined;
-      createdAt?: Date | undefined;
-      bio?: string | null | undefined;
-    }>();
-
-    expectTypeOf(postMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      title: string;
-      content?: string | null | undefined;
-      authorId: string;
-      rating?: number | null | undefined;
-      publishedAt?: Date | null | undefined;
-      updatedAt?: Date | null | undefined;
-      metadata?: string | null | undefined;
-      published?: boolean | undefined;
-      views?: number | undefined;
-      createdAt?: Date | undefined;
-    }>();
-
-    expectTypeOf(commentMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      content: string;
-      postId: string;
-      authorId: string;
-      updatedAt?: Date | null | undefined;
-      parentId?: string | null | undefined;
-      isApproved?: boolean | undefined;
-      likes?: number | undefined;
-      createdAt?: Date | undefined;
-    }>();
-  });
-
-  test("should infer complex update types", () => {
-    const userMutate = complexMutate.complexUsers.update;
-    const postMutate = complexMutate.complexPosts.update;
-    const commentMutate = complexMutate.complexComments.update;
-
-    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
-      name?: string;
-      email?: string | null;
-      age?: number | null;
-      isActive?: boolean;
-      score?: number;
-      createdAt?: Date;
-      updatedAt?: Date | null;
-      bio?: string | null;
-      tags?: string | null;
-    }>();
-
-    expectTypeOf(postMutate).parameter(1).toEqualTypeOf<{
-      title?: string;
-      content?: string | null;
-      authorId?: string;
-      published?: boolean;
-      views?: number;
-      rating?: number | null;
-      publishedAt?: Date | null;
-      createdAt?: Date;
-      updatedAt?: Date | null;
-      metadata?: string | null;
-    }>();
-
-    expectTypeOf(commentMutate).parameter(1).toEqualTypeOf<{
-      content?: string;
-      postId?: string;
-      authorId?: string;
-      isApproved?: boolean;
-      likes?: number;
-      createdAt?: Date;
-      updatedAt?: Date | null;
-      parentId?: string | null;
-    }>();
-  });
 });
 
 /*
@@ -991,39 +875,6 @@ describe("edge cases and combinations", () => {
     >();
   });
 
-  test("should handle insert types with mixed nullable and default fields", () => {
-    const userMutate = edgeCaseMutate.edgeCaseUsers.insert;
-
-    // Nullable fields without explicit default now default to null, making them optional
-    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      email: string;
-      phone?: string | null | undefined;
-      score?: number | null | undefined;
-      deletedAt?: Date | null | undefined;
-      nickname?: string | null | undefined;
-      status?: string | undefined;
-      priority?: number | undefined;
-      verified?: boolean | undefined;
-      lastLogin?: Date | undefined;
-    }>();
-  });
-
-  test("should handle update types with mixed nullable and default fields", () => {
-    const userMutate = edgeCaseMutate.edgeCaseUsers.update;
-
-    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
-      nickname?: string | null;
-      email?: string;
-      phone?: string | null;
-      status?: string;
-      priority?: number;
-      score?: number | null;
-      verified?: boolean;
-      lastLogin?: Date;
-      deletedAt?: Date | null;
-    }>();
-  });
 });
 
 /*
@@ -1119,36 +970,6 @@ describe("fetch client", () => {
         }[]
       >
     >();
-  });
-
-  test("should infer insert types", () => {
-    const userMutate = fetchClient.mutate.users.insert;
-    const postMutate = fetchClient.mutate.posts.insert;
-    const commentMutate = fetchClient.mutate.comments.insert;
-
-    expectTypeOf(userMutate)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; name: string }>();
-    expectTypeOf(postMutate)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; title: string; authorId: string }>();
-    expectTypeOf(commentMutate)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; content: string; postId: string }>();
-  });
-
-  test("should infer update types", () => {
-    const userMutate = fetchClient.mutate.users.update;
-    const postMutate = fetchClient.mutate.posts.update;
-    const commentMutate = fetchClient.mutate.comments.update;
-
-    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{ name?: string }>();
-    expectTypeOf(postMutate)
-      .parameter(1)
-      .toEqualTypeOf<{ title?: string; authorId?: string }>();
-    expectTypeOf(commentMutate)
-      .parameter(1)
-      .toEqualTypeOf<{ content?: string; postId?: string }>();
   });
 
   test("should handle query chaining", () => {
@@ -1746,92 +1567,6 @@ describe("complex fetch client", () => {
     >();
   });
 
-  test("should infer complex insert types with defaults", () => {
-    const userMutate = complexFetchClient.mutate.complexUsers.insert;
-    const postMutate = complexFetchClient.mutate.complexPosts.insert;
-    const commentMutate = complexFetchClient.mutate.complexComments.insert;
-
-    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      name: string;
-      isActive?: boolean | undefined;
-      score?: number | undefined;
-      createdAt?: Date | undefined;
-      email?: string | null | undefined;
-      age?: number | null | undefined;
-      updatedAt?: Date | null | undefined;
-      bio?: string | null | undefined;
-      tags?: string | null | undefined;
-    }>();
-
-    expectTypeOf(postMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      title: string;
-      authorId: string;
-      published?: boolean | undefined;
-      views?: number | undefined;
-      createdAt?: Date | undefined;
-      content?: string | null | undefined;
-      rating?: number | null | undefined;
-      publishedAt?: Date | null | undefined;
-      updatedAt?: Date | null | undefined;
-      metadata?: string | null | undefined;
-    }>();
-
-    expectTypeOf(commentMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      content: string;
-      postId: string;
-      authorId: string;
-      isApproved?: boolean | undefined;
-      likes?: number | undefined;
-      createdAt?: Date | undefined;
-      updatedAt?: Date | null | undefined;
-      parentId?: string | null | undefined;
-    }>();
-  });
-
-  test("should infer complex update types", () => {
-    const userMutate = complexFetchClient.mutate.complexUsers.update;
-    const postMutate = complexFetchClient.mutate.complexPosts.update;
-    const commentMutate = complexFetchClient.mutate.complexComments.update;
-
-    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
-      name?: string;
-      email?: string | null;
-      age?: number | null;
-      isActive?: boolean;
-      score?: number;
-      createdAt?: Date;
-      updatedAt?: Date | null;
-      bio?: string | null;
-      tags?: string | null;
-    }>();
-
-    expectTypeOf(postMutate).parameter(1).toEqualTypeOf<{
-      title?: string;
-      content?: string | null;
-      authorId?: string;
-      published?: boolean;
-      views?: number;
-      rating?: number | null;
-      publishedAt?: Date | null;
-      createdAt?: Date;
-      updatedAt?: Date | null;
-      metadata?: string | null;
-    }>();
-
-    expectTypeOf(commentMutate).parameter(1).toEqualTypeOf<{
-      content?: string;
-      postId?: string;
-      authorId?: string;
-      isApproved?: boolean;
-      likes?: number;
-      createdAt?: Date;
-      updatedAt?: Date | null;
-      parentId?: string | null;
-    }>();
-  });
 });
 
 /*
@@ -1866,39 +1601,6 @@ describe("edge cases fetch client", () => {
     >();
   });
 
-  test("should handle insert types with mixed nullable and default fields", () => {
-    const userMutate = edgeCaseFetchClient.mutate.edgeCaseUsers.insert;
-
-    // Nullable fields without explicit default now default to null, making them optional
-    expectTypeOf(userMutate).parameter(0).toEqualTypeOf<{
-      id: string;
-      email: string;
-      phone?: string | null | undefined;
-      score?: number | null | undefined;
-      deletedAt?: Date | null | undefined;
-      nickname?: string | null | undefined;
-      status?: string | undefined;
-      priority?: number | undefined;
-      verified?: boolean | undefined;
-      lastLogin?: Date | undefined;
-    }>();
-  });
-
-  test("should handle update types with mixed nullable and default fields", () => {
-    const userMutate = edgeCaseFetchClient.mutate.edgeCaseUsers.update;
-
-    expectTypeOf(userMutate).parameter(1).toEqualTypeOf<{
-      nickname?: string | null;
-      email?: string;
-      phone?: string | null;
-      status?: string;
-      priority?: number;
-      score?: number | null;
-      verified?: boolean;
-      lastLogin?: Date;
-      deletedAt?: Date | null;
-    }>();
-  });
 });
 
 /*

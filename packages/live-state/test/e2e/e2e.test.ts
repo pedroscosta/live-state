@@ -573,7 +573,8 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 performs UPDATE mutation
-        client1.store.mutate.users.update(userId, {
+        client1.store.mutate.users.update({
+          id: userId,
           name: updatedName,
         });
 
@@ -1643,7 +1644,8 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        orderWsClient.store.mutate.orders.update(orderId, {
+        orderWsClient.store.mutate.orders.update({
+          id: orderId,
           status: "delivered",
           priority: "high",
         });
@@ -2074,7 +2076,8 @@ describe("End-to-End Query Tests", () => {
           },
         };
 
-        productWsClient.store.mutate.products.update(productId, {
+        productWsClient.store.mutate.products.update({
+          id: productId,
           metadata: updatedMetadata,
         });
 
