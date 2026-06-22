@@ -293,7 +293,8 @@ describe("live-state mutation broadcast latency benchmarks", () => {
         sender,
         receiver,
         () => {
-          sender.store.mutate.posts.update(postId, {
+          sender.store.mutate.posts.update({
+            id: postId,
             title: "Updated title",
             likes: 100,
           });

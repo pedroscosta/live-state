@@ -251,21 +251,10 @@ describe("custom mutations - websocket client", () => {
     >();
   });
 
-  test("should still have access to standard mutation methods", () => {
-    // Standard mutation methods should still work
-    const standardInsert = mutate.users.insert;
-    const standardUpdate = mutate.users.update;
-
-    expectTypeOf(standardInsert)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; name: string; email: string; age: number }>();
-
-    expectTypeOf(standardUpdate).parameter(0).toEqualTypeOf<string>();
-    expectTypeOf(standardUpdate).parameter(1).toEqualTypeOf<{
-      name?: string;
-      email?: string;
-      age?: number;
-    }>();
+  test("should expose the route's custom mutations", () => {
+    // Default insert/update were removed; the route's custom mutations remain.
+    expectTypeOf(mutate.users.createUserWithRole).toBeFunction();
+    expectTypeOf(mutate.users.resetAllPasswords).toBeFunction();
   });
 });
 
@@ -357,12 +346,8 @@ describe("custom mutations - fetch client", () => {
     >();
   });
 
-  test("should still have access to standard mutation methods", () => {
-    const standardInsert = fetchClient.mutate.users.insert;
-
-    expectTypeOf(standardInsert)
-      .parameter(0)
-      .toEqualTypeOf<{ id: string; name: string; email: string; age: number }>();
+  test("should expose the route's custom mutations", () => {
+    expectTypeOf(fetchClient.mutate.users.createUserWithRole).toBeFunction();
   });
 });
 
@@ -525,10 +510,6 @@ describe("procedure-only routes - websocket client mutations", () => {
     expectTypeOf(pMutate.analytics).toHaveProperty("importData");
   });
 
-  test("collection routes should still have insert/update", () => {
-    expectTypeOf(pMutate.users.insert).toBeFunction();
-    expectTypeOf(pMutate.users.update).toBeFunction();
-  });
 });
 
 /**
@@ -574,9 +555,8 @@ describe("procedure-only routes - fetch client", () => {
     expectTypeOf(fetchClientWithProcedures.mutate.analytics).toHaveProperty("importData");
   });
 
-  test("collection routes should still work normally", () => {
+  test("collection routes still expose query methods", () => {
     expectTypeOf(fetchClientWithProcedures.query.users.get).toBeFunction();
-    expectTypeOf(fetchClientWithProcedures.mutate.users.insert).toBeFunction();
   });
 });
 

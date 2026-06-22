@@ -19,13 +19,7 @@ import type {
   LiveObjectMutationInput,
   Schema,
 } from "../../schema";
-import {
-  createLogger,
-  hash,
-  type Logger,
-  LogLevel,
-  type Simplify,
-} from "../../utils";
+import { createLogger, hash, type Logger, LogLevel } from "../../utils";
 import type { ClientOptions } from "..";
 import {
   createOptimisticStorageProxy,
@@ -46,28 +40,6 @@ interface WebSocketClientOptions<TSchema extends Schema<any> = Schema<any>>
     maxReconnectAttempts?: number;
   };
 }
-
-const isUnknownProcedureError = (error: unknown): boolean => {
-  // TODO: Remove this helper when default mutation fallback is removed.
-  if (error instanceof Error && error.message.includes("Unknown procedure")) {
-    return true;
-  }
-
-  if (
-    error instanceof Error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "message" in error.cause
-  ) {
-    const causeMessage = (error.cause as { message?: unknown }).message;
-    return (
-      typeof causeMessage === "string" &&
-      causeMessage.includes("Unknown procedure")
-    );
-  }
-
-  return false;
-};
 
 export type ConnectionStateChangeEvent = {
   type: "CONNECTION_STATE_CHANGE";
@@ -264,23 +236,7 @@ class InnerClient implements QueryExecutor {
       opts.schema,
       opts.storage,
       this.logger,
-      (stack, _customStack, customIndex) => {
-        const customMutationIds = new Set<string>();
-        if (customIndex) {
-          for (const mutations of Object.values(customIndex)) {
-            for (const { mutationId } of mutations) {
-              customMutationIds.add(mutationId);
-            }
-          }
-        }
-
-        Object.values(stack)
-          ?.flat()
-          ?.forEach((m) => {
-            if (customMutationIds.has(m.id)) return;
-            this.sendWsMessage(this.syncDeltaToMutationMessage(m));
-          });
-
+      () => {
         this.replayCustomMutationStack();
       },
       (resource, itemCount) => {
@@ -332,26 +288,6 @@ class InnerClient implements QueryExecutor {
             ...query,
           });
         });
-
-        const customMutationIds = this.store.getCustomMutationMutationIds();
-
-        Object.values(this.store.optimisticMutationStack).forEach(
-          (mutations) => {
-            if (mutations)
-              mutations.forEach((m) => {
-                if (customMutationIds.has(m.id)) return;
-                this.emitEvent({
-                  type: "MUTATION_SENT",
-                  mutationId: m.id,
-                  resource: m.resource,
-                  resourceId: m.resourceId,
-                  procedure: m.op ?? "UNKNOWN",
-                  optimistic: true,
-                });
-                this.sendWsMessage(this.syncDeltaToMutationMessage(m));
-              });
-          },
-        );
 
         this.replayCustomMutationStack();
       }
@@ -531,97 +467,6 @@ class InnerClient implements QueryExecutor {
     return this.store.subscribe(query, callback);
   }
 
-  /**
-   * Converts a locally-stored optimistic sync delta back into the client→server
-   * MUTATE request used to replay default insert/update mutations on reconnect.
-   */
-  private syncDeltaToMutationMessage(m: SyncDeltaMessage): MutationMessage {
-    return {
-      id: m.id,
-      type: "MUTATE",
-      resource: m.resource,
-      procedure: m.op,
-      payload: m.payload,
-      resourceId: m.resourceId,
-    };
-  }
-
-  /** @deprecated Use custom mutations instead. Default insert/update mutations will be removed in a future version. */
-  public mutate(
-    routeName: string,
-    resourceId: string,
-    procedure: "INSERT" | "UPDATE",
-    payload: Partial<
-      Omit<Simplify<LiveObjectMutationInput<LiveObjectAny>>["value"], "id">
-    >,
-  ) {
-    const mutationId = generateId();
-    const encodedPayload = this.store.schema[routeName].encodeMutation(
-      "set",
-      payload as LiveObjectMutationInput<LiveObjectAny>,
-      new Date().toISOString(),
-    );
-
-    // Optimistic state is reconciled by the server's SYNC broadcast.
-    const optimisticDelta: SyncDeltaMessage = {
-      id: mutationId,
-      type: "SYNC",
-      resource: routeName,
-      payload: encodedPayload,
-      resourceId,
-      op: procedure,
-    };
-
-    // The client→server request remains a MUTATE message.
-    const mutationMessage: MutationMessage = {
-      id: mutationId,
-      type: "MUTATE",
-      resource: routeName,
-      resourceId,
-      procedure,
-      payload: encodedPayload,
-    };
-
-    const pendingMutations =
-      (this.store.optimisticMutationStack[routeName]?.length ?? 0) + 1;
-
-    this.store?.addMutation(routeName, optimisticDelta, true);
-
-    this.emitEvent({
-      type: "OPTIMISTIC_MUTATION_APPLIED",
-      mutationId,
-      resource: routeName,
-      resourceId,
-      procedure,
-      pendingMutations,
-    });
-
-    this.emitEvent({
-      type: "MUTATION_SENT",
-      mutationId,
-      resource: routeName,
-      resourceId,
-      procedure,
-      optimistic: true,
-    });
-
-    this.sendWsMessage(mutationMessage);
-
-    // Every MUTATE now receives a REPLY; the optimistic state is still
-    // reconciled by the SYNC broadcast, so just swallow the acknowledgement.
-    this.replyHandlers[mutationId] = {
-      timeoutHandle: setTimeout(() => {
-        delete this.replyHandlers[mutationId];
-      }, 5000),
-      handler: () => {
-        delete this.replyHandlers[mutationId];
-      },
-      reject: () => {
-        delete this.replyHandlers[mutationId];
-      },
-    };
-  }
-
   public genericMutate(routeName: string, procedure: string, payload: any) {
     const isConnected = this.ws?.connected();
 
@@ -630,29 +475,7 @@ class InnerClient implements QueryExecutor {
       procedure,
     );
 
-    // TODO: Remove default-insert/update fallback optimistic when default mutations are removed.
-    const isDefaultMutationAlias =
-      (procedure === "insert" || procedure === "update") && !optimisticHandler;
-    const defaultMutationFallback =
-      isDefaultMutationAlias && this.store.schema[routeName]
-        ? (() => {
-            const rawPayload = (payload ?? {}) as Record<string, any>;
-            const { id, ...input } = rawPayload;
-            if (typeof id !== "string") return undefined;
-            try {
-              const encoded = this.store.schema[routeName].encodeMutation(
-                "set",
-                input as LiveObjectMutationInput<LiveObjectAny>,
-                new Date().toISOString(),
-              );
-              return { id, input, encoded };
-            } catch {
-              return undefined;
-            }
-          })()
-        : undefined;
-
-    if (!isConnected && !optimisticHandler && !defaultMutationFallback) {
+    if (!isConnected && !optimisticHandler) {
       throw new Error("WebSocket not connected");
     }
 
@@ -665,34 +488,7 @@ class InnerClient implements QueryExecutor {
       meta: { timestamp: new Date().toISOString() },
     };
 
-    if (defaultMutationFallback) {
-      const defaultOptimisticMessage: SyncDeltaMessage = {
-        id: mutationMessage.id,
-        type: "SYNC",
-        resource: routeName,
-        resourceId: defaultMutationFallback.id,
-        op: procedure === "insert" ? "INSERT" : "UPDATE",
-        payload: defaultMutationFallback.encoded,
-      };
-      this.store?.addMutation(routeName, defaultOptimisticMessage, true);
-      this.emitEvent({
-        type: "OPTIMISTIC_MUTATION_APPLIED",
-        mutationId: mutationMessage.id,
-        resource: routeName,
-        resourceId: defaultMutationFallback.id,
-        procedure: defaultOptimisticMessage.op,
-        pendingMutations:
-          (this.store.optimisticMutationStack[routeName]?.length ?? 0),
-      });
-      this.emitEvent({
-        type: "MUTATION_SENT",
-        mutationId: mutationMessage.id,
-        resource: routeName,
-        resourceId: defaultMutationFallback.id,
-        procedure,
-        optimistic: true,
-      });
-    } else if (optimisticHandler) {
+    if (optimisticHandler) {
       try {
         const { proxy, getOperations } = createOptimisticStorageProxy(
           this.store,
@@ -740,34 +536,12 @@ class InnerClient implements QueryExecutor {
       this.replyHandlers[mutationMessage.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[mutationMessage.id];
-          // Default insert/update optimistic state lives under its own message
-          // id (no custom-mutation index), so roll it back directly on timeout.
-          if (defaultMutationFallback) {
-            const pendingMutations =
-              this.store.optimisticMutationStack[routeName]?.length ?? 0;
-            this.store.undoMutation(routeName, mutationMessage.id);
-            this.emitEvent({
-              type: "OPTIMISTIC_MUTATION_UNDONE",
-              mutationId: mutationMessage.id,
-              resource: routeName,
-              resourceId: defaultMutationFallback.id,
-              pendingMutations: Math.max(pendingMutations - 1, 0),
-            });
-          } else {
-            this.emitUndoEvents(
-              this.store.undoCustomMutation(mutationMessage.id),
-            );
-          }
+          this.emitUndoEvents(this.store.undoCustomMutation(mutationMessage.id));
           reject(new Error("Reply timeout"));
         }, 5000),
         handler: (data: any) => {
           delete this.replyHandlers[mutationMessage.id];
-          // Default insert/update optimistic state is reconciled by the server
-          // broadcast (matching the legacy default-mutation path), so leave it
-          // in place here; only custom mutations confirm via the index.
-          if (!defaultMutationFallback) {
-            this.store.confirmCustomMutation(mutationMessage.id);
-          }
+          this.store.confirmCustomMutation(mutationMessage.id);
           resolve(data);
         },
         reject,
@@ -1018,45 +792,6 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
             throw new Error("Trying to access an invalid path");
 
           const [route, method] = path;
-
-          if (method === "insert") {
-            // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
-            return ogClient
-              .genericMutate(route, method, argumentsList[0])
-              .catch((error) => {
-                if (!isUnknownProcedureError(error)) {
-                  throw error;
-                }
-
-                const { id, ...input } = argumentsList[0] ?? {};
-                return ogClient.mutate(route, id, "INSERT", input);
-              });
-          }
-
-          if (method === "update") {
-            // TODO: Remove generic-first + legacy fallback path when default mutations are removed.
-            const customPayload =
-              argumentsList.length > 1 &&
-              typeof argumentsList[0] === "string" &&
-              typeof argumentsList[1] === "object" &&
-              argumentsList[1] !== null
-                ? { id: argumentsList[0], ...argumentsList[1] }
-                : argumentsList[0];
-
-            return ogClient
-              .genericMutate(route, method, customPayload)
-              .catch((error) => {
-                if (!isUnknownProcedureError(error)) {
-                  throw error;
-                }
-
-                const [id, input] =
-                  argumentsList.length > 1
-                    ? argumentsList
-                    : [argumentsList[0]?.id, argumentsList[0]];
-                return ogClient.mutate(route, id, "UPDATE", input);
-              });
-          }
 
           return ogClient.genericMutate(route, method, argumentsList[0]);
         },

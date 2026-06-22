@@ -5,6 +5,7 @@
  */
 
 import { Pool } from "pg";
+import { z } from "zod";
 import express from "express";
 import expressWs from "express-ws";
 import {
@@ -93,7 +94,18 @@ const benchmarkRouter = router({
     orgs: publicRoute.collectionRoute(benchmarkSchema.orgs),
     users: publicRoute.collectionRoute(benchmarkSchema.users),
     posts: publicRoute.collectionRoute(benchmarkSchema.posts),
-    comments: publicRoute.collectionRoute(benchmarkSchema.comments),
+    comments: publicRoute
+      .collectionRoute(benchmarkSchema.comments)
+      .withProcedures(({ mutation }) => ({
+        insert: mutation(
+          z.object({
+            id: z.string(),
+            content: z.string(),
+            postId: z.string(),
+            authorId: z.string(),
+          })
+        ).handler(async ({ req, db }) => db.comments.insert(req.input)),
+      })),
   },
 });
 

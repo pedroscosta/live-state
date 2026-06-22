@@ -2,7 +2,6 @@ import cookie from "cookie";
 import qs from "qs";
 import {
   type HttpMutation,
-  httpDefaultMutationSchema,
   httpGenericMutationSchema,
   httpQuerySchema,
 } from "../../core/schemas/http";
@@ -162,64 +161,19 @@ export const httpTransportLayer = (
           const resource = secondToLast;
           const rawBody = request.body ? await request.json() : {};
 
-          let body: HttpMutation;
-          let mutationProcedure = procedure;
-
-          if (procedure === "insert" || procedure === "update") {
-            // TODO: Remove dual parsing (legacy default + generic) when default mutations are removed.
-            const defaultResult = httpDefaultMutationSchema.safeParse(rawBody);
-            if (defaultResult.success) {
-              mutationProcedure = procedure.toUpperCase();
-              body = defaultResult.data;
-            } else {
-              const hasGenericMutationShape =
-                typeof rawBody === "object" &&
-                rawBody !== null &&
-                "payload" in rawBody &&
-                "meta" in rawBody;
-              if (!hasGenericMutationShape) {
-                return Response.json(
-                  {
-                    message: "Invalid mutation",
-                    code: "INVALID_REQUEST",
-                    details: defaultResult.error,
-                  },
-                  { status: 400 }
-                );
-              }
-
-              const genericResult = httpGenericMutationSchema.safeParse(rawBody);
-              if (!genericResult.success) {
-                return Response.json(
-                  {
-                    message: "Invalid mutation",
-                    code: "INVALID_REQUEST",
-                    details: genericResult.error,
-                  },
-                  { status: 400 }
-                );
-              }
-
-              body = genericResult.data;
-              // A custom mutation named `insert`/`update` is dispatched by its
-              // real (lowercase) name; the legacy `INSERT`/`UPDATE` alias is gone.
-              mutationProcedure = procedure;
-            }
-          } else {
-            const { success, data, error } =
-              httpGenericMutationSchema.safeParse(rawBody);
-            if (!success) {
-              return Response.json(
-                {
-                  message: "Invalid mutation",
-                  code: "INVALID_REQUEST",
-                  details: error,
-                },
-                { status: 400 }
-              );
-            }
-            body = data;
+          const { success, data, error } =
+            httpGenericMutationSchema.safeParse(rawBody);
+          if (!success) {
+            return Response.json(
+              {
+                message: "Invalid mutation",
+                code: "INVALID_REQUEST",
+                details: error,
+              },
+              { status: 400 }
+            );
           }
+          const body: HttpMutation = data;
 
           const result = await server.handleMutation({
             req: {
@@ -229,26 +183,15 @@ export const httpTransportLayer = (
               input: body.payload,
               context: initialContext,
               resourceId: (body as { resourceId?: string }).resourceId,
-              procedure: mutationProcedure,
+              procedure,
               queryParams: {},
-              meta: (body as any).meta,
+              meta: body.meta,
             },
           });
 
           return Response.json(result);
         } catch (e) {
           logger.error("Error parsing mutation from the client:", e);
-
-          if (
-            e instanceof Error &&
-            e.message.includes("Unknown procedure")
-          ) {
-            // TODO: Remove UNKNOWN_PROCEDURE compatibility response when default mutation fallback is removed.
-            return Response.json(
-              { message: e.message, code: "UNKNOWN_PROCEDURE" },
-              { status: 400 }
-            );
-          }
 
           return Response.json(
             { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },

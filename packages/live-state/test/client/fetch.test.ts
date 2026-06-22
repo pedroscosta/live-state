@@ -468,8 +468,8 @@ describe("createClient", () => {
         credentials: async () => ({ Authorization: "Bearer token" }),
       });
 
-      const updateData = { name: "John Updated" };
-      await client.mutate.users.update("1", updateData);
+      const updateData = { id: "1", name: "John Updated" };
+      await client.mutate.users.update(updateData);
 
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:3000/users/update",
@@ -494,7 +494,7 @@ describe("createClient", () => {
       );
     });
 
-    test("should exclude id from update payload", async () => {
+    test("should forward the full update payload including id", async () => {
       const mockResponse = { success: true };
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -510,7 +510,7 @@ describe("createClient", () => {
       });
 
       const updateData = { id: "1", name: "John Updated" };
-      await client.mutate.users.update("1", updateData);
+      await client.mutate.users.update(updateData);
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.payload).toHaveProperty("id", "1");
@@ -531,8 +531,8 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      const updateData = { title: "Updated Post" };
-      await client.mutate.posts.update("1", updateData);
+      const updateData = { id: "1", title: "Updated Post" };
+      await client.mutate.posts.update(updateData);
 
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:3000/posts/update",
@@ -819,8 +819,8 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      const updateData = { name: "John Updated" };
-      await client.mutate.users.update("1", updateData);
+      const updateData = { id: "1", name: "John Updated" };
+      await client.mutate.users.update(updateData);
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.payload.name).toBe("John Updated");

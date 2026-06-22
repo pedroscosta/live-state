@@ -1,13 +1,8 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { QueryBuilder } from "../core/query";
 import type { CustomQueryRequest } from "../core/schemas/core-protocol";
-import type { ConditionalPromise, Promisify } from "../core/utils";
-import type {
-  InferInsert,
-  InferLiveObject,
-  InferUpdate,
-  LiveObjectAny,
-} from "../schema";
+import type { Promisify } from "../core/utils";
+import type { InferLiveObject, LiveObjectAny } from "../schema";
 import type { Simplify } from "../utils";
 
 /**
@@ -121,34 +116,12 @@ type CollectionQueryType<
 
 type CollectionMutateType<
   TRoute extends ClientRouterConstraint["routes"][string],
-  TShouldAwait extends boolean,
-> = TRoute["resourceSchema"] extends LiveObjectAny
-  ? Omit<
-      {
-        /** @deprecated Use custom mutations instead. Default insert will be removed in a future version. */
-        insert: (
-          input: Simplify<InferInsert<TRoute["resourceSchema"]>>
-        ) => ConditionalPromise<void, TShouldAwait>;
-        /** @deprecated Use custom mutations instead. Default update will be removed in a future version. */
-        update: (
-          id: string,
-          value: Simplify<InferUpdate<TRoute["resourceSchema"]>>
-        ) => ConditionalPromise<void, TShouldAwait>;
-      },
-      // TODO: Remove default-mutation compatibility typing when default mutations are removed.
-      Extract<keyof TRoute["customMutations"], "insert" | "update">
-    > & {
-      [K2 in keyof TRoute["customMutations"]]: CustomMutationFunction<
-        InferSchema<TRoute["customMutations"][K2]["inputValidator"]>,
-        ReturnType<TRoute["customMutations"][K2]["handler"]>
-      >;
-    }
-  : {
-      [K2 in keyof TRoute["customMutations"]]: CustomMutationFunction<
-        InferSchema<TRoute["customMutations"][K2]["inputValidator"]>,
-        ReturnType<TRoute["customMutations"][K2]["handler"]>
-      >;
-    };
+> = {
+  [K2 in keyof TRoute["customMutations"]]: CustomMutationFunction<
+    InferSchema<TRoute["customMutations"][K2]["inputValidator"]>,
+    ReturnType<TRoute["customMutations"][K2]["handler"]>
+  >;
+};
 
 export type Client<
   TRouter extends ClientRouterConstraint,
@@ -161,9 +134,6 @@ export type Client<
     >;
   };
   mutate: {
-    [K in keyof TRouter["routes"]]: CollectionMutateType<
-      TRouter["routes"][K],
-      TShouldAwait
-    >;
+    [K in keyof TRouter["routes"]]: CollectionMutateType<TRouter["routes"][K]>;
   };
 };

@@ -323,66 +323,6 @@ describe("webSocketAdapter", () => {
     );
   });
 
-  test("should reshape generic insert/update with raw payload into default mutation when no custom procedure exists", async () => {
-    const encodeMutation = vi.fn().mockReturnValue({
-      name: {
-        value: "Alice",
-        _meta: { timestamp: "2023-01-03T00:00:00.000Z" },
-      },
-    });
-    (mockServer as any).schema.users.encodeMutation = encodeMutation;
-    (mockServer as any).router.routes.users.customMutations = {};
-
-    wsHandler(mockWebSocket, mockRequest);
-
-    const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
-      (call) => call[0] === "message",
-    )?.[1];
-
-    const mutateMessage = {
-      type: "MUTATE",
-      resource: "users",
-      procedure: "insert",
-      payload: { id: "user1", name: "Alice" },
-      meta: { timestamp: "2023-01-03T00:00:00.000Z" },
-      id: "msg-1",
-    };
-
-    (mockServer.handleMutation as Mock).mockResolvedValue({
-      data: { name: "Alice" },
-    });
-
-    await messageHandler(Buffer.from(JSON.stringify(mutateMessage)));
-
-    expect(encodeMutation).toHaveBeenCalledWith(
-      "set",
-      { name: "Alice" },
-      "2023-01-03T00:00:00.000Z",
-    );
-    expect(mockServer.handleMutation).toHaveBeenCalledWith({
-      req: expect.objectContaining({
-        type: "MUTATE",
-        resource: "users",
-        procedure: "INSERT",
-        resourceId: "user1",
-        input: {
-          name: {
-            value: "Alice",
-            _meta: { timestamp: "2023-01-03T00:00:00.000Z" },
-          },
-        },
-      }),
-    });
-
-    expect(mockWebSocket.send).toHaveBeenCalledWith(
-      JSON.stringify({
-        id: "msg-1",
-        type: "REPLY",
-        data: { data: { name: "Alice" } },
-      }),
-    );
-  });
-
   test("should keep generic insert procedure when a custom mutation exists", async () => {
     const customHandler = vi.fn();
     (mockServer as any).router.routes.users.customMutations = {
