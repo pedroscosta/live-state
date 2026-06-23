@@ -19,6 +19,7 @@ import {
 	createSchema,
 	createRelations,
 	id,
+	inferValue,
 	number,
 	object,
 	reference,
@@ -46,6 +47,14 @@ const post = object("posts", {
 	likes: number(),
 });
 
+// A resource that is in the schema but has NO collectionRoute declared.
+// It is only ever read via a procedure-only route returning a tracked query.
+const comment = object("comments", {
+	id: id(),
+	text: string(),
+	topic: string(),
+});
+
 const userRelations = createRelations(user, ({ many }) => ({
 	posts: many(post, "authorId"),
 }));
@@ -57,6 +66,7 @@ const postRelations = createRelations(post, ({ one }) => ({
 const testSchema = createSchema({
 	users: user,
 	posts: post,
+	comments: comment,
 	userRelations,
 	postRelations,
 });
@@ -95,6 +105,13 @@ const testRouter = router({
 					const userId = users[0].id;
 					return db.posts.where({ authorId: userId }).get();
 				}
+			),
+
+			// Returns an *unresolved* query builder for `comments`, a resource
+			// with no collectionRoute. The query engine must resolve and subscribe
+			// it directly against the batcher/storage keyed by `resource`.
+			watchComments: query(z.object({ topic: z.string() })).handler(
+				({ req, db }) => db.comments.where({ topic: req.input.topic })
 			),
 
 			seedData: mutation(
@@ -366,6 +383,68 @@ describe("Procedure-Only Routes E2E", () => {
 			const result = await fetchClient.mutate.analytics.resetLikes();
 
 			expect(result).toEqual({ resetCount: 0 });
+		});
+	});
+
+	describe("Tracked query returned from a procedure-only route", () => {
+		test("resolves and subscribes a resource with no collectionRoute", async () => {
+			const matchingId = generateId();
+			await storage.insert(testSchema.comments, {
+				id: matchingId,
+				text: "initial",
+				topic: "sync",
+			});
+			await storage.insert(testSchema.comments, {
+				id: generateId(),
+				text: "other topic",
+				topic: "unrelated",
+			});
+
+			const deltas: any[] = [];
+
+			const result = await testServer.handleCustomQuery({
+				req: {
+					headers: {},
+					cookies: {},
+					queryParams: {},
+					type: "CUSTOM_QUERY",
+					resource: "analytics",
+					procedure: "watchComments",
+					input: { topic: "sync" },
+					context: {},
+				},
+				subscription: (m) => deltas.push(m),
+			});
+
+			// Initial resolution against storage, filtered by the handler's where.
+			expect(result.data).toHaveLength(1);
+			expect(inferValue(result.data[0]).text).toBe("initial");
+
+			// Realtime: a new matching comment produces a Sync Delta to the subscriber.
+			const newId = generateId();
+			await storage.insert(testSchema.comments, {
+				id: newId,
+				text: "live",
+				topic: "sync",
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 200));
+
+			expect(deltas.some((d) => d.resourceId === newId)).toBe(true);
+
+			// A non-matching comment must NOT notify the subscriber.
+			const nonMatchingId = generateId();
+			await storage.insert(testSchema.comments, {
+				id: nonMatchingId,
+				text: "nope",
+				topic: "unrelated",
+			});
+
+			await new Promise((resolve) => setTimeout(resolve, 200));
+
+			expect(deltas.some((d) => d.resourceId === nonMatchingId)).toBe(false);
+
+			result.unsubscribe?.();
 		});
 	});
 
