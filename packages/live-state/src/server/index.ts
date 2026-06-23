@@ -115,36 +115,24 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
           query: RawQueryRequest,
           extra?: { context?: any; batcher?: Batcher }
         ) => {
-          const {
-            headers,
-            cookies,
-            queryParams,
-            context: ctx,
-          } = extra?.context ?? {};
-
           if (!extra?.batcher) {
             throw new Error("Batcher is required");
           }
 
-          const req: QueryRequest = {
-            ...query,
-            type: "QUERY",
-            headers,
-            cookies,
-            queryParams,
-            context: ctx,
-          };
-
-          const result = await (
-            this.router.routes[query.resource] as
-              | Route<any, any, any, any, any, any>
-              | undefined
-          )?.handleQuery({
-            req,
-            batcher: extra.batcher,
+          // Tracked Queries resolve directly against the batcher/storage layer
+          // keyed by the schema `resource`. This is intentionally independent of
+          // whether a `collectionRoute` is declared for the resource: any
+          // resource in the `schema` is resolvable, which lets a Custom Query
+          // handler return `db.<resource>.where(...)` for a procedure-only route.
+          // The parent step's relational filtering is already folded into
+          // `query.where` by `resolveStep`, so there is no `uniqueWhere` here.
+          return extra.batcher.rawFind({
+            resource: query.resource,
+            commonWhere: query.where,
+            include: query.include,
+            limit: query.limit,
+            sort: query.sort,
           });
-
-          return result?.data ?? [];
         },
         incrementQueryStep: (step: CoreQueryStep, context: any = {}) => {
           const authorizationClause = (
