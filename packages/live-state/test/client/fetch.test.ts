@@ -71,17 +71,17 @@ describe("createClient", () => {
     expect(client.mutate).toHaveProperty("posts");
   });
 
-  test("should create query builders for each route", () => {
+  test("should expose callable custom query procedures for each route", () => {
     const client = createClient({
       url: "http://localhost:3000",
       schema: mockSchema,
       credentials: async () => ({}),
     });
 
-    expect(typeof client.query.users.get).toBe("function");
-    expect(typeof client.query.users.subscribe).toBe("function");
-    expect(typeof client.query.posts.get).toBe("function");
-    expect(typeof client.query.posts.subscribe).toBe("function");
+    // Fetch client is custom-query-only: any declared procedure name resolves
+    // to a callable that POSTs to `/<resource>/query/<procedure>` (ADR-0002).
+    expect(typeof client.query.users.list).toBe("function");
+    expect(typeof client.query.posts.list).toBe("function");
   });
 
   test("should create mutate methods for each route", () => {
@@ -97,24 +97,16 @@ describe("createClient", () => {
     expect(typeof client.mutate.posts.update).toBe("function");
   });
 
-  describe("query.get", () => {
-    test("should make GET request with correct URL and headers", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
+  // The fetch client is Custom Query-only (ADR-0002): reads go through
+  // POST `/<resource>/query/<procedure>` with a JSON `{ input }` body. The
+  // Default Query GET path (`query.users.where(...).get()`) was removed.
+  describe("query custom procedures", () => {
+    test("should make POST request with correct URL, headers, and body", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve([{ id: "1", name: "John" }]),
       });
 
       const client = createClient({
@@ -123,37 +115,28 @@ describe("createClient", () => {
         credentials: async () => ({ Authorization: "Bearer token" }),
       });
 
-      const result = await client.query.users.get();
+      const result = await client.query.users.list({ status: "active" });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000/users?resource=users",
+        "http://localhost:3000/users/query/list",
         {
+          method: "POST",
           headers: {
             Authorization: "Bearer token",
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ input: { status: "active" } }),
         }
       );
       expect(result).toEqual([{ id: "1", name: "John" }]);
     });
 
-    test("should handle query parameters", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
+    test("should call a custom query with no input", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve([]),
       });
 
       const client = createClient({
@@ -162,118 +145,27 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await client.query.users.where({ name: "John" }).get();
+      await client.query.users.list();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000/users?resource=users&where%5Bname%5D=John",
+        "http://localhost:3000/users/query/list",
         {
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-        }
-      );
-    });
-
-    test("should handle complex query parameters", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users
-        .where({ name: "John", age: 30 })
-        .include({ posts: true })
-        .limit(10)
-        .get();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("http://localhost:3000/users?"),
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5Bname%5D=John");
-      expect(url).toContain("where%5Bage%5D=30");
-    });
-
-    test("should handle empty query parameters", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users.get();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000/users?resource=users",
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
+          body: JSON.stringify({ input: undefined }),
         }
       );
     });
 
     test("should handle credentials that return null", async () => {
       mockConsumeGeneratable.mockImplementationOnce(() => null);
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve([]),
       });
 
       const client = createClient({
@@ -282,35 +174,26 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await client.query.users.get();
+      await client.query.users.list();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000/users?resource=users",
+        "http://localhost:3000/users/query/list",
         {
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ input: undefined }),
         }
       );
     });
 
     test("should handle different base URLs", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve([]),
       });
 
       const client = createClient({
@@ -319,30 +202,12 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await client.query.users.get();
+      await client.query.users.list();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.example.com/v1/users?resource=users",
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+        "https://api.example.com/v1/users/query/list",
+        expect.objectContaining({ method: "POST" })
       );
-    });
-  });
-
-  describe("query.subscribe", () => {
-    test("should throw error for subscriptions", () => {
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      expect(() => {
-        client.query.users.subscribe(() => {});
-      }).toThrow("Fetch client does not support subscriptions");
     });
   });
 
@@ -669,7 +534,7 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await expect(client.query.users.get()).rejects.toThrow("Network error");
+      await expect(client.query.users.list()).rejects.toThrow("Network error");
     });
 
     test("should handle JSON parsing errors", async () => {
@@ -687,10 +552,10 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      const result = await client.query.users.get();
-      // When JSON parsing fails, the client falls back to res.text() which returns a string.
-      // Object.entries() on a string returns an empty array since strings don't have enumerable properties.
-      expect(result).toEqual([]);
+      // When JSON parsing fails, the client falls back to res.text(); the custom
+      // query returns that raw value as-is.
+      const result = await client.query.users.list();
+      expect(result).toBe("Invalid JSON response");
     });
 
     test("should handle credentials function errors", async () => {
@@ -706,7 +571,7 @@ describe("createClient", () => {
         },
       });
 
-      await expect(client.query.users.get()).rejects.toThrow(
+      await expect(client.query.users.list()).rejects.toThrow(
         "Credentials error"
       );
     });
@@ -714,22 +579,11 @@ describe("createClient", () => {
 
   describe("URL construction", () => {
     test("should handle URLs with trailing slash", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve([]),
       });
 
       const client = createClient({
@@ -738,31 +592,20 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await client.query.users.get();
+      await client.query.users.list();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000//users?resource=users",
+        "http://localhost:3000/users/query/list",
         expect.any(Object)
       );
     });
 
     test("should handle URLs without trailing slash", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
+        json: () => Promise.resolve([]),
       });
 
       const client = createClient({
@@ -771,10 +614,10 @@ describe("createClient", () => {
         credentials: async () => ({}),
       });
 
-      await client.query.users.get();
+      await client.query.users.list();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000/users?resource=users",
+        "http://localhost:3000/users/query/list",
         expect.any(Object)
       );
     });
@@ -825,210 +668,6 @@ describe("createClient", () => {
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.payload.name).toBe("John Updated");
       expect(body.meta).toHaveProperty("timestamp");
-    });
-  });
-
-  describe("null where clause serialization", () => {
-    test("should serialize implicit null equality in where clause", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users.where({ name: null } as any).get();
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5Bname%5D=null");
-    });
-
-    test("should serialize explicit null equality with $eq operator", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users.where({ name: { $eq: null } } as any).get();
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5Bname%5D%5B%24eq%5D=null");
-    });
-
-    test("should serialize null with $not operator", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users.where({ name: { $not: null } } as any).get();
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5Bname%5D%5B%24not%5D=null");
-    });
-
-    test("should serialize null in nested where clauses", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users
-        .where({
-          $and: [{ name: null }, { name: { $eq: null } }],
-        } as any)
-        .get();
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5B%24and%5D%5B0%5D%5Bname%5D=null");
-      expect(url).toContain(
-        "where%5B%24and%5D%5B1%5D%5Bname%5D%5B%24eq%5D=null"
-      );
-    });
-
-    test("should serialize null in $in array", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users
-        .where({ name: { $in: [null, "John"] } } as any)
-        .get();
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5Bname%5D%5B%24in%5D%5B0%5D=null");
-      expect(url).toContain("where%5Bname%5D%5B%24in%5D%5B1%5D=John");
-    });
-
-    test("should serialize multiple null fields in where clause", async () => {
-      const mockResponse = {
-        "1": {
-          value: {
-            name: {
-              value: "John",
-              _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-            },
-          },
-          _meta: { timestamp: "2023-01-01T00:00:00.000Z" },
-        },
-      };
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: "OK",
-        json: () => Promise.resolve(mockResponse),
-      });
-
-      const client = createClient({
-        url: "http://localhost:3000",
-        schema: mockSchema,
-        credentials: async () => ({}),
-      });
-
-      await client.query.users
-        .where({
-          name: null,
-          id: { $eq: null },
-        } as any)
-        .get();
-
-      const url = mockFetch.mock.calls[0][0];
-      expect(url).toContain("where%5Bname%5D=null");
-      expect(url).toContain("where%5Bid%5D%5B%24eq%5D=null");
     });
   });
 });

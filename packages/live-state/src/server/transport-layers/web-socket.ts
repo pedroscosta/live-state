@@ -63,7 +63,7 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
           const { type, id, ...queryOrCustom } = parsedMessage;
           const isSubscribe = type === "SUBSCRIBE";
 
-          if ("procedure" in queryOrCustom) {
+          try {
             const result = await server.handleCustomQuery({
               req: {
                 ...requestContext,
@@ -90,7 +90,9 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
 
             if (isSubscribe) {
               if (!result || !result.data || !result.query) {
-                throw new Error("Invalid resource");
+                throw new Error(
+                  "Cannot subscribe to a one-shot query: the procedure must return a query builder (a Tracked Query), not a computed value",
+                );
               }
 
               if (result.unsubscribe) {
@@ -114,47 +116,14 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
                 data: result,
               });
             }
-          } else {
-            const result = await server.handleQuery({
-              req: {
-                ...requestContext,
-                ...queryOrCustom,
-                type: "QUERY",
-                context: (await initialContext) ?? {},
-                queryParams: parsedQs,
-              },
-              subscription: isSubscribe
-                ? (m) => {
-                    if (
-                      !m.resourceId ||
-                      !m.payload ||
-                      !Object.keys(m.payload).length
-                    )
-                      return;
-
-                    connections[clientId]?.send(JSON.stringify(m));
-                  }
-                : undefined,
-            });
-
-            if (!result || !result.data) {
-              throw new Error("Invalid resource");
-            }
-
-            if (isSubscribe && result.unsubscribe) {
-              subscriptions.set(hash(queryOrCustom), result.unsubscribe);
-            }
-
+          } catch (e) {
             reply({
-              id: id,
-              type: "REPLY",
-              data: {
-                resource: queryOrCustom.resource,
-                data: (result.data ?? []).map(
-                  (v: MaterializedLiveType<LiveObjectAny>) => v.value,
-                ),
-              },
+              id,
+              type: "REJECT",
+              resource: queryOrCustom.resource,
+              message: (e as Error).message,
             });
+            logger.error("Error handling query from the client:", e);
           }
         } else if (parsedMessage.type === "UNSUBSCRIBE") {
           const { type: _type, id: _id, ...queryOrCustom } = parsedMessage;

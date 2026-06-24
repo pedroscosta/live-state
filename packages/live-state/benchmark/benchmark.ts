@@ -91,9 +91,35 @@ const publicRoute = routeFactory();
 const benchmarkRouter = router({
   schema: benchmarkSchema,
   routes: {
-    orgs: publicRoute.collectionRoute(benchmarkSchema.orgs),
-    users: publicRoute.collectionRoute(benchmarkSchema.users),
-    posts: publicRoute.collectionRoute(benchmarkSchema.posts),
+    orgs: publicRoute
+      .collectionRoute(benchmarkSchema.orgs)
+      .withProcedures(({ query }) => ({
+        all: query().handler(({ db }) => db.orgs),
+        nestedInclude: query().handler(({ db }) =>
+          db.orgs.include({
+            posts: {
+              include: {
+                comments: {
+                  include: {
+                    author: true,
+                  },
+                },
+                author: true,
+              },
+            },
+          })
+        ),
+      })),
+    users: publicRoute
+      .collectionRoute(benchmarkSchema.users)
+      .withProcedures(({ query }) => ({
+        all: query().handler(({ db }) => db.users),
+      })),
+    posts: publicRoute
+      .collectionRoute(benchmarkSchema.posts)
+      .withProcedures(({ query }) => ({
+        all: query().handler(({ db }) => db.posts),
+      })),
     comments: publicRoute
       .collectionRoute(benchmarkSchema.comments)
       .withProcedures(({ mutation }) => ({
@@ -362,18 +388,7 @@ class BenchmarkRunner {
 
     for (let i = 0; i < iterations; i++) {
       const start = performance.now();
-      await this.fetchClient!.query.orgs.include({
-        posts: {
-          include: {
-            comments: {
-              include: {
-                author: true,
-              },
-            },
-            author: true,
-          },
-        },
-      }).get();
+      await this.fetchClient!.query.orgs.nestedInclude();
       const end = performance.now();
       times.push(end - start);
     }
@@ -399,20 +414,7 @@ class BenchmarkRunner {
 
     // Subscribe to deep query: orgs with nested includes
     const unsubscribe = this.wsClient?.client.load(
-      this.wsClient?.store.query.orgs
-        .include({
-          posts: {
-            include: {
-              comments: {
-                include: {
-                  author: true,
-                },
-              },
-              author: true,
-            },
-          },
-        })
-        .buildQueryRequest(),
+      this.wsClient!.store.query.orgs.nestedInclude().buildQueryRequest(),
     );
 
     // Track pending mutations by resourceId
@@ -433,9 +435,9 @@ class BenchmarkRunner {
     });
 
     // Get initial data to work with
-    const orgs = await this.fetchClient!.query.orgs.get();
-    const users = await this.fetchClient!.query.users.get();
-    const posts = await this.fetchClient!.query.posts.get();
+    const orgs = await this.fetchClient!.query.orgs.all();
+    const users = await this.fetchClient!.query.users.all();
+    const posts = await this.fetchClient!.query.posts.all();
 
     if (orgs.length === 0 || users.length === 0 || posts.length === 0) {
       throw new Error(

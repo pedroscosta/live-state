@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { QueryBuilder } from '../core/query';
-import type {
-	CustomQueryRequest,
-	RawQueryRequest,
-} from '../core/schemas/core-protocol';
+import type { CustomQueryRequest } from '../core/schemas/core-protocol';
 import { hash } from '../utils';
 import type { Client } from '.';
 import type { ClientRouterConstraint } from './types';
@@ -132,7 +129,7 @@ export const useClientState = (
 export const useLoadData = (
 	client: Client<ClientRouterConstraint>['client'],
 	query: {
-		buildQueryRequest: () => RawQueryRequest | CustomQueryRequest;
+		buildQueryRequest: () => CustomQueryRequest;
 	},
 ) => {
 	useEffect(() => {

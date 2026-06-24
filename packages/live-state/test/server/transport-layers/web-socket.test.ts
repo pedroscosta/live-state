@@ -43,9 +43,20 @@ describe("webSocketAdapter", () => {
         return vi.fn(); // unsubscribe function
       }),
       contextProvider: vi.fn().mockReturnValue({ userId: "user123" }),
-      handleQuery: vi.fn().mockResolvedValue({
-        data: [{ value: { id: { value: "user1" }, name: { value: "John" } } }],
-      }),
+      // Inbound SUBSCRIBE/QUERY are now Custom Query requests (ADR-0002). A
+      // subscription resolves to `{ data, query, unsubscribe }`; a one-shot
+      // QUERY resolves to the plain handler value.
+      handleCustomQuery: vi.fn().mockImplementation((opts: any) =>
+        opts?.subscription
+          ? {
+              data: [
+                { value: { id: { value: "user1" }, name: { value: "John" } } },
+              ],
+              query: { resource: "users" },
+              unsubscribe: vi.fn(),
+            }
+          : [{ id: "user1", name: "John" }],
+      ),
       handleMutation: vi.fn().mockResolvedValue({
         data: { name: "John Updated" },
         acceptedValues: { name: "John Updated" },
@@ -118,17 +129,19 @@ describe("webSocketAdapter", () => {
     const subscribeMessage = {
       type: "SUBSCRIBE",
       resource: "users",
+      procedure: "list",
       id: "msg-1",
     };
 
     await messageHandler(Buffer.from(JSON.stringify(subscribeMessage)));
 
-    // Verify handleQuery was called with subscription callback
-    expect(mockServer.handleQuery).toHaveBeenCalledWith(
+    // Verify handleCustomQuery was called with subscription callback
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         req: expect.objectContaining({
-          type: "QUERY",
+          type: "CUSTOM_QUERY",
           resource: "users",
+          procedure: "list",
           context: { userId: "user123" },
           headers: expect.objectContaining({ cookie: "sessionId=abc123" }),
           cookies: { sessionId: "abc123" },
@@ -159,15 +172,17 @@ describe("webSocketAdapter", () => {
     const queryMessage = {
       type: "QUERY",
       resource: "users",
+      procedure: "list",
       id: "msg-1",
     } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
-    expect(mockServer.handleQuery).toHaveBeenCalledWith({
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
-        type: "QUERY",
+        type: "CUSTOM_QUERY",
         resource: "users",
+        procedure: "list",
         context: { userId: "user123" },
         headers: expect.objectContaining({
           cookie: "sessionId=abc123",
@@ -176,14 +191,12 @@ describe("webSocketAdapter", () => {
       }),
     });
 
+    // A one-shot QUERY replies with the handler's plain value
     expect(mockWebSocket.send).toHaveBeenCalledWith(
       JSON.stringify({
         id: "msg-1",
         type: "REPLY",
-        data: {
-          resource: "users",
-          data: [{ id: { value: "user1" }, name: { value: "John" } }],
-        },
+        data: [{ id: "user1", name: "John" }],
       }),
     );
   });
@@ -199,24 +212,25 @@ describe("webSocketAdapter", () => {
       type: "QUERY",
       id: "msg-1",
       resource: "users",
+      procedure: "list",
     } satisfies ClientMessage;
     const queryMessage2 = {
       type: "QUERY",
       id: "msg-2",
       resource: "posts",
+      procedure: "list",
     } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage1)));
     await messageHandler(Buffer.from(JSON.stringify(queryMessage2)));
 
-    // Should query all resources in schema
-    expect(mockServer.handleQuery).toHaveBeenCalledTimes(2);
-    expect(mockServer.handleQuery).toHaveBeenCalledWith({
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledTimes(2);
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         resource: "users",
       }),
     });
-    expect(mockServer.handleQuery).toHaveBeenCalledWith({
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         resource: "posts",
       }),
@@ -421,10 +435,11 @@ describe("webSocketAdapter", () => {
       (call) => call[0] === "close",
     )?.[1];
 
-    // Create a mock unsubscribe function returned by handleQuery
+    // Create a mock unsubscribe function returned by handleCustomQuery
     const unsubscribe = vi.fn();
-    (mockServer.handleQuery as Mock).mockResolvedValueOnce({
+    (mockServer.handleCustomQuery as Mock).mockResolvedValueOnce({
       data: [{ value: { id: { value: "user1" }, name: { value: "John" } } }],
+      query: { resource: "users" },
       unsubscribe,
     });
 
@@ -436,6 +451,7 @@ describe("webSocketAdapter", () => {
     const subscribeMessage = {
       type: "SUBSCRIBE",
       resource: "users",
+      procedure: "list",
       id: "msg-1",
     };
 
@@ -464,13 +480,14 @@ describe("webSocketAdapter", () => {
     const subscribeMessage = {
       type: "SUBSCRIBE",
       resource: "users",
+      procedure: "list",
       id: "sub-1",
     };
 
     await messageHandler!(Buffer.from(JSON.stringify(subscribeMessage)));
 
     // Get the subscription handler that was registered
-    const subscriptionHandler = (mockServer.handleQuery as Mock).mock.calls
+    const subscriptionHandler = (mockServer.handleCustomQuery as Mock).mock.calls
       .map((call) => call[0]?.subscription)
       .find((handler) => typeof handler === "function");
 
@@ -514,13 +531,14 @@ describe("webSocketAdapter", () => {
     const subscribeMessage = {
       type: "SUBSCRIBE",
       resource: "users",
+      procedure: "list",
       id: "sub-1",
     };
 
     await messageHandler!(Buffer.from(JSON.stringify(subscribeMessage)));
 
     // Get the subscription handler that was registered
-    const subscriptionHandler = (mockServer.handleQuery as Mock).mock.calls
+    const subscriptionHandler = (mockServer.handleCustomQuery as Mock).mock.calls
       .map((call) => call[0]?.subscription)
       .find((handler) => typeof handler === "function");
 
@@ -558,12 +576,13 @@ describe("webSocketAdapter", () => {
     const queryMessage = {
       type: "QUERY",
       resource: "users",
+      procedure: "list",
       id: "msg-1",
     } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
-    expect(mockServer.handleQuery).toHaveBeenCalledWith({
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: { userId: "async-user" },
       }),
@@ -582,12 +601,13 @@ describe("webSocketAdapter", () => {
     const queryMessage = {
       type: "QUERY",
       resource: "users",
+      procedure: "list",
       id: "msg-1",
     } satisfies ClientMessage;
 
     await messageHandler(Buffer.from(JSON.stringify(queryMessage)));
 
-    expect(mockServer.handleQuery).toHaveBeenCalledWith({
+    expect(mockServer.handleCustomQuery).toHaveBeenCalledWith({
       req: expect.objectContaining({
         context: {},
       }),
@@ -633,11 +653,12 @@ describe("webSocketAdapter", () => {
 
     const queryMessage = {
       type: "QUERY",
-      resources: ["users"],
+      resource: "users",
+      procedure: "list",
       id: "msg-1",
-    };
+    } satisfies ClientMessage;
 
-    (mockServer.handleQuery as Mock).mockResolvedValue(null);
+    (mockServer.handleCustomQuery as Mock).mockResolvedValue(null);
 
     await expect(
       messageHandler(Buffer.from(JSON.stringify(queryMessage))),

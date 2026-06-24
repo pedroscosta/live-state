@@ -312,12 +312,11 @@ describe("custom queries - fetch client", () => {
     >();
   });
 
-  test("should still have access to standard QueryBuilder methods with Promise", () => {
-    const standardGet = fetchClient.query.users.get;
-
-    expectTypeOf(standardGet).returns.toEqualTypeOf<
-      Promise<{ id: string; name: string; email: string; age: number }[]>
-    >();
+  test("should NOT expose the Default Query builder (custom-query-only)", () => {
+    // The fetch client has no local store, so it exposes only Custom Query
+    // procedures — no `.get()`/`.where()` Local Query builder (ADR-0002).
+    expectTypeOf(fetchClient.query.users).not.toHaveProperty("get");
+    expectTypeOf(fetchClient.query.users).not.toHaveProperty("where");
   });
 });
 
@@ -555,8 +554,11 @@ describe("procedure-only routes - fetch client", () => {
     expectTypeOf(fetchClientWithProcedures.mutate.analytics).toHaveProperty("importData");
   });
 
-  test("collection routes still expose query methods", () => {
-    expectTypeOf(fetchClientWithProcedures.query.users.get).toBeFunction();
+  test("collection routes expose only custom query procedures (no builder)", () => {
+    // Fetch is custom-query-only — the Default Query builder is gone (ADR-0002).
+    expectTypeOf(fetchClientWithProcedures.query.users).not.toHaveProperty(
+      "get"
+    );
   });
 });
 

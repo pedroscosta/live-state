@@ -85,11 +85,29 @@ const publicRoute = routeFactory();
 export const benchmarkRouter = router({
   schema: benchmarkSchema,
   routes: {
-    orgs: publicRoute.collectionRoute(benchmarkSchema.orgs),
+    // Tracked Custom Queries replace the removed server-bound Default Query
+    // (ADR-0002); receivers subscribe via `store.query.<resource>.<proc>()`.
+    orgs: publicRoute
+      .collectionRoute(benchmarkSchema.orgs)
+      .withProcedures(({ query }) => ({
+        // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
+        listDeep: query().handler(({ db }: any) =>
+          db.orgs.include({
+            posts: {
+              include: {
+                comments: { include: { author: true } },
+                author: true,
+              },
+            },
+          })
+        ),
+      })),
     users: publicRoute.collectionRoute(benchmarkSchema.users),
     posts: publicRoute
       .collectionRoute(benchmarkSchema.posts)
-      .withProcedures(({ mutation }) => ({
+      .withProcedures(({ mutation, query }) => ({
+        // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
+        list: query().handler(({ db }: any) => db.posts),
         update: mutation(
           z.object({ id: z.string() }).and(z.record(z.string(), z.any()))
         ).handler(
@@ -99,7 +117,13 @@ export const benchmarkRouter = router({
       })),
     comments: publicRoute
       .collectionRoute(benchmarkSchema.comments)
-      .withProcedures(({ mutation }) => ({
+      .withProcedures(({ mutation, query }) => ({
+        // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
+        list: query().handler(({ db }: any) => db.comments),
+        listWithRelations: query().handler(
+          // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
+          ({ db }: any) => db.comments.include({ post: true, author: true })
+        ),
         insert: mutation(z.record(z.string(), z.any())).handler(
           // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in bench helper
           async ({ req, db }: any) => db.comments.insert(req.input)

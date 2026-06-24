@@ -95,24 +95,37 @@ export type ClientRouterConstraint = {
   >;
 };
 
+type CustomQueryMethods<
+  TRoute extends ClientRouterConstraint["routes"][string],
+  TShouldAwait extends boolean,
+> = {
+  [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
+    InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
+    ReturnType<TRoute["customQueries"][K2]["handler"]>,
+    TShouldAwait
+  >;
+};
+
+/**
+ * The client `store.query.<resource>` surface, asymmetric by client (ADR-0002):
+ *
+ * - **Websocket** (`TShouldAwait = false`): the `QueryBuilder` survives as a
+ *   **Local Query** — `.where()/.get()/.subscribe()` read the optimistic store
+ *   with no server round-trip (consumed by `useLiveQuery`) — alongside the
+ *   declared **Custom Query** procedures.
+ * - **Fetch** (`TShouldAwait = true`): no optimistic store to back a Local
+ *   Query, so only the declared Custom Query procedures are exposed. The
+ *   removed Default Query was the server-bound raw read, not these.
+ */
 type CollectionQueryType<
   TRoute extends ClientRouterConstraint["routes"][string],
   TShouldAwait extends boolean,
-> = TRoute["resourceSchema"] extends LiveObjectAny
-  ? QueryBuilder<TRoute["resourceSchema"], {}, false, TShouldAwait> & {
-      [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
-        InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
-        ReturnType<TRoute["customQueries"][K2]["handler"]>,
-        TShouldAwait
-      >;
-    }
-  : {
-      [K2 in keyof TRoute["customQueries"]]: CustomQueryFunction<
-        InferSchema<TRoute["customQueries"][K2]["inputValidator"]>,
-        ReturnType<TRoute["customQueries"][K2]["handler"]>,
-        TShouldAwait
-      >;
-    };
+> = TShouldAwait extends true
+  ? CustomQueryMethods<TRoute, TShouldAwait>
+  : TRoute["resourceSchema"] extends LiveObjectAny
+    ? QueryBuilder<TRoute["resourceSchema"], {}, false, TShouldAwait> &
+        CustomQueryMethods<TRoute, TShouldAwait>
+    : CustomQueryMethods<TRoute, TShouldAwait>;
 
 type CollectionMutateType<
   TRoute extends ClientRouterConstraint["routes"][string],

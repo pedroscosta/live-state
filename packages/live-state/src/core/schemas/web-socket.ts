@@ -3,7 +3,6 @@ import {
 	customQuerySchema,
 	genericMutationSchema,
 	queryPayloadSchema,
-	querySchema,
 	syncDeltaSchema,
 } from './core-protocol';
 
@@ -13,7 +12,9 @@ export const msgId = z.string();
  * Client messages
  */
 
-const queryRequestSchema = z.union([customQuerySchema, querySchema]);
+// Inbound query messages are unconditionally Custom Query requests; the Default
+// Query (raw `where`/`include`) path was removed (see ADR-0002).
+const queryRequestSchema = customQuerySchema;
 
 export const clSubscribeMsgSchema = z
 	.object({

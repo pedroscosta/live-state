@@ -12,7 +12,6 @@ import { Schema } from "../../src/schema";
 import {
   Middleware,
   MutationRequest,
-  QueryRequest,
   Server,
   server,
 } from "../../src/server";
@@ -28,7 +27,12 @@ describe("Server", () => {
     mockRouter = {
       routes: {
         users: {
-          handleQuery: vi.fn().mockResolvedValue({ data: [] }),
+          // A Custom Query handler returning an unresolved builder is subscribed
+          // as a Tracked Query and resolved via the engine (ADR-0002). This is
+          // the query path now that `Server.handleQuery` is removed.
+          handleCustomQuery: vi
+            .fn()
+            .mockResolvedValue({ buildQueryRequest: () => ({ resource: "users" }) }),
           handleMutation: vi.fn().mockResolvedValue({ data: {} }),
         },
       },
@@ -155,9 +159,23 @@ describe("Server", () => {
     expect(serverInstance.contextProvider).toBe(contextProvider);
   });
 
+  // The inbound query path is now a Custom Query (ADR-0002): the route handler
+  // returns an unresolved builder, which the server resolves/subscribes through
+  // the QueryEngine. `Server.handleQuery` is gone, so these exercise the same
+  // engine + middleware wiring via `handleCustomQuery`.
+  const customQueryRequest = {
+    type: "CUSTOM_QUERY" as const,
+    resource: "users",
+    procedure: "list",
+    input: undefined,
+    headers: {},
+    cookies: {},
+    queryParams: {},
+    context: {},
+  };
+
   test("should handle query request through QueryEngine", async () => {
-    const expectedData = [{ id: "1" }];
-    (QueryEngine.prototype.get as Mock).mockResolvedValue(expectedData);
+    (QueryEngine.prototype.get as Mock).mockResolvedValue([]);
 
     const serverInstance = Server.create({
       router: mockRouter,
@@ -165,19 +183,12 @@ describe("Server", () => {
       schema: mockSchema,
     });
 
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {},
-    };
-
-    const result = await serverInstance.handleQuery({ req: mockRequest });
+    const result = await serverInstance.handleCustomQuery({
+      req: { ...customQueryRequest },
+    });
 
     expect(QueryEngine.prototype.get).toHaveBeenCalledWith(
-      { type: "QUERY", resource: "users" },
+      { resource: "users" },
       {
         context: {
           headers: {},
@@ -187,14 +198,13 @@ describe("Server", () => {
         },
       }
     );
-    expect(result.data).toEqual(expectedData);
-    expect(result.unsubscribe).toBeUndefined();
+    expect(result).toEqual([]);
   });
 
   test("should subscribe when subscription handler is provided", async () => {
     const unsubscribe = vi.fn();
     const subscriptionHandler = vi.fn();
-    (QueryEngine.prototype.get as Mock).mockResolvedValue([{ id: "1" }]);
+    (QueryEngine.prototype.get as Mock).mockResolvedValue([]);
     (QueryEngine.prototype.subscribe as Mock).mockReturnValue(unsubscribe);
 
     const serverInstance = Server.create({
@@ -203,22 +213,13 @@ describe("Server", () => {
       schema: mockSchema,
     });
 
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {},
-    };
-
-    const result = await serverInstance.handleQuery({
-      req: mockRequest,
+    const result = await serverInstance.handleCustomQuery({
+      req: { ...customQueryRequest },
       subscription: subscriptionHandler,
     });
 
     expect(QueryEngine.prototype.subscribe).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "QUERY", resource: "users" }),
+      expect.objectContaining({ resource: "users" }),
       expect.any(Function),
       expect.objectContaining({
         headers: {},
@@ -260,16 +261,17 @@ describe("Server", () => {
       middlewares: [middleware1, middleware2],
     });
 
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {},
-    };
-
-    await serverInstance.handleQuery({ req: mockRequest });
+    await serverInstance.handleCustomQuery({
+      req: {
+        type: "CUSTOM_QUERY",
+        resource: "users",
+        procedure: "list",
+        headers: {},
+        cookies: {},
+        queryParams: {},
+        context: {},
+      },
+    });
 
     expect(executionOrder).toEqual([
       "server-middleware1-before",
@@ -292,19 +294,20 @@ describe("Server", () => {
       middlewares: [modifyingMiddleware],
     });
 
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {},
-    };
-
-    await serverInstance.handleQuery({ req: mockRequest });
+    await serverInstance.handleCustomQuery({
+      req: {
+        type: "CUSTOM_QUERY",
+        resource: "users",
+        procedure: "list",
+        headers: {},
+        cookies: {},
+        queryParams: {},
+        context: {},
+      },
+    });
 
     expect(QueryEngine.prototype.get).toHaveBeenCalledWith(
-      { type: "QUERY", resource: "users" },
+      { resource: "users" },
       {
         context: expect.objectContaining({
           context: { modified: true },
@@ -327,19 +330,20 @@ describe("Server", () => {
       middlewares: [asyncMiddleware],
     });
 
-    const mockRequest: QueryRequest = {
-      type: "QUERY",
-      resource: "users",
-      headers: {},
-      cookies: {},
-      queryParams: {},
-      context: {},
-    };
-
-    await serverInstance.handleQuery({ req: mockRequest });
+    await serverInstance.handleCustomQuery({
+      req: {
+        type: "CUSTOM_QUERY",
+        resource: "users",
+        procedure: "list",
+        headers: {},
+        cookies: {},
+        queryParams: {},
+        context: {},
+      },
+    });
 
     expect(QueryEngine.prototype.get).toHaveBeenCalledWith(
-      { type: "QUERY", resource: "users" },
+      { resource: "users" },
       {
         context: expect.objectContaining({
           context: { async: true },
