@@ -293,13 +293,22 @@ describe("Transaction Sync E2E Tests", () => {
 	// wait for the data rather than guessing a delay. See ADR-0002.
 	const waitUntil = async (
 		predicate: () => boolean | Promise<boolean>,
-		{ timeout = 2000, interval = 25 }: { timeout?: number; interval?: number } = {},
+		{
+			timeout = 2000,
+			interval = 25,
+			description = "condition",
+		}: { timeout?: number; interval?: number; description?: string } = {},
 	) => {
 		const start = Date.now();
 		while (Date.now() - start < timeout) {
 			if (await predicate()) return;
 			await new Promise((resolve) => setTimeout(resolve, interval));
 		}
+		// Fail closed: a silent fall-through would let the test continue with
+		// stale state and hide the real failure mode.
+		throw new Error(
+			`waitUntil timed out after ${timeout}ms waiting for ${description}`,
+		);
 	};
 
 	// A Custom Query subscription is established server-side only after its
@@ -311,8 +320,9 @@ describe("Transaction Sync E2E Tests", () => {
 	// loaded subscriptions are established before the test mutates.
 	const waitForBootstrap = (
 		client: ReturnType<typeof createClient<typeof testRouter>>,
+		{ timeout = 3000 }: { timeout?: number } = {},
 	) =>
-		new Promise<void>((resolve) => {
+		new Promise<void>((resolve, reject) => {
 			let lastReply = Date.now();
 			const start = Date.now();
 			const unsub = client.client.addEventListener((e) => {
@@ -321,9 +331,18 @@ describe("Transaction Sync E2E Tests", () => {
 			const check = () => {
 				const remote = client.client.bootstrapStatus === "remote";
 				const quiet = Date.now() - lastReply > 150;
-				if ((remote && quiet) || Date.now() - start > 3000) {
+				if (remote && quiet) {
 					unsub();
 					resolve();
+				} else if (Date.now() - start > timeout) {
+					// Fail closed: don't let setup proceed with subscriptions still
+					// unready — that reintroduces the race this helper removes.
+					unsub();
+					reject(
+						new Error(
+							`waitForBootstrap timed out after ${timeout}ms: client never reached a quiet "remote" bootstrap state`,
+						),
+					);
 				} else {
 					setTimeout(check, 25);
 				}

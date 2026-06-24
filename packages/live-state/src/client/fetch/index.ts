@@ -60,6 +60,9 @@ const safeFetch = async (
 export const createClient = <TRouter extends ClientRouterConstraint>(
   opts: FetchClientOptions,
 ): Client<TRouter, true> => {
+  // Normalize the base URL so joining paths never produces a double slash.
+  const baseUrl = opts.url.replace(/\/+$/, "");
+
   return {
     query: new Proxy({} as Client<TRouter, true>["query"], {
       get(_, prop) {
@@ -73,7 +76,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
                 const headers =
                   (await consumeGeneratable(opts.credentials)) ?? {};
                 return await safeFetch(
-                  `${opts.url}/${prop as string}/query/${queryProp as string}`,
+                  `${baseUrl}/${prop as string}/query/${queryProp as string}`,
                   {
                     method: "POST",
                     headers: {
@@ -104,7 +107,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
         const headers = (await consumeGeneratable(opts.credentials)) ?? {};
 
         return await safeFetch(
-          `${opts.url}/${route}/${method}`,
+          `${baseUrl}/${route}/${method}`,
           {
             method: "POST",
             headers: {

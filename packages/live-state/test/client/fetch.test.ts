@@ -595,7 +595,7 @@ describe("createClient", () => {
       await client.query.users.list();
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:3000//users/query/list",
+        "http://localhost:3000/users/query/list",
         expect.any(Object)
       );
     });
