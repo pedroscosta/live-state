@@ -325,7 +325,6 @@ export class Route<
         resource: req.resource,
         where: req.where,
         include: req.include,
-        lastSyncedAt: req.lastSyncedAt,
         limit: req.limit,
         sort: req.sort,
       };

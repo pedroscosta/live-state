@@ -78,7 +78,9 @@ const testRouter = router({
 	routes: {
 		users: publicRoute
 			.collectionRoute(testSchema.users)
-			.withProcedures(({ mutation }) => ({
+			.withProcedures(({ mutation, query }) => ({
+				// Tracked Custom Query loading the whole collection (ADR-0002).
+				list: query().handler(({ db }) => db.users),
 				insert: mutation(
 					z.object({
 						id: z.string(),
@@ -449,15 +451,17 @@ describe("Procedure-Only Routes E2E", () => {
 	});
 
 	describe("Collection routes still work alongside procedure routes", () => {
-		test("should still support collection queries via WS", async () => {
+		test("should load a collection via a Custom Query and read it locally", async () => {
 			await storage.insert(testSchema.users, {
 				id: generateId(),
 				name: "Alice",
 				email: "alice@test.com",
 			});
 
+			// Load via a Custom Query (the server-bound Default Query was removed),
+			// then read the optimistic store with a Local Query. See ADR-0002.
 			await wsClient.client.load(
-				wsClient.store.query.users.buildQueryRequest(),
+				wsClient.store.query.users.list().buildQueryRequest(),
 			);
 
 			// Wait for data to load

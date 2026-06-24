@@ -70,6 +70,7 @@ const testRouter = router({
 		posts: publicRoute
 			.collectionRoute(testSchema.posts)
 			.withProcedures(({ query }) => ({
+				list: query().handler(({ db }) => db.posts),
 				paginatedPosts: query(
 					z.object({
 						cursor: z.number().optional(),
@@ -190,7 +191,7 @@ describe('Cursor-Based Pagination End-to-End Tests', () => {
 		});
 
 		await wsClient.client.load(
-			wsClient.store.query.posts.buildQueryRequest(),
+			wsClient.store.query.posts.list().buildQueryRequest(),
 		);
 		await waitForConnection(wsClient);
 
@@ -247,85 +248,12 @@ describe('Cursor-Based Pagination End-to-End Tests', () => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	};
 
-	describe('Fetch Client - Default Query Pagination', () => {
-		test('should paginate through posts using orderBy, limit, and where $gt', async () => {
-			await insertPosts([1, 2, 3, 4, 5]);
+	// The fetch client has no Local Query (no optimistic store) and the
+	// server-bound Default Query is removed (ADR-0002), so client-driven
+	// fetch pagination now goes exclusively through the `paginatedPosts`
+	// Custom Query — see "Fetch Client - Custom Query Pagination" below.
 
-			// Page 1: first 2 posts ordered by likes
-			const page1 = await fetchClient.query.posts
-				.orderBy('likes', 'asc')
-				.limit(2)
-				.get();
-
-			expect(page1).toHaveLength(2);
-			expect(page1[0].likes).toBe(1);
-			expect(page1[1].likes).toBe(2);
-
-			// Page 2: next 2 posts after cursor (likes > 2)
-			const page2 = await fetchClient.query.posts
-				.where({ likes: { $gt: 2 } })
-				.orderBy('likes', 'asc')
-				.limit(2)
-				.get();
-
-			expect(page2).toHaveLength(2);
-			expect(page2[0].likes).toBe(3);
-			expect(page2[1].likes).toBe(4);
-
-			// Page 3: remaining posts after cursor (likes > 4)
-			const page3 = await fetchClient.query.posts
-				.where({ likes: { $gt: 4 } })
-				.orderBy('likes', 'asc')
-				.limit(2)
-				.get();
-
-			expect(page3).toHaveLength(1);
-			expect(page3[0].likes).toBe(5);
-
-			// Page 4: no more posts (likes > 5)
-			const page4 = await fetchClient.query.posts
-				.where({ likes: { $gt: 5 } })
-				.orderBy('likes', 'asc')
-				.limit(2)
-				.get();
-
-			expect(page4).toHaveLength(0);
-		});
-
-		test('should paginate in descending order', async () => {
-			await insertPosts([1, 2, 3, 4, 5]);
-
-			const page1 = await fetchClient.query.posts
-				.orderBy('likes', 'desc')
-				.limit(2)
-				.get();
-
-			expect(page1).toHaveLength(2);
-			expect(page1[0].likes).toBe(5);
-			expect(page1[1].likes).toBe(4);
-
-			const page2 = await fetchClient.query.posts
-				.where({ likes: { $lt: 4 } })
-				.orderBy('likes', 'desc')
-				.limit(2)
-				.get();
-
-			expect(page2).toHaveLength(2);
-			expect(page2[0].likes).toBe(3);
-			expect(page2[1].likes).toBe(2);
-
-			const page3 = await fetchClient.query.posts
-				.where({ likes: { $lt: 2 } })
-				.orderBy('likes', 'desc')
-				.limit(2)
-				.get();
-
-			expect(page3).toHaveLength(1);
-			expect(page3[0].likes).toBe(1);
-		});
-	});
-
-	describe('WebSocket Client - Default Query Pagination', () => {
+	describe('WebSocket Client - Local Query Pagination', () => {
 		test('should paginate through posts using orderBy, limit, and where $gt', async () => {
 			await insertPosts([1, 2, 3, 4, 5]);
 
@@ -560,15 +488,6 @@ describe('Cursor-Based Pagination End-to-End Tests', () => {
 	});
 
 	describe('Edge Cases', () => {
-		test('should return empty results for empty dataset', async () => {
-			const result = await fetchClient.query.posts
-				.orderBy('likes', 'asc')
-				.limit(10)
-				.get();
-
-			expect(result).toHaveLength(0);
-		});
-
 		test('should return empty results for custom query on empty dataset', async () => {
 			const result = await fetchClient.query.posts.paginatedPosts({
 				pageSize: 10,
@@ -579,38 +498,16 @@ describe('Cursor-Based Pagination End-to-End Tests', () => {
 			expect(result.nextCursor).toBeNull();
 		});
 
-		test('should handle single item dataset', async () => {
+		test('should handle single item dataset with custom query', async () => {
 			await insertPosts([42]);
 
-			const page1 = await fetchClient.query.posts
-				.orderBy('likes', 'asc')
-				.limit(2)
-				.get();
+			const page1 = await fetchClient.query.posts.paginatedPosts({
+				pageSize: 2,
+			});
 
-			expect(page1).toHaveLength(1);
-			expect(page1[0].likes).toBe(42);
-
-			const page2 = await fetchClient.query.posts
-				.where({ likes: { $gt: 42 } })
-				.orderBy('likes', 'asc')
-				.limit(2)
-				.get();
-
-			expect(page2).toHaveLength(0);
-		});
-
-		test('should handle page size larger than total items', async () => {
-			await insertPosts([1, 2, 3]);
-
-			const result = await fetchClient.query.posts
-				.orderBy('likes', 'asc')
-				.limit(100)
-				.get();
-
-			expect(result).toHaveLength(3);
-			expect(result[0].likes).toBe(1);
-			expect(result[1].likes).toBe(2);
-			expect(result[2].likes).toBe(3);
+			expect(page1.data).toHaveLength(1);
+			expect(page1.data[0].likes).toBe(42);
+			expect(page1.hasMore).toBe(false);
 		});
 
 		test('should handle page size larger than total items with custom query', async () => {

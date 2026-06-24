@@ -70,9 +70,11 @@ export const routerImpl = router({
         }),
 
         // [LIVE QUERY] returns an UNRESOLVED query builder (no `.get()`), so the
-        // client can subscribe to it: `store.query.groups.listGroups()` is a
-        // loadable that feeds the store and stays live. Use it with useLoadData
-        // (or useLiveQuery) instead of the default collection query.
+        // client can subscribe to it as a Tracked Query: feed the optimistic
+        // store with `useLoadData(client, store.query.groups.listGroups())`,
+        // then read it reactively with a Local Query
+        // (`useLiveQuery(store.query.groups)`). The server-bound Default Query
+        // was removed — see ADR-0002.
         listGroups: query().handler(async ({ db }) =>
           db.groups.where({}).include({ cards: true }),
         ),

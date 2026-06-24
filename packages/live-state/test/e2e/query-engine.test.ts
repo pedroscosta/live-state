@@ -137,6 +137,33 @@ describe("Query Engine Functional Requirements", () => {
   let commentId5: string;
   let commentId6: string;
 
+  // `Server.handleQuery` (the inbound Default Query entry point) was removed
+  // with the default-query path (ADR-0002). These tests exercise the query
+  // engine directly, which still exists as `server.queryEngine`. This shim
+  // preserves the old `handleQuery({ req })` shape over the engine so the
+  // engine's resolution/include/realtime behavior stays covered.
+  const handleQuery = async (opts: {
+    // biome-ignore lint/suspicious/noExplicitAny: test shim mirrors the old request shape
+    req: any;
+    // biome-ignore lint/suspicious/noExplicitAny: test shim mirrors the old SyncDelta callback
+    subscription?: (mutation: any) => void;
+  }) => {
+    const {
+      type: _type,
+      headers = {},
+      cookies = {},
+      queryParams = {},
+      context = {},
+      ...query
+    } = opts.req;
+    const ctx = { headers, cookies, queryParams, context };
+    const unsubscribe = opts.subscription
+      ? testServer.queryEngine.subscribe(query, opts.subscription, ctx)
+      : undefined;
+    const data = await testServer.queryEngine.get(query, { context: ctx });
+    return { data, unsubscribe };
+  };
+
   beforeAll(async () => {
     pool = new Pool({
       connectionString:
@@ -320,7 +347,7 @@ describe("Query Engine Functional Requirements", () => {
 
   describe("Query Execution", () => {
     test("returns all resources when no filters are applied", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -352,7 +379,7 @@ describe("Query Engine Functional Requirements", () => {
     });
 
     test("returns nested data structure when includes are specified", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -397,7 +424,7 @@ describe("Query Engine Functional Requirements", () => {
 
   describe("Query Filtering with Where Clauses", () => {
     test("filters results by simple field conditions", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -418,7 +445,7 @@ describe("Query Engine Functional Requirements", () => {
     });
 
     test("filters results by relation field conditions", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -439,7 +466,7 @@ describe("Query Engine Functional Requirements", () => {
     });
 
     test("filters results by nested relation field conditions", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -464,7 +491,7 @@ describe("Query Engine Functional Requirements", () => {
     });
 
     test("filters results with combined conditions using $and operator", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -493,7 +520,7 @@ describe("Query Engine Functional Requirements", () => {
     });
 
     test("filters results with $in operator", async () => {
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -518,7 +545,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when matching object is inserted", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -569,7 +596,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers only when inserted object matches where clause", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -635,7 +662,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when inserted object matches relation-based where clause", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -693,7 +720,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when tracked object is updated", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -735,7 +762,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when object transitions from non-matching to matching", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -781,7 +808,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when object transitions from matching to non-matching", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -827,7 +854,7 @@ describe("Query Engine Functional Requirements", () => {
     test("handles object transitioning between matching and non-matching states", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -882,7 +909,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when relation-based filter is affected by author change", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -938,7 +965,7 @@ describe("Query Engine Functional Requirements", () => {
       const query1Mutations: any[] = [];
       const query2Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -955,7 +982,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1013,7 +1040,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when included relation object is created", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1064,7 +1091,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when included relation object is updated", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1106,7 +1133,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when deeply nested included relation is updated", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1160,7 +1187,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when object moves into scope via relation change", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -1219,7 +1246,7 @@ describe("Query Engine Functional Requirements", () => {
     test("notifies subscribers when object moves out of scope via relation change", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -1284,7 +1311,7 @@ describe("Query Engine Functional Requirements", () => {
     test("sends INSERT mutations for entire tree when object moves into scope", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -1355,7 +1382,7 @@ describe("Query Engine Functional Requirements", () => {
     test("handles nested relation changes affecting query scope", async () => {
       const mutations: any[] = [];
 
-      const result = await testServer.handleQuery({
+      const result = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -1429,7 +1456,7 @@ describe("Query Engine Functional Requirements", () => {
       const client2Mutations: any[] = [];
       const client3Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1443,7 +1470,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1457,7 +1484,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result3 = await testServer.handleQuery({
+      const result3 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1530,7 +1557,7 @@ describe("Query Engine Functional Requirements", () => {
       const client1Mutations: any[] = [];
       const client2Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1552,7 +1579,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1648,7 +1675,7 @@ describe("Query Engine Functional Requirements", () => {
       const client2Mutations: any[] = [];
       const client3Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1662,7 +1689,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1676,7 +1703,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result3 = await testServer.handleQuery({
+      const result3 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1763,7 +1790,7 @@ describe("Query Engine Functional Requirements", () => {
       const client1Mutations: any[] = [];
       const client2Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1781,7 +1808,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1855,7 +1882,7 @@ describe("Query Engine Functional Requirements", () => {
       const client1Mutations: any[] = [];
       const client2Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1872,7 +1899,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "posts",
@@ -1932,7 +1959,7 @@ describe("Query Engine Functional Requirements", () => {
       const client2Mutations: any[] = [];
       const client3Mutations: any[] = [];
 
-      const result1 = await testServer.handleQuery({
+      const result1 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -1955,7 +1982,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result2 = await testServer.handleQuery({
+      const result2 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",
@@ -1978,7 +2005,7 @@ describe("Query Engine Functional Requirements", () => {
         },
       });
 
-      const result3 = await testServer.handleQuery({
+      const result3 = await handleQuery({
         req: {
           type: "QUERY",
           resource: "orgs",

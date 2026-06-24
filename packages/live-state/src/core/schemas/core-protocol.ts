@@ -1,10 +1,16 @@
 import { z } from "zod";
 
+/**
+ * Internal Tracked Query representation. A Custom Query handler returns an
+ * unresolved query builder; the server mints a `RawQueryRequest` from it via
+ * `buildQueryRequest()`, which the query engine subscribes and resolves against
+ * storage. This is **not** an inbound client→server message — clients can only
+ * invoke named Custom Query procedures (see ADR-0002).
+ */
 export const querySchema = z.object({
   resource: z.string(),
   where: z.record(z.string(), z.any()).optional(),
   include: z.record(z.string(), z.any()).optional(),
-  lastSyncedAt: z.string().optional(),
   limit: z.coerce.number().optional(),
   sort: z
     .array(z.object({ key: z.string(), direction: z.enum(["asc", "desc"]) }))

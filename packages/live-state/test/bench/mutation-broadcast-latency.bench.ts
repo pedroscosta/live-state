@@ -108,7 +108,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     const simpleSender = await createWSClientAndWait(infra.serverPort);
     const simpleReceiver = await createWSClientAndWait(infra.serverPort);
     simpleReceiver.client.load(
-      simpleReceiver.store.query.comments.buildQueryRequest()
+      simpleReceiver.store.query.comments.list().buildQueryRequest()
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     simpleCommentSetup = {
@@ -122,7 +122,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     const postSender = await createWSClientAndWait(infra.serverPort);
     const postReceiver = await createWSClientAndWait(infra.serverPort);
     postReceiver.client.load(
-      postReceiver.store.query.posts.buildQueryRequest()
+      postReceiver.store.query.posts.list().buildQueryRequest()
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     postUpdateSetup = {
@@ -135,12 +135,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     const commentRelSender = await createWSClientAndWait(infra.serverPort);
     const commentRelReceiver = await createWSClientAndWait(infra.serverPort);
     commentRelReceiver.client.load(
-      commentRelReceiver.store.query.comments
-        .include({
-          post: true,
-          author: true,
-        })
-        .buildQueryRequest()
+      commentRelReceiver.store.query.comments.listWithRelations().buildQueryRequest()
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     commentWithRelationsSetup = {
@@ -154,7 +149,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     const concurrentSender = await createWSClientAndWait(infra.serverPort);
     const concurrentReceiver = await createWSClientAndWait(infra.serverPort);
     concurrentReceiver.client.load(
-      concurrentReceiver.store.query.comments.buildQueryRequest()
+      concurrentReceiver.store.query.comments.list().buildQueryRequest()
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     concurrentMutationsSetup = {
@@ -169,16 +164,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
     const deepSender = await createWSClientAndWait(infra.serverPort);
     const deepReceiver = await createWSClientAndWait(infra.serverPort);
     deepReceiver.client.load(
-      deepReceiver.store.query.orgs
-        .include({
-          posts: {
-            include: {
-              comments: { include: { author: true } },
-              author: true,
-            },
-          },
-        })
-        .buildQueryRequest()
+      deepReceiver.store.query.orgs.listDeep().buildQueryRequest()
     );
     await new Promise((resolve) => setTimeout(resolve, 100));
     deepNestedQuerySetup = {
@@ -261,7 +247,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           const sender = await createWSClientAndWait(infra.serverPort);
           const receiver = await createWSClientAndWait(infra.serverPort);
           receiver.client.load(
-            receiver.store.query.comments.buildQueryRequest()
+            receiver.store.query.comments.list().buildQueryRequest()
           );
           await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -318,7 +304,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
 
           const sender = await createWSClientAndWait(infra.serverPort);
           const receiver = await createWSClientAndWait(infra.serverPort);
-          receiver.client.load(receiver.store.query.posts.buildQueryRequest());
+          receiver.client.load(receiver.store.query.posts.list().buildQueryRequest());
           await new Promise((resolve) => setTimeout(resolve, 100));
 
           postUpdateSetup = {
@@ -378,12 +364,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           const sender = await createWSClientAndWait(infra.serverPort);
           const receiver = await createWSClientAndWait(infra.serverPort);
           receiver.client.load(
-            receiver.store.query.comments
-              .include({
-                post: true,
-                author: true,
-              })
-              .buildQueryRequest()
+            receiver.store.query.comments.listWithRelations().buildQueryRequest()
           );
           await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -458,7 +439,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           const sender = await createWSClientAndWait(infra.serverPort);
           const receiver = await createWSClientAndWait(infra.serverPort);
           receiver.client.load(
-            receiver.store.query.comments.buildQueryRequest()
+            receiver.store.query.comments.list().buildQueryRequest()
           );
           await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -521,16 +502,7 @@ describe("live-state mutation broadcast latency benchmarks", () => {
           const sender = await createWSClientAndWait(infra.serverPort);
           const receiver = await createWSClientAndWait(infra.serverPort);
           receiver.client.load(
-            receiver.store.query.orgs
-              .include({
-                posts: {
-                  comments: {
-                    author: true,
-                  },
-                  author: true,
-                },
-              })
-              .buildQueryRequest()
+            receiver.store.query.orgs.listDeep().buildQueryRequest()
           );
           await new Promise((resolve) => setTimeout(resolve, 100));
 

@@ -10,7 +10,7 @@ import { mergeWhereClauses } from "../core/utils";
 import { inferValue, type Schema, type WhereClause } from "../schema";
 import { createLogger, type Logger, LogLevel } from "../utils";
 import { type Hooks, type HooksRegistry, mergeEntityHooks } from "./hooks";
-import type { AnyRouter, AnyRouteOrProcedure, QueryProcedureRequest, QueryResult, Route } from "./router";
+import type { AnyRouter, AnyRouteOrProcedure, QueryProcedureRequest, Route } from "./router";
 import type { Storage } from "./storage";
 import type { Batcher } from "./storage/batcher";
 
@@ -208,43 +208,6 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
 
   public getHooks(resourceName: string): Hooks<any, any, any> | undefined {
     return this.hooksRegistry.get(resourceName);
-  }
-
-  public async handleQuery(opts: {
-    req: QueryRequest;
-    subscription?: (mutation: SyncDelta) => void;
-  }): Promise<QueryResult<any>> {
-    await this.ensureInitialized();
-
-    return this.wrapInMiddlewares(async (req: QueryRequest) => {
-      const { headers, cookies, queryParams, context, ...rawQuery } = req;
-
-      const ctx = {
-        headers,
-        cookies,
-        queryParams,
-        context,
-      };
-
-      const unsubscribe = opts.subscription
-        ? this.queryEngine.subscribe(
-            rawQuery,
-            (mutation) => {
-              opts.subscription?.(mutation);
-            },
-            ctx
-          )
-        : undefined;
-
-      const data = await this.queryEngine.get(rawQuery, {
-        context: ctx,
-      });
-
-      return {
-        data,
-        unsubscribe,
-      };
-    })(opts.req);
   }
 
   public async handleMutation(opts: { req: MutationRequest }): Promise<any> {

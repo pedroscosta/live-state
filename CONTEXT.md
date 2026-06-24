@@ -16,6 +16,27 @@ A mutation defined explicitly on a route with `withProcedures({ mutation })`. Ha
 **Default Mutation**:
 *(Deprecated, being removed.)* The built-in `insert`/`update` procedures auto-generated on a `Route`, with declarative authorization, lifecycle hooks, and automatic optimistic updates. The removal plan retires this entire concept as a client API.
 
+### Queries
+
+**Query**:
+A client→server read request. Going forward, the only kind a client can send is a **Custom Query** — clients invoke a named query procedure with validated input; they can no longer hand the server an arbitrary read shape.
+_Avoid_: Default Query (being removed).
+
+**Custom Query**:
+A query defined explicitly on a route with `withProcedures({ query })`. Has full handler control over `db` (ServerDB) and any input schema. A handler either returns a plain computed value (one-shot) or returns an unresolved query builder, which the server resolves and subscribes as a **Tracked Query** for realtime updates.
+
+**Default Query**:
+*(Deprecated, being removed.)* The **server-bound** raw-query path: a client authors an arbitrary `where`/`include`/`limit`/`sort` shape and the *server* executes it. Carried by `useLoadData`/`client.load` (raw `RawQueryRequest` over the wire) and the fetch client's GET read. Removal deletes the inbound raw-query message, `Server.handleQuery`, and the raw-query transport branches — clients can only request server reads via a **Custom Query**.
+_Avoid_: conflating with **Local Query** — the client-only read surface survives.
+
+**Local Query**:
+The client-only `store.query.<resource>.where(...).get()/.subscribe()` builder that reads the client's optimistic store with no server round-trip. Consumed by `useLiveQuery`. Survives the Default Query removal: it never hits the server, so it carries no read-authorization or wire-protocol concern. Data reaches the store via **Custom Query** loads (`useLoadData`) and optimistic mutations.
+_Avoid_: Default Query (that is the removed server-bound path).
+
+**Tracked Query**:
+The internal query representation (historically `RawQueryRequest`) the query engine subscribes to and resolves against storage, keyed by `resource`. Minted *server-side* from a Custom Query handler's returned query builder — never sent by a client. Surviving the Default Query removal as engine/storage internals, not a wire-exposed request.
+_Avoid_: treating this as a client-facing request; after removal, clients cannot produce one directly.
+
 ### Sync
 
 **Sync Delta**:

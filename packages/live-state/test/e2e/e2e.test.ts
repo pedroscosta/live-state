@@ -41,8 +41,8 @@ import { z } from "zod";
  */
 const crud =
   (resource: string) =>
-  // biome-ignore lint/suspicious/noExplicitAny: e2e helper accepts the generic mutation builder
-  ({ mutation }: any) => ({
+  // biome-ignore lint/suspicious/noExplicitAny: e2e helper accepts the generic procedure builder
+  ({ mutation, query }: any) => ({
     insert: mutation(z.record(z.string(), z.any())).handler(
       // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in test helper
       async ({ req, db }: any) => db[resource].insert(req.input)
@@ -53,6 +53,11 @@ const crud =
       // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in test helper
       async ({ req, db }: any) => db[resource].update(req.input.id, req.input)
     ),
+    // Custom Query that loads the whole collection as a Tracked Query. Replaces
+    // the removed server-bound Default Query (`client.load(store.query.X)`); the
+    // client subscribes via `store.query.X.list()`. See ADR-0002.
+    // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in test helper
+    list: query().handler(({ db }: any) => db[resource]),
   });
 
 /**
@@ -94,10 +99,29 @@ const testRouter = router({
   routes: {
     users: publicRoute
       .collectionRoute(testSchema.users)
-      .withProcedures(crud("users")),
+      // biome-ignore lint/suspicious/noExplicitAny: generic procedure builder in test helper
+      .withProcedures((opts: any) => ({
+        ...crud("users")(opts),
+        withPosts: opts
+          .query()
+          // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in test helper
+          .handler(({ db }: any) => db.users.include({ posts: true })),
+        withPostsAndAuthor: opts.query().handler(
+          // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in test helper
+          ({ db }: any) =>
+            db.users.include({ posts: { include: { author: true } } })
+        ),
+      })),
     posts: publicRoute
       .collectionRoute(testSchema.posts)
-      .withProcedures(crud("posts")),
+      // biome-ignore lint/suspicious/noExplicitAny: generic procedure builder in test helper
+      .withProcedures((opts: any) => ({
+        ...crud("posts")(opts),
+        withAuthor: opts
+          .query()
+          // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in test helper
+          .handler(({ db }: any) => db.posts.include({ author: true })),
+      })),
   },
 });
 
@@ -192,8 +216,8 @@ describe("End-to-End Query Tests", () => {
       },
     });
 
-    await wsClient.client.load(wsClient.store.query.users.buildQueryRequest());
-    await wsClient.client.load(wsClient.store.query.posts.buildQueryRequest());
+    await wsClient.client.load(wsClient.store.query.users.list().buildQueryRequest());
+    await wsClient.client.load(wsClient.store.query.posts.list().buildQueryRequest());
 
     // Wait for websocket client to connect
     await waitForConnection(wsClient);
@@ -462,10 +486,10 @@ describe("End-to-End Query Tests", () => {
         });
 
         await client1.client.load(
-          client1.store.query.users.buildQueryRequest()
+          client1.store.query.users.list().buildQueryRequest()
         );
         await client1.client.load(
-          client1.store.query.posts.buildQueryRequest()
+          client1.store.query.posts.list().buildQueryRequest()
         );
 
         // Wait for first client to connect
@@ -483,10 +507,10 @@ describe("End-to-End Query Tests", () => {
         });
 
         await client2.client.load(
-          client2.store.query.users.buildQueryRequest()
+          client2.store.query.users.list().buildQueryRequest()
         );
         await client2.client.load(
-          client2.store.query.posts.buildQueryRequest()
+          client2.store.query.posts.list().buildQueryRequest()
         );
 
         // Wait for second client to connect
@@ -764,7 +788,7 @@ describe("End-to-End Query Tests", () => {
   describe("Fetch Client Tests", () => {
     describe("Empty Query", () => {
       test("should handle empty query", async () => {
-        const result = await fetchClient.query.users.get();
+        const result = await fetchClient.query.users.list();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -784,7 +808,7 @@ describe("End-to-End Query Tests", () => {
         // Wait a bit for sync
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await fetchClient.query.users.get();
+        const result = await fetchClient.query.users.list();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -820,9 +844,7 @@ describe("End-to-End Query Tests", () => {
         // Wait a bit for sync
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await fetchClient.query.posts
-          .include({ author: true })
-          .get();
+        const result = await fetchClient.query.posts.withAuthor();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -874,9 +896,7 @@ describe("End-to-End Query Tests", () => {
         // Wait a bit for sync
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await fetchClient.query.users
-          .include({ posts: true })
-          .get();
+        const result = await fetchClient.query.users.withPosts();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -933,11 +953,7 @@ describe("End-to-End Query Tests", () => {
         // Wait a bit for sync
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await fetchClient.query.users
-          .include({
-            posts: { include: { author: true } },
-          })
-          .get();
+        const result = await fetchClient.query.users.withPostsAndAuthor();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -1038,7 +1054,7 @@ describe("End-to-End Query Tests", () => {
         logLevel: LogLevel.DEBUG,
       });
 
-      await client1.client.load(client1.store.query.users.buildQueryRequest());
+      await client1.client.load(client1.store.query.users.list().buildQueryRequest());
       await waitForConnection(client1);
 
       // Create second client with userId2
@@ -1053,7 +1069,7 @@ describe("End-to-End Query Tests", () => {
         logLevel: LogLevel.DEBUG,
       });
 
-      await client2.client.load(client2.store.query.users.buildQueryRequest());
+      await client2.client.load(client2.store.query.users.list().buildQueryRequest());
       await waitForConnection(client2);
     });
 
@@ -1294,28 +1310,30 @@ describe("End-to-End Query Tests", () => {
       const complexRouter = router({
         schema: testSchema,
         routes: {
-          users: complexAuthorizedRoute.collectionRoute(testSchema.users, {
-            read: ({ ctx }) => {
-              // Allow users to see their own data OR users with specific public emails
-              if (ctx.userId) {
-                return {
-                  $or: [
-                    { id: ctx.userId },
-                    {
-                      email: {
-                        $in: ["public@public.com", "anotherpublic@public.com"],
+          users: complexAuthorizedRoute
+            .collectionRoute(testSchema.users, {
+              read: ({ ctx }) => {
+                // Allow users to see their own data OR users with specific public emails
+                if (ctx.userId) {
+                  return {
+                    $or: [
+                      { id: ctx.userId },
+                      {
+                        email: {
+                          $in: ["public@public.com", "anotherpublic@public.com"],
+                        },
                       },
-                    },
-                  ],
+                    ],
+                  };
+                }
+                return {
+                  email: {
+                    $in: ["public@public.com", "anotherpublic@public.com"],
+                  },
                 };
-              }
-              return {
-                email: {
-                  $in: ["public@public.com", "anotherpublic@public.com"],
-                },
-              };
-            },
-          }),
+              },
+            })
+            .withProcedures(crud("users")),
           posts: complexAuthorizedRoute.collectionRoute(testSchema.posts),
         },
       });
@@ -1357,10 +1375,10 @@ describe("End-to-End Query Tests", () => {
       });
 
       await complexClient.client.load(
-        complexClient.store.query.users.buildQueryRequest()
+        complexClient.store.query.users.list().buildQueryRequest()
       );
       await complexClient.client.load(
-        complexClient.store.query.posts.buildQueryRequest()
+        complexClient.store.query.posts.list().buildQueryRequest()
       );
       await waitForConnection(complexClient);
 
@@ -1465,7 +1483,17 @@ describe("End-to-End Query Tests", () => {
       routes: {
         orders: orderRoute
           .collectionRoute(orderSchema.orders)
-          .withProcedures(crud("orders")),
+          // biome-ignore lint/suspicious/noExplicitAny: generic procedure builder in test helper
+          .withProcedures((opts: any) => ({
+            ...crud("orders")(opts),
+            byStatus: opts
+              .query(z.object({ status: z.string() }))
+              .handler(
+                // biome-ignore lint/suspicious/noExplicitAny: generic req/ServerDB in test helper
+                ({ req, db }: any) =>
+                  db.orders.where({ status: req.input.status })
+              ),
+          })),
       },
     });
 
@@ -1526,7 +1554,7 @@ describe("End-to-End Query Tests", () => {
       });
 
       await orderWsClient.client.load(
-        orderWsClient.store.query.orders.buildQueryRequest()
+        orderWsClient.store.query.orders.list().buildQueryRequest()
       );
       await waitForConnection(orderWsClient);
 
@@ -1702,7 +1730,7 @@ describe("End-to-End Query Tests", () => {
         });
 
         await client1.client.load(
-          client1.store.query.orders.buildQueryRequest()
+          client1.store.query.orders.list().buildQueryRequest()
         );
         await waitForConnection(client1);
 
@@ -1717,7 +1745,7 @@ describe("End-to-End Query Tests", () => {
         });
 
         await client2.client.load(
-          client2.store.query.orders.buildQueryRequest()
+          client2.store.query.orders.list().buildQueryRequest()
         );
         await waitForConnection(client2);
 
@@ -1754,7 +1782,7 @@ describe("End-to-End Query Tests", () => {
 
     describe("Fetch Client - Enum Fields", () => {
       test("should handle empty query with enum fields", async () => {
-        const result = await orderFetchClient.query.orders.get();
+        const result = await orderFetchClient.query.orders.list();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -1772,7 +1800,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await orderFetchClient.query.orders.get();
+        const result = await orderFetchClient.query.orders.list();
 
         expect(result.length).toBe(1);
         const order = result[0];
@@ -1800,9 +1828,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await orderFetchClient.query.orders
-          .where({ status: "shipped" })
-          .get();
+        const result = await orderFetchClient.query.orders.byStatus({ status: "shipped" });
 
         expect(result.length).toBe(1);
         expect(result[0].id).toBe(orderId1);
@@ -1907,7 +1933,7 @@ describe("End-to-End Query Tests", () => {
       });
 
       await productWsClient.client.load(
-        productWsClient.store.query.products.buildQueryRequest()
+        productWsClient.store.query.products.list().buildQueryRequest()
       );
       await waitForConnection(productWsClient);
 
@@ -2127,7 +2153,7 @@ describe("End-to-End Query Tests", () => {
         });
 
         await client1.client.load(
-          client1.store.query.products.buildQueryRequest()
+          client1.store.query.products.list().buildQueryRequest()
         );
         await waitForConnection(client1);
 
@@ -2142,7 +2168,7 @@ describe("End-to-End Query Tests", () => {
         });
 
         await client2.client.load(
-          client2.store.query.products.buildQueryRequest()
+          client2.store.query.products.list().buildQueryRequest()
         );
         await waitForConnection(client2);
 
@@ -2238,7 +2264,7 @@ describe("End-to-End Query Tests", () => {
 
     describe("Fetch Client - JSON Fields", () => {
       test("should handle empty query with JSON fields", async () => {
-        const result = await productFetchClient.query.products.get();
+        const result = await productFetchClient.query.products.list();
 
         expect(result).toBeDefined();
         expect(Array.isArray(result)).toBe(true);
@@ -2265,7 +2291,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await productFetchClient.query.products.get();
+        const result = await productFetchClient.query.products.list();
 
         expect(result.length).toBe(1);
         const product = result[0];
@@ -2298,7 +2324,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await productFetchClient.query.products.get();
+        const result = await productFetchClient.query.products.list();
 
         expect(result.length).toBe(1);
         const product = result[0];

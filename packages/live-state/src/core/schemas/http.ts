@@ -1,9 +1,5 @@
 import { z } from "zod";
-import { genericMutationSchema, querySchema } from "./core-protocol";
-
-export const httpQuerySchema = querySchema.omit({
-  resource: true,
-});
+import { genericMutationSchema } from "./core-protocol";
 
 export const httpGenericMutationSchema = genericMutationSchema
   .omit({

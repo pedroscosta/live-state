@@ -75,6 +75,9 @@ const testRouter = router({
     users: publicRoute
       .collectionRoute(testSchema.users)
       .withProcedures(({ mutation, query }) => ({
+        // Tracked Custom Query that loads the whole collection, replacing the
+        // removed server-bound Default Query (ADR-0002).
+        list: query().handler(({ db }) => db.users),
         // Custom query with input - search by name prefix
         getUsersByNamePrefix: query(z.object({ prefix: z.string() })).handler(
           async ({ req, db }) => {
@@ -302,7 +305,7 @@ describe("Custom Procedures End-to-End Tests", () => {
       },
     });
 
-    await wsClient.client.load(wsClient.store.query.users.buildQueryRequest());
+    await wsClient.client.load(wsClient.store.query.users.list().buildQueryRequest());
     await waitForConnection(wsClient);
 
     fetchClient = createFetchClient({
@@ -694,7 +697,7 @@ describe("Custom Procedures End-to-End Tests", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const users = await fetchClient.query.users.get();
+      const users = await fetchClient.query.users.list();
       const updatedUser = users.find((u: any) => u.id === customUserId);
       expect(updatedUser).toBeDefined();
       expect(updatedUser?.name).toBe("[CUSTOM UPDATE] Fetch Renamed Priority User");
@@ -719,7 +722,7 @@ describe("Custom Procedures End-to-End Tests", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Verify the user was created
-      const users = await fetchClient.query.users.get();
+      const users = await fetchClient.query.users.list();
       const createdUser = users.find((u: any) => u.id === result.id);
       expect(createdUser).toBeDefined();
       expect(createdUser?.name).toBe("[GUEST] Guest User");
@@ -1069,7 +1072,7 @@ describe("Custom Procedures End-to-End Tests", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       // Use standard query to get all users
-      const allUsers = await fetchClient.query.users.get();
+      const allUsers = await fetchClient.query.users.list();
       expect(Array.isArray(allUsers)).toBe(true);
       expect(allUsers.length).toBe(1);
       expect(allUsers[0].id).toBe(createResult.id);
@@ -1107,7 +1110,7 @@ describe("Custom Procedures End-to-End Tests", () => {
       expect(prefixedUsers[0].email).toBe("standard@example.com");
     });
 
-    test("should chain standard query methods alongside custom queries", async () => {
+    test("should filter via a custom query procedure", async () => {
       await storage.insert(testSchema.users, {
         id: generateId(),
         name: "User Alpha",
@@ -1121,30 +1124,17 @@ describe("Custom Procedures End-to-End Tests", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Standard query with where clause
-      const standardResult = await fetchClient.query.users
-        .where({ name: "User Beta" })
-        .get();
-      expect(Array.isArray(standardResult)).toBe(true);
-      expect(standardResult.length).toBe(1);
-      expect(standardResult[0].name).toBe("User Beta");
-      expect(standardResult[0].email).toBe("beta@example.com");
-      expect(standardResult[0].id).toBeDefined();
-      expect(typeof standardResult[0].id).toBe("string");
-
-      // Custom query achieving similar result
-      const customResult = await fetchClient.query.users.getUsersByNamePrefix({ prefix: "User B" });
+      // The fetch client reads exclusively through Custom Query procedures
+      // (the Default Query `.where(...).get()` path was removed — ADR-0002).
+      const customResult = await fetchClient.query.users.getUsersByNamePrefix({
+        prefix: "User B",
+      });
       expect(Array.isArray(customResult)).toBe(true);
       expect(customResult.length).toBe(1);
       expect(customResult[0].name).toBe("User Beta");
       expect(customResult[0].email).toBe("beta@example.com");
       expect(customResult[0].id).toBeDefined();
       expect(typeof customResult[0].id).toBe("string");
-
-      // Both should return the same user
-      expect(standardResult[0].id).toBe(customResult[0].id);
-      expect(standardResult[0].name).toBe(customResult[0].name);
-      expect(standardResult[0].email).toBe(customResult[0].email);
     });
   });
 });

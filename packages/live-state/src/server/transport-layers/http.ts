@@ -3,7 +3,6 @@ import qs from "qs";
 import {
   type HttpMutation,
   httpGenericMutationSchema,
-  httpQuerySchema,
 } from "../../core/schemas/http";
 import type { AnyRouter, Server } from "..";
 
@@ -73,46 +72,6 @@ export const httpTransportLayer = (
           cookies: baseRequestData.cookies,
           queryParams: rawParsedQs,
         })) ?? {};
-
-      if (request.method === "GET") {
-        const resource = segments[segments.length - 1];
-
-        const {
-          success,
-          data: parsedQs,
-          error,
-        } = httpQuerySchema.safeParse(rawParsedQs);
-
-        if (!success) {
-          return Response.json(
-            { message: "Invalid query", code: "INVALID_QUERY", details: error },
-            { status: 400 }
-          );
-        }
-
-        const result = await server.handleQuery({
-          req: {
-            ...baseRequestData,
-            ...parsedQs,
-            type: "QUERY",
-            resource: resource,
-            context: initialContext,
-            queryParams: rawParsedQs as Record<string, any>,
-          },
-        });
-
-        if (!result || !result.data) {
-          return Response.json(
-            {
-              message: "Invalid resource",
-              code: "INVALID_RESOURCE",
-            },
-            { status: 400 }
-          );
-        }
-
-        return Response.json(result.data);
-      }
 
       if (request.method === "POST") {
         try {

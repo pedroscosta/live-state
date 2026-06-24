@@ -59,7 +59,7 @@ export type ClientStorageLoadedEvent = {
 
 export type DataLoadRequestedEvent = {
   type: "DATA_LOAD_REQUESTED";
-  query: RawQueryRequest | CustomQueryRequest;
+  query: CustomQueryRequest;
   subscriptionId: string;
 };
 
@@ -95,14 +95,14 @@ export type MutationRejectedEvent = {
 
 export type SubscriptionCreatedEvent = {
   type: "SUBSCRIPTION_CREATED";
-  query: RawQueryRequest | CustomQueryRequest;
+  query: CustomQueryRequest;
   subscriptionKey: string;
   subscriberCount: number;
 };
 
 export type SubscriptionRemovedEvent = {
   type: "SUBSCRIPTION_REMOVED";
-  query: RawQueryRequest | CustomQueryRequest;
+  query: CustomQueryRequest;
   subscriptionKey: string;
 };
 
@@ -205,7 +205,7 @@ class InnerClient implements QueryExecutor {
 
   private remoteSubscriptions: Map<
     string,
-    { query: RawQueryRequest | CustomQueryRequest; subCounter: number }
+    { query: CustomQueryRequest; subCounter: number }
   > = new Map();
 
   private eventListeners: Set<(event: ClientEvents) => void> = new Set();
@@ -402,7 +402,7 @@ class InnerClient implements QueryExecutor {
     }
   }
 
-  public load(query: RawQueryRequest | CustomQueryRequest) {
+  public load(query: CustomQueryRequest) {
     const subscriptionId = generateId();
     const key = hash(query);
 
@@ -710,7 +710,7 @@ export type Client<TRouter extends ClientRouterConstraint> = {
     ws: WebSocketClient;
     readonly bootstrapStatus: ClientBootstrapStatus;
     addEventListener: (listener: (event: ClientEvents) => void) => () => void;
-    load: (query: RawQueryRequest | CustomQueryRequest) => () => void;
+    load: (query: CustomQueryRequest) => () => void;
   };
   store: ClientType<TRouter>;
 };
@@ -720,6 +720,11 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
 ): Client<TRouter> => {
   const ogClient = new InnerClient(opts);
 
+  // A websocket-client `store.query.<resource>` is a Local Query builder (reads
+  // the optimistic store for `useLiveQuery`) that also exposes the resource's
+  // declared Custom Query procedures. The builder's server-bound use was removed
+  // with the Default Query path: `client.load` accepts only a CustomQueryRequest
+  // (see ADR-0002), so the builder's `buildQueryRequest()` is local-only here.
   const wrapQueryBuilderWithCustomQueries = (
     routeName: string,
     queryBuilder: QueryBuilder<any>,
@@ -729,7 +734,6 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
         if (prop in target) {
           return Reflect.get(target, prop, receiver);
         }
-        // If it's a string, it's a custom query method
         if (typeof prop === "string") {
           return (input?: any) =>
             new CustomQueryCall(ogClient, {
@@ -749,7 +753,7 @@ export const createClient = <TRouter extends ClientRouterConstraint>(
       get bootstrapStatus() {
         return ogClient.bootstrapStatus;
       },
-      load: (query: RawQueryRequest) => {
+      load: (query: CustomQueryRequest) => {
         return ogClient.load(query);
       },
       addEventListener: (listener) => {
