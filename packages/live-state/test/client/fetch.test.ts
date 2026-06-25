@@ -42,8 +42,8 @@ describe("createClient", () => {
     mockRouter = createRouter({
       schema: mockSchema,
       routes: {
-        users: publicRoute.collectionRoute(mockSchema.users),
-        posts: publicRoute.collectionRoute(mockSchema.posts),
+        users: publicRoute.withProcedures(() => ({})),
+        posts: publicRoute.withProcedures(() => ({})),
       },
     });
 
@@ -486,7 +486,7 @@ describe("createClient", () => {
         schema: schemaWithCustomMutations,
         routes: {
           users: publicRoute
-            .collectionRoute(schemaWithCustomMutations.users)
+            
             .withMutations(({ mutation }) => ({
               hello: mutation(z.string()).handler(async ({ req }) => {
                 return {

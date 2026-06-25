@@ -71,7 +71,7 @@ const testRouter = router({
 	schema: testSchema,
 	routes: {
 		users: publicRoute
-			.collectionRoute(testSchema.users)
+			
 			.withProcedures(({ mutation, query }) => ({
 				// Custom Query that loads the whole collection as a Tracked Query,
 				// replacing the removed server-bound Default Query (ADR-0002).
@@ -123,7 +123,7 @@ const testRouter = router({
 			})),
 
 		posts: publicRoute
-			.collectionRoute(testSchema.posts)
+			
 			.withProcedures(({ mutation, query }) => ({
 				list: query().handler(({ db }) => db.posts),
 				// Issue #135: Custom mutation that inserts a parent (user) and

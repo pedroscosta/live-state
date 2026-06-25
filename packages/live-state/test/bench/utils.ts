@@ -88,7 +88,7 @@ export const benchmarkRouter = router({
     // Tracked Custom Queries replace the removed server-bound Default Query
     // (ADR-0002); receivers subscribe via `store.query.<resource>.<proc>()`.
     orgs: publicRoute
-      .collectionRoute(benchmarkSchema.orgs)
+      
       .withProcedures(({ query }) => ({
         // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
         listDeep: query().handler(({ db }: any) =>
@@ -102,9 +102,9 @@ export const benchmarkRouter = router({
           })
         ),
       })),
-    users: publicRoute.collectionRoute(benchmarkSchema.users),
+    users: publicRoute.withProcedures(() => ({})),
     posts: publicRoute
-      .collectionRoute(benchmarkSchema.posts)
+      
       .withProcedures(({ mutation, query }) => ({
         // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
         list: query().handler(({ db }: any) => db.posts),
@@ -116,7 +116,7 @@ export const benchmarkRouter = router({
         ),
       })),
     comments: publicRoute
-      .collectionRoute(benchmarkSchema.comments)
+      
       .withProcedures(({ mutation, query }) => ({
         // biome-ignore lint/suspicious/noExplicitAny: generic ServerDB in bench helper
         list: query().handler(({ db }: any) => db.comments),

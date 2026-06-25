@@ -92,7 +92,7 @@ const benchmarkRouter = router({
   schema: benchmarkSchema,
   routes: {
     orgs: publicRoute
-      .collectionRoute(benchmarkSchema.orgs)
+      
       .withProcedures(({ query }) => ({
         all: query().handler(({ db }) => db.orgs),
         nestedInclude: query().handler(({ db }) =>
@@ -111,17 +111,17 @@ const benchmarkRouter = router({
         ),
       })),
     users: publicRoute
-      .collectionRoute(benchmarkSchema.users)
+      
       .withProcedures(({ query }) => ({
         all: query().handler(({ db }) => db.users),
       })),
     posts: publicRoute
-      .collectionRoute(benchmarkSchema.posts)
+      
       .withProcedures(({ query }) => ({
         all: query().handler(({ db }) => db.posts),
       })),
     comments: publicRoute
-      .collectionRoute(benchmarkSchema.comments)
+      
       .withProcedures(({ mutation }) => ({
         insert: mutation(
           z.object({

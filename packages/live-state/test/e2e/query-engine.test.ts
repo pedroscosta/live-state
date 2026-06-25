@@ -1,6 +1,6 @@
 /**
  * End-to-end test for query engine functional requirements
- * Tests server.handleQuery with org -> users -> posts -> comments schema
+ * Drives the query engine directly over an org -> users -> posts -> comments schema
  */
 
 import {
@@ -93,24 +93,10 @@ const publicRoute = routeFactory();
 const deepRouter = router({
   schema: deepSchema,
   routes: {
-    orgs: publicRoute.collectionRoute(deepSchema.orgs, {
-      read: ({ ctx }) => {
-        if (ctx.org) {
-          return { name: ctx.org };
-        }
-
-        return false;
-      },
-    }),
-    users: publicRoute.collectionRoute(deepSchema.users, {
-      read: () => true,
-    }),
-    posts: publicRoute.collectionRoute(deepSchema.posts, {
-      read: () => true,
-    }),
-    comments: publicRoute.collectionRoute(deepSchema.comments, {
-      read: () => true,
-    }),
+    orgs: publicRoute.withProcedures(() => ({})),
+    users: publicRoute.withProcedures(() => ({})),
+    posts: publicRoute.withProcedures(() => ({})),
+    comments: publicRoute.withProcedures(() => ({})),
   },
 });
 
@@ -386,8 +372,9 @@ describe("Query Engine Functional Requirements", () => {
           headers: {},
           cookies: {},
           queryParams: {},
-          context: {
-            org: "acme",
+          context: {},
+          where: {
+            name: "acme",
           },
           include: {
             users: {
@@ -1194,8 +1181,9 @@ describe("Query Engine Functional Requirements", () => {
           headers: {},
           cookies: {},
           queryParams: {},
-          context: {
-            org: "acme",
+          context: {},
+          where: {
+            name: "acme",
           },
           include: {
             users: {
@@ -1253,8 +1241,9 @@ describe("Query Engine Functional Requirements", () => {
           headers: {},
           cookies: {},
           queryParams: {},
-          context: {
-            org: "acme",
+          context: {},
+          where: {
+            name: "acme",
           },
           include: {
             users: {
@@ -1318,8 +1307,9 @@ describe("Query Engine Functional Requirements", () => {
           headers: {},
           cookies: {},
           queryParams: {},
-          context: {
-            org: "acme",
+          context: {},
+          where: {
+            name: "acme",
           },
           include: {
             users: {
@@ -1389,8 +1379,9 @@ describe("Query Engine Functional Requirements", () => {
           headers: {},
           cookies: {},
           queryParams: {},
-          context: {
-            org: "acme",
+          context: {},
+          where: {
+            name: "acme",
           },
           include: {
             users: {

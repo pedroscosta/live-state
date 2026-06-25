@@ -66,9 +66,9 @@ const publicRoute = routeFactory();
 const testRouter = router({
 	schema: testSchema,
 	routes: {
-		users: publicRoute.collectionRoute(testSchema.users),
+		users: publicRoute.withProcedures(() => ({})),
 		posts: publicRoute
-			.collectionRoute(testSchema.posts)
+			
 			.withProcedures(({ query }) => ({
 				list: query().handler(({ db }) => db.posts),
 				paginatedPosts: query(

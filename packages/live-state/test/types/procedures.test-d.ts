@@ -42,7 +42,7 @@ const routerWithProcedures = createRouter({
   schema,
   routes: {
     users: publicRoute
-      .collectionRoute(schema.users)
+      
       .withProcedures(({ mutation, query }) => ({
         // Custom queries
         getUsersByAge: query(z.object({ minAge: z.number() })).handler(
@@ -92,7 +92,7 @@ const routerWithProcedures = createRouter({
       })),
 
     posts: publicRoute
-      .collectionRoute(schema.posts)
+      
       .withProcedures(({ mutation, query }) => ({
         // Queries
         getPopularPosts: query(z.object({ limit: z.number() })).handler(
@@ -401,7 +401,7 @@ const routerWithProcedureOnlyRoutes = createRouter({
   schema,
   routes: {
     users: publicRoute
-      .collectionRoute(schema.users)
+      
       .withProcedures(({ query }) => ({
         getUsersByAge: query(z.object({ minAge: z.number() })).handler(
           async ({ req }) => {
@@ -410,7 +410,7 @@ const routerWithProcedureOnlyRoutes = createRouter({
         ),
       })),
 
-    posts: publicRoute.collectionRoute(schema.posts),
+    posts: publicRoute.withProcedures(() => ({})),
 
     // Procedure-only route - no collection
     analytics: publicRoute.withProcedures(({ mutation, query }) => ({
@@ -569,7 +569,7 @@ const routerWithQueryBuilderQuery = createRouter({
   schema,
   routes: {
     users: publicRoute
-      .collectionRoute(schema.users)
+      
       .withProcedures(({ query }) => ({
         usersByAge: query(z.object({ minAge: z.number() })).handler(
           async ({ req, db }) => {
@@ -577,7 +577,7 @@ const routerWithQueryBuilderQuery = createRouter({
           }
         ),
       })),
-    posts: publicRoute.collectionRoute(schema.posts),
+    posts: publicRoute.withProcedures(() => ({})),
   },
 });
 

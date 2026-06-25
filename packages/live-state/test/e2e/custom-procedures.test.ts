@@ -73,7 +73,7 @@ const testRouter = router({
   schema: testSchema,
   routes: {
     users: publicRoute
-      .collectionRoute(testSchema.users)
+      
       .withProcedures(({ mutation, query }) => ({
         // Tracked Custom Query that loads the whole collection, replacing the
         // removed server-bound Default Query (ADR-0002).
@@ -174,7 +174,7 @@ const testRouter = router({
         }),
       })),
     priorityUsers: publicRoute
-      .collectionRoute(testSchema.users)
+      
       .withProcedures(({ mutation }) => ({
         insert: mutation(
           z.object({
@@ -221,7 +221,7 @@ const testRouter = router({
         }),
       })),
 
-    posts: publicRoute.collectionRoute(testSchema.posts),
+    posts: publicRoute.withProcedures(() => ({})),
   },
 });
 
@@ -839,7 +839,7 @@ describe("Custom Procedures End-to-End Tests", () => {
         schema: testSchema,
         routes: {
           users: publicRoute
-            .collectionRoute(testSchema.users)
+            
             .withProcedures(({ mutation }) => ({
               createUserWithRole: mutation(
                 z.object({
@@ -876,7 +876,7 @@ describe("Custom Procedures End-to-End Tests", () => {
               getUserCount: mutation().handler(async () => ({ dummy: true })),
               searchUsers: mutation(z.object({ nameContains: z.string().optional(), emailDomain: z.string().optional() })).handler(async () => ({ dummy: true })),
             })),
-          posts: publicRoute.collectionRoute(testSchema.posts),
+          posts: publicRoute.withProcedures(() => ({})),
         },
       });
 
