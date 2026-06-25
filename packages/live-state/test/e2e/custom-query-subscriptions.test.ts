@@ -44,7 +44,7 @@ const testRouter = router({
 	schema: testSchema,
 	routes: {
 		users: publicRoute
-			.collectionRoute(testSchema.users)
+			
 			.withProcedures(({ query }) => ({
 				usersByIds: query(
 					z.object({

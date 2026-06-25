@@ -38,7 +38,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   const typedRoute = routeFactory<TestSchema>();
 
   test("mutation handler db should have schema collection properties", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ mutation }) => ({
+    typedRoute.withProcedures(({ mutation }) => ({
       doSomething: mutation().handler(async ({ db }) => {
         expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
         expectTypeOf(db.users).toMatchTypeOf<
@@ -53,7 +53,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   });
 
   test("query handler db should have schema collection properties", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ query }) => ({
+    typedRoute.withProcedures(({ query }) => ({
       findUsers: query().handler(async ({ db }) => {
         expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
         expectTypeOf(db.users).toMatchTypeOf<
@@ -65,7 +65,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   });
 
   test("mutation handler with input should have typed db", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ mutation }) => ({
+    typedRoute.withProcedures(({ mutation }) => ({
       createUser: mutation(z.object({ name: z.string() })).handler(
         async ({ db, req }) => {
           expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
@@ -77,7 +77,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   });
 
   test("query handler with input should have typed db", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ query }) => ({
+    typedRoute.withProcedures(({ query }) => ({
       search: query(z.object({ q: z.string() })).handler(
         async ({ db, req }) => {
           expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
@@ -89,7 +89,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   });
 
   test("db.users.insert should accept correct insert type", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ mutation }) => ({
+    typedRoute.withProcedures(({ mutation }) => ({
       create: mutation().handler(async ({ db }) => {
         const insertFn = db.users.insert;
         expectTypeOf(insertFn).parameter(0).toEqualTypeOf<{
@@ -104,7 +104,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   });
 
   test("db.posts.insert should accept correct insert type", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ mutation }) => ({
+    typedRoute.withProcedures(({ mutation }) => ({
       create: mutation().handler(async ({ db }) => {
         const insertFn = db.posts.insert;
         expectTypeOf(insertFn).parameter(0).toEqualTypeOf<{
@@ -118,7 +118,7 @@ describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   });
 
   test("db.users.update should accept correct update type", () => {
-    typedRoute.collectionRoute(schema.users).withProcedures(({ mutation }) => ({
+    typedRoute.withProcedures(({ mutation }) => ({
       edit: mutation().handler(async ({ db }) => {
         const updateFn = db.users.update;
         expectTypeOf(updateFn).parameter(0).toEqualTypeOf<string>();
@@ -166,7 +166,7 @@ describe("routeFactory() without schema - backwards compatibility", () => {
 
   test("untyped route should have ServerDB<Schema<any>>", () => {
     untypedRoute
-      .collectionRoute(schema.users)
+      
       .withProcedures(({ mutation }) => ({
         doSomething: mutation().handler(async ({ db }) => {
           expectTypeOf(db).toEqualTypeOf<
@@ -187,7 +187,7 @@ describe("routeFactory<TSchema>() - middleware chaining preserves schema type", 
     );
 
     typedFactory
-      .collectionRoute(schema.users)
+      
       .withProcedures(({ mutation }) => ({
         doSomething: mutation().handler(async ({ db }) => {
           expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
@@ -201,7 +201,7 @@ describe("routeFactory<TSchema>() - middleware chaining preserves schema type", 
       .use(async ({ req, next }) => next(req))
       .use(async ({ req, next }) => next(req));
 
-    typedFactory.collectionRoute(schema.users).withProcedures(({ query }) => ({
+    typedFactory.withProcedures(({ query }) => ({
       find: query().handler(async ({ db }) => {
         expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
         return {};
@@ -214,7 +214,7 @@ describe("routeFactory<TSchema>() - detached routes compose into router", () => 
   const typedRoute = routeFactory<TestSchema>();
 
   const usersRoute = typedRoute
-    .collectionRoute(schema.users)
+    
     .withProcedures(({ mutation, query }) => ({
       createUser: mutation(
         z.object({ name: z.string(), email: z.string() }),
@@ -228,7 +228,7 @@ describe("routeFactory<TSchema>() - detached routes compose into router", () => 
       }),
     }));
 
-  const postsRoute = typedRoute.collectionRoute(schema.posts);
+  const postsRoute = typedRoute.withProcedures(() => ({}));
 
   test("detached routes should be accepted by router()", () => {
     const testRouter = createRouter({
@@ -253,8 +253,8 @@ describe("routeFactory<TSchema>() - detached routes compose into router", () => 
     const testRouter = createRouter({
       schema,
       routes: {
-        users: typedRoute.collectionRoute(schema.users),
-        posts: typedRoute.collectionRoute(schema.posts),
+        users: typedRoute.withProcedures(() => ({})),
+        posts: typedRoute.withProcedures(() => ({})),
         analytics: analyticsRoute,
       },
     });

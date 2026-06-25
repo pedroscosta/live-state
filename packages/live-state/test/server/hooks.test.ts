@@ -147,7 +147,7 @@ describe("Server hooks registry", () => {
 			// Database lifecycle hooks fire on the storage writes these custom
 			// mutations perform via `db.groups.insert` / `db.groups.update`.
 			groups: publicRoute
-				.collectionRoute(schema.groups)
+				
 				.withProcedures(({ mutation }) => ({
 					insert: mutation(z.record(z.string(), z.any())).handler(
 						async ({ req, db }) => db.groups.insert(req.input),
@@ -158,7 +158,7 @@ describe("Server hooks registry", () => {
 						async ({ req, db }) => db.groups.update(req.input.id, req.input),
 					),
 				})),
-			cards: publicRoute.collectionRoute(schema.cards),
+			cards: publicRoute.withProcedures(() => ({})),
 		},
 	});
 

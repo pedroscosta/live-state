@@ -1,338 +1,302 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: any's are actually used correctly */
-import { QueryEngine } from "../core/query-engine";
-import type { QueryStep as CoreQueryStep } from "../core/query-engine/types";
-import type {
-  RawQueryRequest,
-  SyncDelta,
-} from "../core/schemas/core-protocol";
-import type { PromiseOrSync } from "../core/utils";
-import { mergeWhereClauses } from "../core/utils";
-import { inferValue, type Schema, type WhereClause } from "../schema";
-import { createLogger, type Logger, LogLevel } from "../utils";
-import { type Hooks, type HooksRegistry, mergeEntityHooks } from "./hooks";
-import type { AnyRouter, AnyRouteOrProcedure, QueryProcedureRequest, Route } from "./router";
-import type { Storage } from "./storage";
-import type { Batcher } from "./storage/batcher";
+import { QueryEngine } from '../core/query-engine';
+import type { RawQueryRequest, SyncDelta } from '../core/schemas/core-protocol';
+import type { PromiseOrSync } from '../core/utils';
+import { inferValue, type Schema, type WhereClause } from '../schema';
+import { createLogger, type Logger, LogLevel } from '../utils';
+import { type Hooks, type HooksRegistry, mergeEntityHooks } from './hooks';
+import type { AnyRoute, AnyRouter, QueryProcedureRequest } from './router';
+import type { Storage } from './storage';
+import type { Batcher } from './storage/batcher';
 
-export * from "./adapters/express";
-export * from "./hooks";
-export * from "./router";
-export * from "./storage";
+export * from './adapters/express';
+export * from './hooks';
+export * from './router';
+export * from './storage';
 
 export type { QueryProcedureRequest };
 
 export interface BaseRequest<TContext = Record<string, any>> {
-  headers: Record<string, string>;
-  cookies: Record<string, string>;
-  queryParams: Record<string, string>;
-  context: TContext;
+	headers: Record<string, string>;
+	cookies: Record<string, string>;
+	queryParams: Record<string, string>;
+	context: TContext;
 }
 
-export interface QueryRequest<TContext = Record<string, any>> extends BaseRequest<TContext>, RawQueryRequest {
-  type: "QUERY";
-  /** @internal */
-  relationalWhere?: WhereClause<any>;
+export interface QueryRequest<TContext = Record<string, any>>
+	extends BaseRequest<TContext>,
+		RawQueryRequest {
+	type: 'QUERY';
+	/** @internal */
+	relationalWhere?: WhereClause<any>;
 }
 
-export interface MutationRequest<TInput = any, TContext = Record<string, any>> extends BaseRequest<TContext> {
-  type: "MUTATE";
-  input: TInput;
-  resource: string;
-  resourceId?: string;
-  procedure: string;
-  /** @internal */
-  meta?: { timestamp?: string };
+export interface MutationRequest<TInput = any, TContext = Record<string, any>>
+	extends BaseRequest<TContext> {
+	type: 'MUTATE';
+	input: TInput;
+	resource: string;
+	resourceId?: string;
+	procedure: string;
+	/** @internal */
+	meta?: { timestamp?: string };
 }
 
-export type Request<TContext = Record<string, any>> = QueryRequest<TContext> | MutationRequest<any, TContext> | QueryProcedureRequest<any, TContext>;
+export type Request<TContext = Record<string, any>> =
+	| QueryRequest<TContext>
+	| MutationRequest<any, TContext>
+	| QueryProcedureRequest<any, TContext>;
 
 export type ContextProvider<TContext = Record<string, any>> = (
-  req: Omit<BaseRequest, "context"> & {
-    transport: "HTTP" | "WEBSOCKET";
-  }
+	req: Omit<BaseRequest, 'context'> & {
+		transport: 'HTTP' | 'WEBSOCKET';
+	},
 ) => TContext | Promise<TContext>;
 
 export type NextFunction<O, R = Request> = (req: R) => PromiseOrSync<O>;
 
 export type Middleware<T = any> = (opts: {
-  req: Request;
-  next: NextFunction<T>;
+	req: Request;
+	next: NextFunction<T>;
 }) => ReturnType<NextFunction<T>>;
 
 export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
-  readonly router: TRouter;
-  readonly storage: Storage;
-  readonly schema: Schema<any>;
-  readonly middlewares: Set<Middleware<any>> = new Set();
-  readonly logger: Logger;
-  readonly hooksRegistry: Map<string, Hooks<any, any, any>> = new Map();
-  private readonly initPromise: Promise<void>;
-  private initError?: unknown;
+	readonly router: TRouter;
+	readonly storage: Storage;
+	readonly schema: Schema<any>;
+	readonly middlewares: Set<Middleware<any>> = new Set();
+	readonly logger: Logger;
+	readonly hooksRegistry: Map<string, Hooks<any, any, any>> = new Map();
+	private readonly initPromise: Promise<void>;
+	private initError?: unknown;
 
-  contextProvider?: ContextProvider<TContext>;
+	contextProvider?: ContextProvider<TContext>;
 
-  /** @internal */
-  readonly queryEngine: QueryEngine;
+	/** @internal */
+	readonly queryEngine: QueryEngine;
 
-  private constructor(opts: {
-    router: TRouter;
-    storage: Storage;
-    schema: Schema<any>;
-    middlewares?: Middleware<any>[];
-    contextProvider?: ContextProvider<TContext>;
-    hooks?: HooksRegistry<any, TContext>;
-    logLevel?: LogLevel;
-  }) {
-    this.router = opts.router;
-    this.storage = opts.storage;
-    this.schema = opts.schema;
-    this.logger = createLogger({
-      level: opts.logLevel ?? LogLevel.INFO,
-    });
-    opts.middlewares?.forEach((middleware) => {
-      this.middlewares.add(middleware);
-    });
+	private constructor(opts: {
+		router: TRouter;
+		storage: Storage;
+		schema: Schema<any>;
+		middlewares?: Middleware<any>[];
+		contextProvider?: ContextProvider<TContext>;
+		hooks?: HooksRegistry<any, TContext>;
+		logLevel?: LogLevel;
+	}) {
+		this.router = opts.router;
+		this.storage = opts.storage;
+		this.schema = opts.schema;
+		this.logger = createLogger({
+			level: opts.logLevel ?? LogLevel.INFO,
+		});
+		opts.middlewares?.forEach((middleware) => {
+			this.middlewares.add(middleware);
+		});
 
-    if (opts.hooks) {
-      for (const [key, entityHooks] of Object.entries(opts.hooks)) {
-        const merged = mergeEntityHooks([
-          entityHooks as Hooks<any, any, any> | undefined,
-        ]);
-        if (merged) this.hooksRegistry.set(key, merged);
-      }
-    }
+		if (opts.hooks) {
+			for (const [key, entityHooks] of Object.entries(opts.hooks)) {
+				const merged = mergeEntityHooks([
+					entityHooks as Hooks<any, any, any> | undefined,
+				]);
+				if (merged) this.hooksRegistry.set(key, merged);
+			}
+		}
 
-    this.initPromise = this.storage
-      .init(this.schema, this.logger, this)
-      .catch((error) => {
-        this.initError = error;
-      });
-    this.contextProvider = opts.contextProvider;
+		this.initPromise = this.storage
+			.init(this.schema, this.logger, this)
+			.catch((error) => {
+				this.initError = error;
+			});
+		this.contextProvider = opts.contextProvider;
 
-    this.queryEngine = new QueryEngine({
-      router: {
-        get: async (
-          query: RawQueryRequest,
-          extra?: { context?: any; batcher?: Batcher }
-        ) => {
-          if (!extra?.batcher) {
-            throw new Error("Batcher is required");
-          }
+		this.queryEngine = new QueryEngine({
+			router: {
+				get: async (
+					query: RawQueryRequest,
+					extra?: { context?: any; batcher?: Batcher },
+				) => {
+					if (!extra?.batcher) {
+						throw new Error('Batcher is required');
+					}
 
-          // Tracked Queries resolve directly against the batcher/storage layer
-          // keyed by the schema `resource`. This is intentionally independent of
-          // whether a `collectionRoute` is declared for the resource: any
-          // resource in the `schema` is resolvable, which lets a Custom Query
-          // handler return `db.<resource>.where(...)` for a procedure-only route.
-          // The parent step's relational filtering is already folded into
-          // `query.where` by `resolveStep`, so there is no `uniqueWhere` here.
-          return extra.batcher.rawFind({
-            resource: query.resource,
-            commonWhere: query.where,
-            include: query.include,
-            limit: query.limit,
-            sort: query.sort,
-          });
-        },
-        incrementQueryStep: (step: CoreQueryStep, context: any = {}) => {
-          const authorizationClause = (
-            this.router.routes[step.query.resource] as
-              | Route<any, any, any, any, any, any>
-              | undefined
-          )?.getAuthorizationClause({
-            ...step.query,
-            type: "QUERY",
-            headers: context.headers,
-            cookies: context.cookies,
-            queryParams: context.queryParams,
-            context: context.context,
-          });
+					// Tracked Queries resolve directly against the batcher/storage layer
+					// keyed by the schema `resource`: any resource in the `schema` is
+					// resolvable, which lets a Custom Query handler return
+					// `db.<resource>.where(...)` for a procedure-only route. The parent
+					// step's relational filtering is already folded into `query.where` by
+					// `resolveStep`, so there is no `uniqueWhere` here.
+					return extra.batcher.rawFind({
+						resource: query.resource,
+						commonWhere: query.where,
+						include: query.include,
+						limit: query.limit,
+						sort: query.sort,
+					});
+				},
+			},
+			storage: this.storage,
+			schema: this.schema,
+			logger: this.logger,
+		});
+	}
 
-          if (
-            typeof authorizationClause === "boolean" &&
-            !authorizationClause
-          ) {
-            throw new Error("Not authorized");
-          }
+	public static create<TRouter extends AnyRouter, TContext>(opts: {
+		router: TRouter;
+		storage: Storage;
+		schema: Schema<any>;
+		middlewares?: Middleware<any>[];
+		contextProvider: ContextProvider<TContext>;
+		hooks?: HooksRegistry<any, TContext>;
+		logLevel?: LogLevel;
+	}): Server<TRouter, TContext>;
+	public static create<TRouter extends AnyRouter>(opts: {
+		router: TRouter;
+		storage: Storage;
+		schema: Schema<any>;
+		middlewares?: Middleware<any>[];
+		hooks?: HooksRegistry<any, Record<string, any>>;
+		logLevel?: LogLevel;
+	}): Server<TRouter, Record<string, any>>;
+	public static create<
+		TRouter extends AnyRouter,
+		TContext = Record<string, any>,
+	>(opts: {
+		router: TRouter;
+		storage: Storage;
+		schema: Schema<any>;
+		middlewares?: Middleware<any>[];
+		contextProvider?: ContextProvider<TContext>;
+		hooks?: HooksRegistry<any, TContext>;
+		logLevel?: LogLevel;
+	}) {
+		return new Server<TRouter, TContext>(opts);
+	}
 
-          const mergedWhere = mergeWhereClauses(
-            step.query.where,
-            typeof authorizationClause === "object"
-              ? authorizationClause
-              : undefined
-          );
+	public getHooks(resourceName: string): Hooks<any, any, any> | undefined {
+		return this.hooksRegistry.get(resourceName);
+	}
 
-          return {
-            ...step,
-            query: {
-              ...step.query,
-              where: mergedWhere,
-            },
-          } satisfies CoreQueryStep;
-        },
-      },
-      storage: this.storage,
-      schema: this.schema,
-      logger: this.logger,
-    });
-  }
+	public async handleMutation(opts: { req: MutationRequest }): Promise<any> {
+		await this.ensureInitialized();
 
-  public static create<TRouter extends AnyRouter, TContext>(opts: {
-    router: TRouter;
-    storage: Storage;
-    schema: Schema<any>;
-    middlewares?: Middleware<any>[];
-    contextProvider: ContextProvider<TContext>;
-    hooks?: HooksRegistry<any, TContext>;
-    logLevel?: LogLevel;
-  }): Server<TRouter, TContext>;
-  public static create<TRouter extends AnyRouter>(opts: {
-    router: TRouter;
-    storage: Storage;
-    schema: Schema<any>;
-    middlewares?: Middleware<any>[];
-    hooks?: HooksRegistry<any, Record<string, any>>;
-    logLevel?: LogLevel;
-  }): Server<TRouter, Record<string, any>>;
-  public static create<TRouter extends AnyRouter, TContext = Record<string, any>>(opts: {
-    router: TRouter;
-    storage: Storage;
-    schema: Schema<any>;
-    middlewares?: Middleware<any>[];
-    contextProvider?: ContextProvider<TContext>;
-    hooks?: HooksRegistry<any, TContext>;
-    logLevel?: LogLevel;
-  }) {
-    return new Server<TRouter, TContext>(opts);
-  }
+		const result = await this.wrapInMiddlewares(
+			async (req: MutationRequest) => {
+				const route = this.router.routes[req.resource] as AnyRoute | undefined;
 
-  public getHooks(resourceName: string): Hooks<any, any, any> | undefined {
-    return this.hooksRegistry.get(resourceName);
-  }
+				if (!route) {
+					throw new Error('Invalid resource');
+				}
 
-  public async handleMutation(opts: { req: MutationRequest }): Promise<any> {
-    await this.ensureInitialized();
+				return route.handleMutation({
+					req,
+					db: this.storage,
+					schema: this.schema,
+				});
+			},
+		)(opts.req);
 
-    const result = await this.wrapInMiddlewares(
-      async (req: MutationRequest) => {
-        const route = this.router.routes[req.resource] as
-          | AnyRouteOrProcedure
-          | undefined;
+		return result;
+	}
 
-        if (!route) {
-          throw new Error("Invalid resource");
-        }
+	public async handleCustomQuery(opts: {
+		req: QueryProcedureRequest;
+		subscription?: (mutation: SyncDelta) => void;
+	}): Promise<any> {
+		await this.ensureInitialized();
 
-        return route.handleMutation({
-          req,
-          db: this.storage,
-          schema: this.schema,
-        });
-      }
-    )(opts.req);
+		const result = await this.wrapInMiddlewares(
+			async (req: QueryProcedureRequest) => {
+				const route = this.router.routes[req.resource] as AnyRoute | undefined;
 
-    return result;
-  }
+				if (!route) {
+					throw new Error('Invalid resource');
+				}
 
-  public async handleCustomQuery(opts: {
-    req: QueryProcedureRequest;
-    subscription?: (mutation: SyncDelta) => void;
-  }): Promise<any> {
-    await this.ensureInitialized();
+				return route.handleCustomQuery({
+					req,
+					db: this.storage,
+					schema: this.schema,
+				});
+			},
+		)(opts.req);
 
-    const result = await this.wrapInMiddlewares(
-      async (req: QueryProcedureRequest) => {
-        const route = this.router.routes[req.resource] as
-          | AnyRouteOrProcedure
-          | undefined;
+		const isQueryBuilder =
+			typeof result === 'object' &&
+			result !== null &&
+			'buildQueryRequest' in result &&
+			typeof (result as { buildQueryRequest?: unknown }).buildQueryRequest ===
+				'function';
 
-        if (!route) {
-          throw new Error("Invalid resource");
-        }
+		if (!isQueryBuilder) {
+			if (opts.subscription) {
+				throw new Error(
+					'Subscriptions require custom queries to return a QueryBuilder',
+				);
+			}
+			return result;
+		}
 
-        return route.handleCustomQuery({
-          req,
-          db: this.storage,
-          schema: this.schema,
-        });
-      }
-    )(opts.req);
+		const { headers, cookies, queryParams, context } = opts.req;
+		const ctx = { headers, cookies, queryParams, context };
+		const rawQuery = (
+			result as { buildQueryRequest: () => RawQueryRequest }
+		).buildQueryRequest();
 
-    const isQueryBuilder =
-      typeof result === "object" &&
-      result !== null &&
-      "buildQueryRequest" in result &&
-      typeof (result as { buildQueryRequest?: unknown }).buildQueryRequest ===
-        "function";
+		const unsubscribe = opts.subscription
+			? this.queryEngine.subscribe(
+					rawQuery,
+					(mutation) => {
+						opts.subscription?.(mutation);
+					},
+					ctx,
+				)
+			: undefined;
 
-    if (!isQueryBuilder) {
-      if (opts.subscription) {
-        throw new Error(
-          "Subscriptions require custom queries to return a QueryBuilder"
-        );
-      }
-      return result;
-    }
+		const data = await this.queryEngine.get(rawQuery, {
+			context: ctx,
+		});
 
-    const { headers, cookies, queryParams, context } = opts.req;
-    const ctx = { headers, cookies, queryParams, context };
-    const rawQuery = (result as { buildQueryRequest: () => RawQueryRequest })
-      .buildQueryRequest();
+		if (opts.subscription) {
+			return { data, unsubscribe, query: rawQuery };
+		}
 
-    const unsubscribe = opts.subscription
-      ? this.queryEngine.subscribe(
-          rawQuery,
-          (mutation) => {
-            opts.subscription?.(mutation);
-          },
-          ctx
-        )
-      : undefined;
+		return data.map((item) => inferValue(item));
+	}
 
-    const data = await this.queryEngine.get(rawQuery, {
-      context: ctx,
-    });
+	public use(middleware: Middleware<any>) {
+		this.middlewares.add(middleware);
+		return this;
+	}
 
-    if (opts.subscription) {
-      return { data, unsubscribe, query: rawQuery };
-    }
+	public context(contextProvider: ContextProvider<TContext>) {
+		this.contextProvider = contextProvider;
+		return this;
+	}
 
-    return data.map((item) => inferValue(item));
-  }
+	/** @internal */
+	public notifySubscribers(mutation: SyncDelta, entityData: any) {
+		this.queryEngine.handleMutation(mutation, entityData);
+	}
 
-  public use(middleware: Middleware<any>) {
-    this.middlewares.add(middleware);
-    return this;
-  }
+	private wrapInMiddlewares<T extends Request>(
+		next: NextFunction<any, T>,
+	): NextFunction<any, T> {
+		return (req: T) =>
+			Array.from(this.middlewares.values()).reduceRight(
+				(next, middleware) => (req) =>
+					middleware({ req, next: next as NextFunction<any, any> }),
+				next,
+			)(req);
+	}
 
-  public context(contextProvider: ContextProvider<TContext>) {
-    this.contextProvider = contextProvider;
-    return this;
-  }
+	private async ensureInitialized(): Promise<void> {
+		await this.initPromise;
 
-  /** @internal */
-  public notifySubscribers(mutation: SyncDelta, entityData: any) {
-    this.queryEngine.handleMutation(mutation, entityData);
-  }
-
-  private wrapInMiddlewares<T extends Request>(
-    next: NextFunction<any, T>
-  ): NextFunction<any, T> {
-    return (req: T) =>
-      Array.from(this.middlewares.values()).reduceRight(
-        (next, middleware) => (req) =>
-          middleware({ req, next: next as NextFunction<any, any> }),
-        next
-      )(req);
-  }
-
-  private async ensureInitialized(): Promise<void> {
-    await this.initPromise;
-
-    if (this.initError) {
-      throw this.initError;
-    }
-  }
+		if (this.initError) {
+			throw this.initError;
+		}
+	}
 }
 
 export const server = Server.create;

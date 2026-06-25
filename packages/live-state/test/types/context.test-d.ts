@@ -10,7 +10,6 @@ import {
 	routeFactory,
 	createMiddleware,
 	type TypedMiddleware,
-	type ReadAuthorizationHandler,
 } from "../../src/server/router";
 import type {
 	BaseRequest,
@@ -67,40 +66,11 @@ describe("Typed Context", () => {
 		});
 	});
 
-	describe("Phase 1: Read authorization handlers receive TContext", () => {
-		test("ReadAuthorizationHandler ctx is typed", () => {
-			type Handler = ReadAuthorizationHandler<typeof user, AppContext>;
-			expectTypeOf<Parameters<Handler>[0]["ctx"]>().toEqualTypeOf<AppContext>();
-		});
-	});
-
 	describe("Phase 1: RouteFactory flows TContext to Route", () => {
-		test("collectionRoute read authorization receives TContext", () => {
-			const factory = routeFactory<typeof schema, AppContext>();
-
-			factory.collectionRoute(schema.posts, {
-				read: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext>();
-					return { authorId: ctx.user };
-				},
-			});
-		});
-
-		test("default TContext is Record<string, any>", () => {
-			const factory = routeFactory<typeof schema>();
-
-			factory.collectionRoute(schema.posts, {
-				read: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<Record<string, any>>();
-					return true;
-				},
-			});
-		});
-
 		test("withProcedures receives TContext in procedure handlers", () => {
 			const factory = routeFactory<typeof schema, AppContext>();
 
-			factory.collectionRoute(schema.users).withProcedures(({ mutation, query }) => ({
+			factory.withProcedures(({ mutation, query }) => ({
 				createUser: mutation(z.object({ name: z.string() })).handler(({ req }) => {
 					expectTypeOf(req.context).toEqualTypeOf<AppContext>();
 					return { success: true };
@@ -127,12 +97,12 @@ describe("Typed Context", () => {
 			const factory = routeFactory<typeof schema, AppContext>();
 			const withMiddleware = factory.use(async ({ req, next }) => next(req));
 
-			withMiddleware.collectionRoute(schema.posts, {
-				read: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<AppContext>();
+			withMiddleware.withProcedures(({ query }) => ({
+				list: query().handler(({ req }) => {
+					expectTypeOf(req.context).toEqualTypeOf<AppContext>();
 					return true;
-				},
-			});
+				}),
+			}));
 		});
 	});
 
@@ -159,12 +129,12 @@ describe("Typed Context", () => {
 			const factory = routeFactory<typeof schema, { user?: string }>();
 			const protectedFactory = factory.use(authMiddleware);
 
-			protectedFactory.collectionRoute(schema.posts, {
-				read: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<{ user: string }>();
-					return { authorId: ctx.user };
-				},
-			});
+			protectedFactory.withProcedures(({ query }) => ({
+				list: query().handler(({ req }) => {
+					expectTypeOf(req.context).toEqualTypeOf<{ user: string }>();
+					return { authorId: req.context.user };
+				}),
+			}));
 		});
 
 		test("chained TypedMiddleware transforms accumulate", () => {
@@ -179,12 +149,12 @@ describe("Typed Context", () => {
 				.use(mw1)
 				.use(mw2);
 
-			factory.collectionRoute(schema.posts, {
-				read: ({ ctx }) => {
-					expectTypeOf(ctx).toEqualTypeOf<{ user: string; org: string }>();
+			factory.withProcedures(({ query }) => ({
+				list: query().handler(({ req }) => {
+					expectTypeOf(req.context).toEqualTypeOf<{ user: string; org: string }>();
 					return true;
-				},
-			});
+				}),
+			}));
 		});
 	});
 });

@@ -68,9 +68,9 @@ const publicRoute = routeFactory();
 const router = createRouter({
   schema,
   routes: {
-    users: publicRoute.collectionRoute(schema.users),
-    posts: publicRoute.collectionRoute(schema.posts),
-    comments: publicRoute.collectionRoute(schema.comments),
+    users: publicRoute.withProcedures(() => ({})),
+    posts: publicRoute.withProcedures(() => ({})),
+    comments: publicRoute.withProcedures(() => ({})),
   },
 });
 
@@ -288,9 +288,9 @@ const complexSchema = createSchema({
 const complexRouter = createRouter({
   schema: complexSchema,
   routes: {
-    complexUsers: publicRoute.collectionRoute(complexSchema.complexUsers),
-    complexPosts: publicRoute.collectionRoute(complexSchema.complexPosts),
-    complexComments: publicRoute.collectionRoute(complexSchema.complexComments),
+    complexUsers: publicRoute.withProcedures(() => ({})),
+    complexPosts: publicRoute.withProcedures(() => ({})),
+    complexComments: publicRoute.withProcedures(() => ({})),
   },
 });
 
@@ -843,7 +843,7 @@ const edgeCaseSchema = createSchema({
 const edgeCaseRouter = createRouter({
   schema: edgeCaseSchema,
   routes: {
-    edgeCaseUsers: publicRoute.collectionRoute(edgeCaseSchema.edgeCaseUsers),
+    edgeCaseUsers: publicRoute.withProcedures(() => ({})),
   },
 });
 
@@ -904,7 +904,7 @@ const customMutationRouter = createRouter({
   schema: customMutationSchema,
   routes: {
     customMutationUsers: publicRoute
-      .collectionRoute(customMutationSchema.customMutationUsers)
+      
       .withMutations(({ mutation }) => ({
         // Simple string input mutation
         hello: mutation(z.string()).handler(async ({ req }) => {
@@ -1024,7 +1024,7 @@ const customMutationRouter = createRouter({
       })),
 
     customMutationPosts: publicRoute
-      .collectionRoute(customMutationSchema.customMutationPosts)
+      
       .withMutations(({ mutation }) => ({
         // Mutation that returns a different type
         publishPost: mutation(z.string()).handler(async ({ req }) => {

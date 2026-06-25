@@ -1,6 +1,6 @@
 /**
  * End-to-end test suite for procedure-only routes (not tied to a collection).
- * Tests that ProcedureRoute works correctly via both WebSocket and Fetch clients.
+ * Tests that procedure-only routes work correctly via both WebSocket and Fetch clients.
  */
 
 import {
@@ -47,7 +47,7 @@ const post = object("posts", {
 	likes: number(),
 });
 
-// A resource that is in the schema but has NO collectionRoute declared.
+// A resource that is in the schema but has NO route declared.
 // It is only ever read via a procedure-only route returning a tracked query.
 const comment = object("comments", {
 	id: id(),
@@ -77,7 +77,7 @@ const testRouter = router({
 	schema: testSchema,
 	routes: {
 		users: publicRoute
-			.collectionRoute(testSchema.users)
+			
 			.withProcedures(({ mutation, query }) => ({
 				// Tracked Custom Query loading the whole collection (ADR-0002).
 				list: query().handler(({ db }) => db.users),
@@ -89,7 +89,7 @@ const testRouter = router({
 					})
 				).handler(async ({ req, db }) => db.users.insert(req.input)),
 			})),
-		posts: publicRoute.collectionRoute(testSchema.posts),
+		posts: publicRoute.withProcedures(() => ({})),
 
 		// Procedure-only route
 		analytics: publicRoute.withProcedures(({ mutation, query }) => ({
@@ -110,7 +110,7 @@ const testRouter = router({
 			),
 
 			// Returns an *unresolved* query builder for `comments`, a resource
-			// with no collectionRoute. The query engine must resolve and subscribe
+			// with no route. The query engine must resolve and subscribe
 			// it directly against the batcher/storage keyed by `resource`.
 			watchComments: query(z.object({ topic: z.string() })).handler(
 				({ req, db }) => db.comments.where({ topic: req.input.topic })
@@ -389,7 +389,7 @@ describe("Procedure-Only Routes E2E", () => {
 	});
 
 	describe("Tracked query returned from a procedure-only route", () => {
-		test("resolves and subscribes a resource with no collectionRoute", async () => {
+		test("resolves and subscribes a resource with no route", async () => {
 			const matchingId = generateId();
 			await storage.insert(testSchema.comments, {
 				id: matchingId,
