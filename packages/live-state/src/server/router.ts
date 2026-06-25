@@ -237,8 +237,6 @@ export class Route<
 		const mutationTimestamp = req.meta?.timestamp ?? new Date().toISOString();
 		const mutationDb = db._setMutationTimestamp(mutationTimestamp);
 
-		const serverDB = createServerDB(mutationDb, schema, req.context);
-
 		return await this.wrapInMiddlewares(async (req: MutationRequest) => {
 			if (!req.procedure)
 				throw new Error('Procedure is required for mutations');
@@ -278,6 +276,8 @@ export class Route<
 
 				req.input = result.value;
 
+				const serverDB = createServerDB(mutationDb, schema, req.context);
+
 				return customProcedure.handler({
 					req,
 					db: serverDB,
@@ -298,8 +298,6 @@ export class Route<
 		db: Storage;
 		schema: Schema<any>;
 	}): Promise<any> => {
-		const serverDB = createServerDB(db, schema, req.context);
-
 		return await this.wrapInMiddlewares(async (req: QueryProcedureRequest) => {
 			const customProcedure = this.customQueries[req.procedure];
 
@@ -338,6 +336,8 @@ export class Route<
 			}
 
 			req.input = result.value;
+
+			const serverDB = createServerDB(db, schema, req.context);
 
 			return customProcedure.handler({
 				req,

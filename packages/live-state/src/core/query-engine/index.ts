@@ -389,6 +389,8 @@ export class QueryEngine {
 		const newStep: QueryStep = {
 			query: queryWithoutInclude,
 			stepPath: [...stepPath],
+			includedRelations:
+				include && typeof include === 'object' ? Object.keys(include) : [],
 			getWhere,
 			referenceGetter,
 			isMany,
@@ -591,7 +593,7 @@ export class QueryEngine {
 		for (const step of plan) {
 			const stepPath = step.stepPath.join('.');
 			const results = stepResults[stepPath] ?? [];
-			const includedRelations = Object.keys(step.query.include ?? {});
+			const includedRelations = step.includedRelations ?? [];
 
 			this.logger.debug(
 				`[QueryEngine] assembleResults: Processing step "${stepPath}"`,

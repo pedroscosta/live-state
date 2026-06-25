@@ -28,6 +28,8 @@ export interface QueryStep {
 	relationName?: string;
 	/** Where clause derived from the parent step (relational filtering) */
 	relationalWhere?: WhereClause<any>;
+	/** Relation names included on this step, preserved after `include` is stripped from the query */
+	includedRelations?: string[];
 }
 
 export type DataRouter<_Context = unknown> = DataSource;
