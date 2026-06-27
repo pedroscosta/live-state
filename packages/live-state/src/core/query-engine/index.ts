@@ -6,8 +6,6 @@ import {
 	type MaterializedLiveType,
 	type Schema,
 } from '../../schema';
-import type { Storage } from '../../server';
-import { Batcher } from '../../server/storage/batcher';
 import {
 	applyWhere,
 	extractIncludeFromWhere,
@@ -15,8 +13,8 @@ import {
 	type Logger,
 } from '../../utils';
 import type { RawQueryRequest, SyncDelta } from '../schemas/core-protocol';
-import { mergeWhereClauses, toPromiseLike } from '../utils';
-import type { DataRouter, DataSource, QueryStep } from './types';
+import { toPromiseLike } from '../utils';
+import type { DataSource, QueryStep } from './types';
 import { hashStep } from './utils';
 
 export type SyncDeltaHandler = (delta: SyncDelta) => void;
@@ -40,7 +38,6 @@ interface ObjectNode {
 }
 
 export class QueryEngine {
-	private router: DataRouter<any>;
 	private storage: DataSource;
 	private schema: Schema<any>;
 	private logger: Logger;
@@ -48,12 +45,10 @@ export class QueryEngine {
 	private objectNodes: Map<string, ObjectNode> = new Map();
 
 	constructor(opts: {
-		router: DataRouter<any>;
 		storage: DataSource;
 		schema: Schema<any>;
 		logger: Logger;
 	}) {
-		this.router = opts.router;
 		this.storage = opts.storage;
 		this.schema = opts.schema;
 		this.logger = opts.logger;
@@ -256,27 +251,78 @@ export class QueryEngine {
 		}
 	}
 
-	get(
-		query: RawQueryRequest,
-		extra?: { context?: any; batcher?: Batcher },
-	): PromiseLike<any[]> {
-		const queryPlan = this.breakdownQuery({
-			query,
-			context: extra?.context ?? {},
+	/**
+	 * Resolve a Tracked Query against storage in a single query (storage owns
+	 * `include` resolution) and ingest the nested result into the tracking graph
+	 * so realtime matching has its object/relation state populated. See ADR-0003.
+	 */
+	get(query: RawQueryRequest, _extra?: { context?: any }): PromiseLike<any[]> {
+		return toPromiseLike(this.storage.get(query)).then((results) => {
+			this.ingest(query, results);
+			return results;
 		});
+	}
 
-		return this.resolveQuery(queryPlan, {
-			context: extra?.context ?? {},
-			batcher: extra?.batcher ?? new Batcher(this.storage as Storage),
-		});
+	/**
+	 * Walk the single nested storage result alongside the query's step tree and
+	 * populate the tracking graph (object nodes, relations, per-step tracked
+	 * objects). Replaces the per-step side effects of the old resolution path.
+	 */
+	private ingest(query: RawQueryRequest, results: any[]): void {
+		for (const step of this.buildSteps({ query })) {
+			const objects =
+				step.stepPath.length === 0
+					? results
+					: this.extractByPath(results, query.resource, step.stepPath);
+			this.trackObjects(step, objects);
+		}
+	}
+
+	/**
+	 * Flatten the materialized objects nested at `stepPath` within a resolved
+	 * result tree. A `many` relation nests an array of materialized objects under
+	 * `.value[rel].value`; a `one` relation nests the materialized object itself
+	 * under `.value[rel]` (whose `.value` is the child's field map).
+	 */
+	private extractByPath(
+		results: any[],
+		rootResource: string,
+		stepPath: string[],
+	): any[] {
+		let level = results;
+		let resource = rootResource;
+
+		for (const relationName of stepPath) {
+			const relation = this.schema[resource]?.relations?.[relationName];
+			const isMany = relation?.type === 'many';
+			const next: any[] = [];
+
+			for (const item of level) {
+				const node = item?.value?.[relationName];
+				if (!node) continue;
+
+				if (isMany) {
+					if (Array.isArray(node.value)) {
+						for (const child of node.value) if (child) next.push(child);
+					}
+				} else if (node.value != null) {
+					next.push(node);
+				}
+			}
+
+			level = next;
+			if (relation) resource = relation.entity.name;
+		}
+
+		return level;
 	}
 
 	subscribe(
 		query: RawQueryRequest,
 		callback: SyncDeltaHandler,
-		context: any = {},
+		_context: any = {},
 	): () => void {
-		const queryPlan = this.breakdownQuery({ query, context });
+		const queryPlan = this.buildSteps({ query });
 
 		const stepHashes: Record<string, string> = {};
 
@@ -340,47 +386,29 @@ export class QueryEngine {
 		};
 	}
 
-	breakdownQuery(queryOrOpts: {
+	/**
+	 * Decompose a query (plus its `include` tree) into the per-relation steps
+	 * that back the subscription graph. This no longer carries any resolution
+	 * concern (resolution is a single `storage.get` — see ADR-0003); it only
+	 * shapes the query/object node tree used for realtime matching.
+	 */
+	private buildSteps(queryOrOpts: {
 		query: RawQueryRequest;
 		stepPath?: string[];
-		context?: any;
 		parentResource?: string;
 	}): QueryStep[] {
-		const { query, stepPath = [], context = {}, parentResource } = queryOrOpts;
+		const { query, stepPath = [], parentResource } = queryOrOpts;
 
 		const { include } = query;
 
 		const isRootQuery = stepPath.length === 0;
 		const relationName = stepPath.at(-1);
 
-		// For child queries, we need to set up getWhere and referenceGetter based on the relation
-		let getWhere: QueryStep['getWhere'];
-		let referenceGetter: QueryStep['referenceGetter'];
 		let isMany: boolean | undefined;
 
 		if (!isRootQuery && parentResource && relationName) {
-			const parentSchema = this.schema[parentResource];
-			const relation = parentSchema?.relations?.[relationName];
-
-			if (relation) {
-				isMany = relation.type === 'many';
-
-				if (relation.type === 'one') {
-					// For "one" relations, we query by ID (the related entity's ID)
-					getWhere = (id: string) => ({ id });
-					referenceGetter = (parentData: any[]) =>
-						parentData
-							.map((item) => item.value?.[relation.relationalColumn]?.value)
-							.filter((v): v is string => v !== undefined);
-				} else {
-					// For "many" relations, we query by foreign column
-					getWhere = (id: string) => ({ [relation.foreignColumn]: id });
-					referenceGetter = (parentData: any[]) =>
-						parentData
-							.map((item) => item.value?.id?.value as string | undefined)
-							.filter((v): v is string => v !== undefined);
-				}
-			}
+			const relation = this.schema[parentResource]?.relations?.[relationName];
+			if (relation) isMany = relation.type === 'many';
 		}
 
 		// Strip include from the query since it's been processed into child steps
@@ -391,8 +419,6 @@ export class QueryEngine {
 			stepPath: [...stepPath],
 			includedRelations:
 				include && typeof include === 'object' ? Object.keys(include) : [],
-			getWhere,
-			referenceGetter,
 			isMany,
 			relationName,
 		};
@@ -424,7 +450,7 @@ export class QueryEngine {
 						? nestedInclude
 						: null;
 
-					return this.breakdownQuery({
+					return this.buildSteps({
 						query: {
 							resource: otherResourceName,
 							include: subQuery
@@ -437,7 +463,6 @@ export class QueryEngine {
 							sort: subQuery?.orderBy,
 						},
 						stepPath: [...stepPath, relName],
-						context,
 						parentResource: query.resource,
 					});
 				}),
@@ -447,398 +472,14 @@ export class QueryEngine {
 		return queryPlan;
 	}
 
-	resolveQuery(
-		plan: QueryStep[],
-		extra?: { context?: any; batcher?: Batcher },
-	): PromiseLike<any[]> {
+	/**
+	 * Populate the tracking graph for a single step's objects: object nodes,
+	 * their relations, and the step's tracked-object set. Called per step by
+	 * `ingest` over the nested storage result.
+	 */
+	private trackObjects(step: QueryStep, results: any[]): void {
 		this.logger.debug(
-			'[QueryEngine] Resolving query',
-			plan.map((step) => step.stepPath.join('.')).join(' -> '),
-		);
-
-		// Map: stepPath -> array of { includedBy?: string, data: any[] }
-		const stepResults: Record<string, { includedBy?: string; data: any[] }[]> =
-			{};
-
-		let chain: PromiseLike<void> = this.resolveStep(plan[0], extra).then(
-			(results) => {
-				this.logger.debug(
-					'[QueryEngine] Resolved step',
-					plan[0].stepPath.join('.'),
-					'with results count:',
-					results.length,
-				);
-				stepResults[plan[0].stepPath.join('.')] = [{ data: results }];
-			},
-		);
-
-		for (let i = 1; i < plan.length; i++) {
-			const step = plan[i];
-			const parentStepPath = step.stepPath.slice(0, -1).join('.');
-
-			chain = chain.then(async () => {
-				const parentResults = stepResults[parentStepPath];
-				if (!parentResults) {
-					stepResults[step.stepPath.join('.')] = [];
-					return;
-				}
-
-				// If we have a referenceGetter, use it to get IDs and getWhere to build queries
-				if (step.referenceGetter && step.getWhere) {
-					// Build a map from reference ID (e.g., authorId) to parent IDs (e.g., post IDs)
-					// This allows us to track which parent each reference belongs to
-					const referenceToParents = new Map<string, Set<string>>();
-
-					for (const parentResultGroup of parentResults) {
-						for (const parentItem of parentResultGroup.data) {
-							const parentId = parentItem?.value?.id?.value as
-								| string
-								| undefined;
-							if (!parentId) continue;
-
-							const referenceIds = step.referenceGetter([parentItem]);
-							const referenceId = referenceIds[0];
-							if (referenceId) {
-								if (!referenceToParents.has(referenceId)) {
-									referenceToParents.set(referenceId, new Set());
-								}
-								const parentSet = referenceToParents.get(referenceId);
-								if (parentSet) {
-									parentSet.add(parentId);
-								}
-							}
-						}
-					}
-
-					const uniqueReferenceIds = Array.from(referenceToParents.keys());
-
-					if (uniqueReferenceIds.length === 0) {
-						stepResults[step.stepPath.join('.')] = [];
-						return;
-					}
-
-					// Execute a query for each unique reference ID, then distribute results to parents
-					const results: { includedBy?: string; data: any[] }[] = [];
-
-					for (const referenceId of uniqueReferenceIds) {
-						const relationalWhere = step.getWhere(referenceId);
-						const stepWithRelationalWhere: QueryStep = {
-							...step,
-							relationalWhere,
-						};
-
-						const data = await this.resolveStep(stepWithRelationalWhere, extra);
-
-						// For each parent that references this ID, create a result entry
-						const parentIds = referenceToParents.get(referenceId);
-						if (parentIds) {
-							for (const parentId of Array.from(parentIds)) {
-								results.push({ includedBy: parentId, data });
-							}
-						}
-					}
-
-					this.logger.debug(
-						'[QueryEngine] Resolved step',
-						step.stepPath.join('.'),
-						'with results count:',
-						results.reduce((acc, r) => acc + r.data.length, 0),
-					);
-					stepResults[step.stepPath.join('.')] = results;
-				} else {
-					// No relation info, just resolve normally
-					const data = await this.resolveStep(step, extra);
-					stepResults[step.stepPath.join('.')] = [{ data }];
-				}
-			});
-		}
-
-		chain = chain.then((() => {
-			this.logger.debug('[QueryEngine] Assembling results');
-			return this.assembleResults(plan, stepResults);
-		}) as () => void);
-
-		return chain as unknown as PromiseLike<any[]>;
-	}
-
-	private assembleResults(
-		plan: QueryStep[],
-		stepResults: Record<string, { includedBy?: string; data: any[] }[]>,
-	): any[] {
-		this.logger.debug('[QueryEngine] assembleResults: Starting assembly');
-		this.logger.debug(
-			'[QueryEngine] assembleResults: Plan steps:',
-			plan.length,
-		);
-		this.logger.debug(
-			'[QueryEngine] assembleResults: Step results keys:',
-			Object.keys(stepResults),
-		);
-
-		// Build a map of all entities by their full path + id
-		const entriesMap = new Map<
-			string,
-			{
-				data: any;
-				includedBy: Set<string>;
-				path: string;
-				isMany: boolean;
-				relationName?: string;
-				resourceName: string;
-				includedRelations: string[];
-			}
-		>();
-
-		// Process each step in order
-		for (const step of plan) {
-			const stepPath = step.stepPath.join('.');
-			const results = stepResults[stepPath] ?? [];
-			const includedRelations = step.includedRelations ?? [];
-
-			this.logger.debug(
-				`[QueryEngine] assembleResults: Processing step "${stepPath}"`,
-				{
-					resource: step.query.resource,
-					includedRelations,
-					resultGroups: results.length,
-					isMany: step.isMany,
-					relationName: step.relationName,
-				},
-			);
-
-			for (const resultGroup of results) {
-				this.logger.debug(
-					`[QueryEngine] assembleResults: Processing result group for "${stepPath}"`,
-					{
-						dataCount: resultGroup.data.length,
-						includedBy: resultGroup.includedBy,
-					},
-				);
-
-				for (const data of resultGroup.data) {
-					const id = data?.value?.id?.value as string | undefined;
-					if (!id) {
-						this.logger.debug(
-							`[QueryEngine] assembleResults: Skipping data without id in step "${stepPath}"`,
-						);
-						continue;
-					}
-
-					const key = stepPath ? `${stepPath}.${id}` : id;
-
-					// For child queries, find parent key
-					let parentKeys: string[] = [];
-					if (step.stepPath.length > 0 && resultGroup.includedBy) {
-						const parentStepPath = step.stepPath.slice(0, -1).join('.');
-						parentKeys = [
-							parentStepPath
-								? `${parentStepPath}.${resultGroup.includedBy}`
-								: resultGroup.includedBy,
-						];
-						this.logger.debug(
-							`[QueryEngine] assembleResults: Child entity "${key}" has parent keys:`,
-							parentKeys,
-							{
-								stepPath,
-								parentStepPath,
-								includedBy: resultGroup.includedBy,
-							},
-						);
-					} else {
-						this.logger.debug(
-							`[QueryEngine] assembleResults: Root entity "${key}" (no parent)`,
-						);
-					}
-
-					const existing = entriesMap.get(key);
-					if (existing) {
-						this.logger.debug(
-							`[QueryEngine] assembleResults: Entity "${key}" already exists, adding parent keys:`,
-							parentKeys,
-						);
-						for (const parentKey of parentKeys) {
-							existing.includedBy.add(parentKey);
-						}
-					} else {
-						this.logger.debug(
-							`[QueryEngine] assembleResults: Adding new entity "${key}"`,
-							{
-								resource: step.query.resource,
-								path: step.stepPath.at(-1) ?? '',
-								isMany: step.isMany ?? false,
-								relationName: step.relationName,
-								includedRelations,
-								parentKeys,
-							},
-						);
-						entriesMap.set(key, {
-							data,
-							includedBy: new Set(parentKeys),
-							path: step.stepPath.at(-1) ?? '',
-							isMany: step.isMany ?? false,
-							relationName: step.relationName,
-							resourceName: step.query.resource,
-							includedRelations,
-						});
-					}
-				}
-			}
-		}
-
-		this.logger.debug(
-			`[QueryEngine] assembleResults: Built entriesMap with ${entriesMap.size} entries`,
-		);
-		this.logger.debug(
-			'[QueryEngine] assembleResults: EntriesMap keys:',
-			Array.from(entriesMap.keys()),
-		);
-
-		// Assemble: iterate in reverse to attach children to parents
-		const entriesArray = Array.from(entriesMap.entries());
-		const resultData: any[] = [];
-
-		this.logger.debug(
-			`[QueryEngine] assembleResults: Starting assembly phase with ${entriesArray.length} entries`,
-		);
-
-		for (let i = entriesArray.length - 1; i >= 0; i--) {
-			const [key, entry] = entriesArray[i];
-			const resourceSchema = this.schema[entry.resourceName];
-
-			this.logger.debug(
-				`[QueryEngine] assembleResults: Processing entry "${key}"`,
-				{
-					resource: entry.resourceName,
-					path: entry.path,
-					isMany: entry.isMany,
-					relationName: entry.relationName,
-					includedRelations: entry.includedRelations,
-					parentKeys: Array.from(entry.includedBy),
-				},
-			);
-
-			// Initialize included relations if they don't exist
-			for (const includedRelation of entry.includedRelations) {
-				const relationType =
-					resourceSchema?.relations?.[includedRelation]?.type;
-				const hasRelation = !!entry.data.value[includedRelation];
-				this.logger.debug(
-					`[QueryEngine] assembleResults: Checking included relation "${includedRelation}" for "${key}"`,
-					{
-						relationType,
-						hasRelation,
-						resourceHasRelation:
-							!!resourceSchema?.relations?.[includedRelation],
-					},
-				);
-
-				if (!entry.data.value[includedRelation]) {
-					const defaultValue =
-						relationType === 'many' ? { value: [] } : { value: null };
-					entry.data.value[includedRelation] = defaultValue;
-					this.logger.debug(
-						`[QueryEngine] assembleResults: Initialized relation "${includedRelation}" for "${key}" with`,
-						defaultValue,
-					);
-				} else {
-					this.logger.debug(
-						`[QueryEngine] assembleResults: Relation "${includedRelation}" already exists for "${key}"`,
-						entry.data.value[includedRelation],
-					);
-				}
-			}
-
-			// Root level items (no path)
-			if (entry.path === '') {
-				this.logger.debug(
-					`[QueryEngine] assembleResults: Adding root entity "${key}" to resultData`,
-				);
-				resultData.unshift(entry.data);
-				continue;
-			}
-
-			// Attach to parent(s)
-			this.logger.debug(
-				`[QueryEngine] assembleResults: Attaching "${key}" to ${entry.includedBy.size} parent(s)`,
-			);
-			for (const parentKey of Array.from(entry.includedBy)) {
-				const parent = entriesMap.get(parentKey);
-				if (!parent) {
-					this.logger.warn(
-						`[QueryEngine] assembleResults: WARNING - Parent "${parentKey}" not found in entriesMap for child "${key}"`,
-					);
-					continue;
-				}
-
-				const relationName = entry.relationName ?? entry.path;
-				this.logger.debug(
-					`[QueryEngine] assembleResults: Attaching "${key}" to parent "${parentKey}" via relation "${relationName}"`,
-					{
-						isMany: entry.isMany,
-						parentHasRelation: !!parent.data.value[relationName],
-					},
-				);
-
-				if (entry.isMany) {
-					parent.data.value[relationName] ??= { value: [] };
-					parent.data.value[relationName].value.push(entry.data);
-					this.logger.debug(
-						`[QueryEngine] assembleResults: Added "${key}" to many relation "${relationName}" on parent "${parentKey}"`,
-						{
-							arrayLength: parent.data.value[relationName].value.length,
-						},
-					);
-				} else {
-					parent.data.value[relationName] = entry.data;
-					this.logger.debug(
-						`[QueryEngine] assembleResults: Set one relation "${relationName}" on parent "${parentKey}" to "${key}"`,
-					);
-				}
-			}
-		}
-
-		this.logger.debug(
-			`[QueryEngine] assembleResults: Assembly complete. Returning ${resultData.length} root items`,
-		);
-		return resultData;
-	}
-
-	resolveStep(
-		step: QueryStep,
-		extra?: { context?: any; batcher?: Batcher },
-	): PromiseLike<any[]> {
-		this.logger.debug(
-			'[QueryEngine] Resolving step',
-			step.stepPath.join('.'),
-			'with query',
-			JSON.stringify(step.query, null, 2),
-			'relationalWhere',
-			JSON.stringify(step.relationalWhere, null, 2),
-		);
-
-		const { query, relationalWhere } = step;
-
-		// Combine normal where clause with relational where clause
-		const combinedWhere =
-			query.where && relationalWhere
-				? mergeWhereClauses(query.where, relationalWhere)
-				: (relationalWhere ?? query.where);
-
-		const queryWithCombinedWhere = combinedWhere
-			? { ...query, where: combinedWhere }
-			: query;
-
-		return toPromiseLike(this.router.get(queryWithCombinedWhere, extra)).then(
-			(results) => {
-				this.loadStepResults(step, results);
-				return results;
-			},
-		);
-	}
-
-	loadStepResults(step: QueryStep, results: any[]): void {
-		this.logger.debug(
-			'[QueryEngine] Loading step results',
+			'[QueryEngine] Tracking step objects',
 			step.stepPath.join('.'),
 			'with results',
 			JSON.stringify(results, null, 2),

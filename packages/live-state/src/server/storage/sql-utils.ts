@@ -252,9 +252,16 @@ export function applyInclude<T extends LiveObjectAny>(
 
     const aggFunc = relation.type === "one" ? jsonObjectFrom : jsonArrayFrom;
 
-    // Extract sub-query options if this is a sub-query include
+    // An include value is either a sub-query (`{ where?, limit?, orderBy?,
+    // include? }`) or a plain-nested include map whose own keys are further
+    // relations (`{ posts: { comments: true } }`). For the latter the value
+    // itself is the nested include — mirror the client's interpretation.
     const subQueryOptions = isSubQueryInclude(includeValue) ? includeValue : null;
-    const nestedInclude = subQueryOptions?.include;
+    const nestedInclude = subQueryOptions
+      ? subQueryOptions.include
+      : includeValue && typeof includeValue === "object"
+        ? (includeValue as Record<string, any>)
+        : undefined;
 
     query = query.select((eb) => {
       const metaTableName = `${otherresource}_meta`;
