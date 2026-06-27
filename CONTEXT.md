@@ -34,8 +34,31 @@ The client-only `store.query.<resource>.where(...).get()/.subscribe()` builder t
 _Avoid_: Default Query (that is the removed server-bound path).
 
 **Tracked Query**:
-The internal query representation (historically `RawQueryRequest`) the query engine subscribes to and resolves against storage, keyed by `resource`. Minted *server-side* from a Custom Query handler's returned query builder — never sent by a client. Surviving the Default Query removal as engine/storage internals, not a wire-exposed request.
-_Avoid_: treating this as a client-facing request; after removal, clients cannot produce one directly.
+The internal query representation (historically `RawQueryRequest`) the query engine subscribes to, keyed by `resource`. Minted *server-side* from a Custom Query handler's returned query builder — never sent by a client. Surviving the Default Query removal as engine/storage internals, not a wire-exposed request.
+_Avoid_: treating this as a client-facing request; after removal, clients cannot produce one directly. _Avoid_ saying the engine "resolves" it by sub-dividing into sub-queries — resolution (including `include`) is a single Storage query (see ADR-0003).
+
+**Query Engine**:
+The server-side component that maintains realtime subscriptions to **Tracked Queries** and broadcasts **Sync Deltas** to subscribed connections as committed writes change which objects are in **scope**. After ADR-0003 it does *not* resolve queries by breaking them into sub-queries; it delegates resolution to **Storage** (one query, `include` joins and all) and owns only matching-and-broadcasting.
+_Avoid_: describing it as a query *resolver* or as the thing that runs sub-queries through routes (that path is gone).
+
+### Realtime scope
+
+**Scope**:
+The set of objects a **Tracked Query** currently matches and is therefore broadcasting changes for. For a query (or `include`) that declares a `limit`, scope is a bounded **Window**; for a windowed `include`, scope is maintained *per parent*.
+
+**Window**:
+The bounded scope of a Tracked Query (or `include`) that declares a `limit`: the top `N` objects under the query's total order. Membership is *relative* — whether an object is in the window depends on the other rows, not on the object alone.
+_Avoid_: treating window membership as a per-object predicate; that is what makes windows different from plain `where`-matching.
+
+**Scope-in / Scope-out**:
+A committed write moving an object *into* / *out of* a Tracked Query's scope, broadcast as an `INSERT` / `DELETE` **Sync Delta**. A scope-out carries only the `id`; a scope-in carries the object's payload. Membership is judged *per tracked list*: `INSERT`/`DELETE` fire only on an actual entry/exit of that list. An object that changes — *including its relations* — but stays in the same scope produces a plain field `UPDATE`, never a `DELETE`+`INSERT`. A relation change decomposes into scope-out + scope-in only when the two parents' lists genuinely differ (e.g. a task moving from project A's window to project B's).
+_Avoid_: treating "a relation changed" as the trigger; the trigger is always the membership transition.
+
+**Eviction**:
+A **Scope-out** caused not by a write to the evicted object, but by *another* object entering a full **Window** and displacing it. The displaced object is identified from in-memory window state, so eviction needs no database read.
+
+**Backfill**:
+Replacing an object that left a **Window** with the next object past the window boundary. Because the engine keeps no objects beyond the window, backfill is the one case that requires a database read on the broadcast path (see ADR-0003).
 
 ### Sync
 

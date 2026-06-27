@@ -7,7 +7,6 @@ import { createLogger, type Logger, LogLevel } from '../utils';
 import { type Hooks, type HooksRegistry, mergeEntityHooks } from './hooks';
 import type { AnyRoute, AnyRouter, QueryProcedureRequest } from './router';
 import type { Storage } from './storage';
-import type { Batcher } from './storage/batcher';
 
 export * from './adapters/express';
 export * from './hooks';
@@ -110,31 +109,10 @@ export class Server<TRouter extends AnyRouter, TContext = Record<string, any>> {
 			});
 		this.contextProvider = opts.contextProvider;
 
+		// Tracked Queries resolve in a single `storage.get` (storage owns `include`
+		// resolution); the engine only matches committed writes and broadcasts
+		// Sync Deltas to subscribers. See ADR-0003.
 		this.queryEngine = new QueryEngine({
-			router: {
-				get: async (
-					query: RawQueryRequest,
-					extra?: { context?: any; batcher?: Batcher },
-				) => {
-					if (!extra?.batcher) {
-						throw new Error('Batcher is required');
-					}
-
-					// Tracked Queries resolve directly against the batcher/storage layer
-					// keyed by the schema `resource`: any resource in the `schema` is
-					// resolvable, which lets a Custom Query handler return
-					// `db.<resource>.where(...)` for a procedure-only route. The parent
-					// step's relational filtering is already folded into `query.where` by
-					// `resolveStep`, so there is no `uniqueWhere` here.
-					return extra.batcher.rawFind({
-						resource: query.resource,
-						commonWhere: query.where,
-						include: query.include,
-						limit: query.limit,
-						sort: query.sort,
-					});
-				},
-			},
 			storage: this.storage,
 			schema: this.schema,
 			logger: this.logger,
