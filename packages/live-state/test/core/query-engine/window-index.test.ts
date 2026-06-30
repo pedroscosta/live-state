@@ -77,8 +77,10 @@ describe("WindowIndex", () => {
 				{ id: "1", sortKey: ["b"] },
 				{ id: "2", sortKey: [null] },
 				{ id: "3", sortKey: ["a"] },
+				{ id: "4", sortKey: [undefined] },
 			]);
-			expect(index.ids()).toEqual(["2", "3", "1"]);
+			// null/undefined first (id tiebreaker asc), then concrete values asc
+			expect(index.ids()).toEqual(["2", "4", "3", "1"]);
 		});
 
 		test("position reflects sorted order and is undefined for absent ids", () => {
