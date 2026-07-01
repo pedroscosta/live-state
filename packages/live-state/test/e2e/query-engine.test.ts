@@ -2275,5 +2275,61 @@ describe("Query Engine Functional Requirements", () => {
 
       result.unsubscribe?.();
     });
+
+    test("evicts + backfills when a visible row's own sort key drops it past the boundary", async () => {
+      const mutations: any[] = [];
+
+      // Window = top-2 by likes: post3 (15), post1 (10). Untracked: post4 (8).
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "likes", direction: "desc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId1,
+      ]);
+
+      const getSpy = vi.spyOn(storage, "get");
+
+      // post1 still matches the predicate but its likes fall below the untracked
+      // post4 (8): likes desc becomes post3 (15), post4 (7... post1), so post1
+      // leaves the top-2 and post4 must be pulled in.
+      await storage.update(deepSchema.posts, postId1, { likes: 7 });
+
+      await settle();
+
+      // Membership change, not a plain UPDATE: post1 is evicted, post4 backfilled.
+      const del = mutations.find(
+        (m) => m.resourceId === postId1 && m.op === "DELETE"
+      );
+      expect(del).toBeDefined();
+      expect(del.payload).toEqual({});
+
+      const backfill = mutations.find(
+        (m) => m.resourceId === postId4 && m.op === "INSERT"
+      );
+      expect(backfill).toBeDefined();
+      expect(backfill.payload.likes.value).toBe(8);
+
+      // post1 must not be broadcast as an in-window UPDATE.
+      expect(
+        mutations.some((m) => m.resourceId === postId1 && m.op === "UPDATE")
+      ).toBe(false);
+
+      // Exactly one boundary read resolves the demotion.
+      const boundaryReads = getSpy.mock.calls.filter(
+        (c: any) => c[0]?.limit !== undefined
+      );
+      expect(boundaryReads.length).toBe(1);
+      getSpy.mockRestore();
+
+      result.unsubscribe?.();
+    });
   });
 });

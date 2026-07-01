@@ -692,10 +692,25 @@ export class QueryEngine {
 			const sortKey = this.sortKeyFor(queryNode, objValue);
 
 			if (wasInWindow) {
-				// Still in scope: refresh the sort key (removing first frees a slot so
-				// the re-insert never evicts) and broadcast the field change only.
-				wi.remove(id);
+				// Still matches the predicate: refresh the sort key (removing first
+				// frees a slot so the re-insert never evicts).
+				const prevKey = wi.remove(id)?.sortKey;
 				wi.insert({ id, sortKey });
+
+				// If the row's own sort key worsened enough to land it at the boundary
+				// of a full window, an untracked row just outside may now sort ahead of
+				// it — the window-local re-insert can't see that. Confirm with a single
+				// boundary read before assuming it stayed.
+				if (
+					wi.isFull &&
+					wi.boundary()?.id === id &&
+					!this.sortKeysEqual(prevKey, sortKey)
+				) {
+					await this.reconcileDemotion(queryNode, id, sortKey, mutation);
+					return;
+				}
+
+				// Genuinely still in the window: broadcast the field change only.
 				this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
 				return;
 			}
@@ -724,6 +739,99 @@ export class QueryEngine {
 			this.emitScopeOut(queryNode, id, mutation.meta);
 			await this.backfillWindow(queryNode, mutation.meta);
 		}
+	}
+
+	/** Element-wise equality of two sort keys (both `undefined`-safe). */
+	private sortKeysEqual(a: SortKey | undefined, b: SortKey): boolean {
+		if (!a || a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+		return true;
+	}
+
+	/**
+	 * Resolve an in-window row whose own sort key worsened to the boundary of a
+	 * full window: a single boundary read finds the best untracked row past the
+	 * preceding entry. If that row outranks the demoted one they are swapped
+	 * (scope-out `DELETE` + backfill `INSERT`); otherwise the demoted row keeps
+	 * its slot and only a field `UPDATE` is broadcast. The demoted row is already
+	 * re-inserted at the boundary on entry.
+	 */
+	private async reconcileDemotion(
+		queryNode: QueryNode,
+		id: string,
+		sortKey: SortKey,
+		mutation: SyncDelta,
+	): Promise<void> {
+		const wi = queryNode.windowIndex;
+		if (!wi) return;
+
+		// Free the boundary slot so the cursor is the row *before* the demoted one;
+		// the demoted row still lives in storage past that cursor, so skip it.
+		wi.remove(id);
+		const resource = queryNode.queryStep.query.resource;
+		const where = this.combineWhere(
+			queryNode.queryStep.query.where,
+			this.buildCursorWhere(queryNode, wi.boundary()),
+		);
+
+		const rows = await toPromiseLike(
+			this.storage.get({
+				resource,
+				where,
+				sort: this.storageSortFor(queryNode),
+				limit: 2,
+			}),
+		);
+
+		let candidate: any;
+		let candidateRow: any;
+		for (const row of rows) {
+			const value = inferValue(row);
+			if (!value?.id || value.id === id || wi.has(value.id)) continue;
+			candidate = value;
+			candidateRow = row;
+			break;
+		}
+
+		if (!candidate) {
+			// Nothing outside the window: the demoted row rightfully keeps its slot.
+			wi.insert({ id, sortKey });
+			this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+			return;
+		}
+
+		wi.insert({
+			id: candidate.id,
+			sortKey: this.sortKeyFor(queryNode, candidate),
+		});
+
+		// Full window with `candidate` at the boundary: re-inserting the demoted row
+		// either evicts `candidate` (it still outranks it) or is rejected (it does
+		// not). Either way the window ends in the correct state.
+		if (wi.insert({ id, sortKey }).inserted) {
+			this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+			return;
+		}
+
+		queryNode.trackedObjects.add(candidate.id);
+		this.ensureObjectNode(candidate.id, resource, queryNode.hash).matchedQueries.add(
+			queryNode.hash,
+		);
+		const payload = { ...((candidateRow as any)?.value ?? {}) };
+		delete payload.id;
+		this.emitToSubscribers(
+			queryNode,
+			{
+				type: 'SYNC',
+				op: 'INSERT',
+				resource,
+				resourceId: candidate.id,
+				payload,
+				meta: mutation.meta,
+			},
+			'windowed demotion backfill INSERT',
+		);
+		this.emitScopeOut(queryNode, id, mutation.meta);
 	}
 
 	/** Build a full-object INSERT delta from the mutated entity's own columns. */

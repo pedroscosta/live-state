@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import {
 	customQuerySchema,
+	enforceDeleteDeltaPayload,
 	genericMutationSchema,
 	queryPayloadSchema,
-	syncDeltaSchema,
+	syncDeltaObjectSchema,
 } from './core-protocol';
 
 export const msgId = z.string();
@@ -82,9 +83,11 @@ export const svReplyMsgSchema = z.object({
 	data: z.any(),
 });
 
-export const syncDeltaMsgSchema = syncDeltaSchema.extend({
-	id: msgId,
-});
+export const syncDeltaMsgSchema = syncDeltaObjectSchema
+	.extend({
+		id: msgId,
+	})
+	.superRefine(enforceDeleteDeltaPayload);
 
 export type SyncDeltaMessage = z.infer<typeof syncDeltaMsgSchema>;
 
