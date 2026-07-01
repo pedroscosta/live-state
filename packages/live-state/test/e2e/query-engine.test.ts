@@ -11,6 +11,7 @@ import {
   describe,
   test,
   expect,
+  vi,
 } from "vitest";
 import { Pool } from "pg";
 import {
@@ -2086,6 +2087,249 @@ describe("Query Engine Functional Requirements", () => {
       if (result3.unsubscribe) {
         result3.unsubscribe();
       }
+    });
+  });
+
+  // Root windowed Tracked Queries (a `limit`, ordered by own columns): membership
+  // is relative, so scope changes (eviction, backfill) fire for rows that were
+  // never themselves mutated. See ADR-0003 / issue #185.
+  //
+  // Seed posts ordered by likes desc: post3 (15), post1 (10), post4 (8), post2 (5).
+  describe("Root Windowed Queries", () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 250));
+
+    test("emits INSERT + eviction DELETE when a new row enters a full window", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "likes", direction: "desc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      // Window starts as the top-2 by likes: post3 (15), post1 (10).
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId1,
+      ]);
+
+      // A new row that outranks the window enters at the top and displaces the
+      // boundary (post1). Eviction must not touch the database.
+      const getSpy = vi.spyOn(storage, "get");
+
+      const newPostId = generateId();
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: "Chart Topper",
+        content: "Most liked",
+        authorId: userId1,
+        likes: 20,
+      });
+
+      await settle();
+
+      const insert = mutations.find((m) => m.resourceId === newPostId);
+      expect(insert?.op).toBe("INSERT");
+      expect(insert?.payload.likes.value).toBe(20);
+
+      const evict = mutations.find((m) => m.resourceId === postId1);
+      expect(evict?.op).toBe("DELETE");
+      // A scope-out carries only the id (empty payload).
+      expect(evict?.payload).toEqual({});
+
+      // Eviction is resolved from in-memory window state: no boundary read.
+      expect(getSpy).not.toHaveBeenCalled();
+      getSpy.mockRestore();
+
+      result.unsubscribe?.();
+    });
+
+    test("emits DELETE + backfill INSERT via one boundary read when a visible row leaves scope", async () => {
+      const mutations: any[] = [];
+
+      // where + limit so a visible row can leave scope by predicate. Matching by
+      // likes desc: post3 (15), post1 (10), post4 (8); window = [post3, post1].
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          where: { likes: { $gte: 8 } },
+          sort: [{ key: "likes", direction: "desc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId1,
+      ]);
+
+      const getSpy = vi.spyOn(storage, "get");
+
+      // Drop post1 below the where threshold: it leaves scope and post4 (the next
+      // row past the boundary) backfills the freed slot.
+      await storage.update(deepSchema.posts, postId1, { likes: 1 });
+
+      await settle();
+
+      const del = mutations.find(
+        (m) => m.resourceId === postId1 && m.op === "DELETE"
+      );
+      expect(del).toBeDefined();
+      expect(del.payload).toEqual({});
+
+      const backfill = mutations.find(
+        (m) => m.resourceId === postId4 && m.op === "INSERT"
+      );
+      expect(backfill).toBeDefined();
+      expect(backfill.payload.likes.value).toBe(8);
+
+      // Exactly one boundary cursor read, bounded to the rows needed.
+      const backfillReads = getSpy.mock.calls.filter(
+        ([q]: any[]) => q.resource === "posts" && q.limit === 1
+      );
+      expect(backfillReads.length).toBe(1);
+      getSpy.mockRestore();
+
+      result.unsubscribe?.();
+    });
+
+    test("emits a plain UPDATE (no DELETE/INSERT) when a row stays in the window", async () => {
+      const mutations: any[] = [];
+
+      // Window = top-3 by likes: post3 (15), post1 (10), post4 (8).
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "likes", direction: "desc" }],
+          limit: 3,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      const getSpy = vi.spyOn(storage, "get");
+
+      // A field change on a windowed row that keeps it in the window: plain UPDATE.
+      await storage.update(deepSchema.posts, postId1, {
+        title: "First Post (edited)",
+      });
+
+      await settle();
+
+      // Reordering the row within the window (still top-3): the field UPDATE is
+      // broadcast, but no membership DELETE/INSERT and no reorder message.
+      await storage.update(deepSchema.posts, postId1, { likes: 9 });
+
+      await settle();
+
+      const post1Deltas = mutations.filter((m) => m.resourceId === postId1);
+      expect(post1Deltas.length).toBeGreaterThan(0);
+      expect(post1Deltas.every((m) => m.op === "UPDATE")).toBe(true);
+      expect(mutations.some((m) => m.op === "DELETE")).toBe(false);
+      expect(mutations.some((m) => m.op === "INSERT")).toBe(false);
+
+      // Within-window reorder needs no database read.
+      expect(getSpy).not.toHaveBeenCalled();
+      getSpy.mockRestore();
+
+      result.unsubscribe?.();
+    });
+
+    test("brings a row into scope via UPDATE (scope-in INSERT + eviction)", async () => {
+      const mutations: any[] = [];
+
+      // Window = top-2 by likes: post3 (15), post1 (10).
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "likes", direction: "desc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      // Promote post2 (5 -> 30) above the window: it scopes in and evicts post1.
+      await storage.update(deepSchema.posts, postId2, { likes: 30 });
+
+      await settle();
+
+      const scopeIn = mutations.find(
+        (m) => m.resourceId === postId2 && m.op === "INSERT"
+      );
+      expect(scopeIn).toBeDefined();
+      // Scope-in via update carries the full object payload, not a partial patch.
+      expect(scopeIn.payload.title.value).toBe("Second Post");
+      expect(scopeIn.payload.likes.value).toBe(30);
+
+      const evict = mutations.find(
+        (m) => m.resourceId === postId1 && m.op === "DELETE"
+      );
+      expect(evict).toBeDefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("evicts + backfills when a visible row's own sort key drops it past the boundary", async () => {
+      const mutations: any[] = [];
+
+      // Window = top-2 by likes: post3 (15), post1 (10). Untracked: post4 (8).
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "likes", direction: "desc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId1,
+      ]);
+
+      const getSpy = vi.spyOn(storage, "get");
+
+      // post1 still matches the predicate but its likes fall below the untracked
+      // post4 (8): likes desc becomes post3 (15), post4 (7... post1), so post1
+      // leaves the top-2 and post4 must be pulled in.
+      await storage.update(deepSchema.posts, postId1, { likes: 7 });
+
+      await settle();
+
+      // Membership change, not a plain UPDATE: post1 is evicted, post4 backfilled.
+      const del = mutations.find(
+        (m) => m.resourceId === postId1 && m.op === "DELETE"
+      );
+      expect(del).toBeDefined();
+      expect(del.payload).toEqual({});
+
+      const backfill = mutations.find(
+        (m) => m.resourceId === postId4 && m.op === "INSERT"
+      );
+      expect(backfill).toBeDefined();
+      expect(backfill.payload.likes.value).toBe(8);
+
+      // post1 must not be broadcast as an in-window UPDATE.
+      expect(
+        mutations.some((m) => m.resourceId === postId1 && m.op === "UPDATE")
+      ).toBe(false);
+
+      // Exactly one boundary read resolves the demotion.
+      const boundaryReads = getSpy.mock.calls.filter(
+        (c: any) => c[0]?.limit !== undefined
+      );
+      expect(boundaryReads.length).toBe(1);
+      getSpy.mockRestore();
+
+      result.unsubscribe?.();
     });
   });
 });
