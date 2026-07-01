@@ -232,6 +232,15 @@ export class OptimisticStore {
 
     if (!schema) throw new Error("Schema not found");
 
+    // A scope-out delta (window eviction or a visible row leaving scope) carries
+    // only the id: drop the row from the local store so windowed queries re-sort
+    // the rows they still hold. The row may still exist server-side, outside
+    // this query's scope (see ADR-0003).
+    if (mutation.op === "DELETE") {
+      this.removeFromPool(routeName, mutation.resourceId);
+      return;
+    }
+
     const prevValue =
       this.optimisticRawObjPool[routeName]?.[mutation.resourceId];
     let undidMatchingOptimistic = false;
@@ -595,6 +604,24 @@ export class OptimisticStore {
     });
 
     return { cleanedPayload, nestedMutations };
+  }
+
+  /**
+   * Drop a row from every local store surface in response to a scope-out
+   * (`DELETE`) delta, then notify subscribers so windowed queries re-derive.
+   * Any pending optimistic mutation for the row is left untouched — it is
+   * reconciled through its own reply/reject path.
+   */
+  private removeFromPool(routeName: string, resourceId: string) {
+    if (!this.schema[routeName]) return;
+
+    delete this.rawObjPool[routeName]?.[resourceId];
+    delete this.optimisticRawObjPool[routeName]?.[resourceId];
+    this.kvStorage.delete(routeName, resourceId);
+    this.optimisticObjGraph.removeNode(resourceId);
+
+    this.notifyCollectionSubscribers(routeName);
+    this.optimisticObjGraph.notifySubscribers(resourceId);
   }
 
   private updateRawObjPool(

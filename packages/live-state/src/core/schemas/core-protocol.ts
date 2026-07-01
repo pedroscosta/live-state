@@ -62,13 +62,19 @@ export type GenericMutation = z.infer<typeof genericMutationSchema>;
  * subscribed clients. `op` is a storage-operation marker (not a client
  * procedure) retained because client optimistic reconciliation still matches
  * on it. See ADR-0001.
+ *
+ * `DELETE` is a scope-out marker minted by the query engine (eviction from a
+ * full window or a visible row leaving scope). It carries only the `resourceId`
+ * with an empty `payload`; the client drops the row from the affected window
+ * (see ADR-0003). It is not a storage delete — the row may still exist in the
+ * database, just outside this query's scope.
  */
 export const syncDeltaSchema = z.object({
   id: z.string().optional(),
   type: z.literal("SYNC"),
   resource: z.string(),
   resourceId: z.string(),
-  op: z.enum(["INSERT", "UPDATE"]),
+  op: z.enum(["INSERT", "UPDATE", "DELETE"]),
   payload: mutationPayloadSchema,
   meta: mutationMetaSchema,
 });
