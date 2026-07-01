@@ -947,7 +947,6 @@ export class QueryEngine {
 					if (!relatedObj) return { hash: queryNode.hash, matches: false };
 
 					const relatedObjNode = this.objectNodes.get(relatedObj);
-					// NEXT STEP understand why this is not true (matchedQueries)
 					if (
 						!relatedObjNode ||
 						!parentQuery ||
@@ -955,7 +954,9 @@ export class QueryEngine {
 					)
 						return { hash: queryNode.hash, matches: false };
 
-					return { hash: queryNode.hash, matches: true };
+					// Relation membership holds; fall through to re-apply the
+					// include's own `where` predicate so a related-but-filtered-out
+					// object is not broadcast to this query's subscribers (ADR-0003).
 				}
 
 				if (!where) {
