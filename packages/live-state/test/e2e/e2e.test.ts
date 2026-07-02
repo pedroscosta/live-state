@@ -11,6 +11,7 @@ import {
   describe,
   expect,
   test,
+  vi,
 } from "vitest";
 import { Pool } from "pg";
 import express from "express";
@@ -1286,9 +1287,11 @@ describe("End-to-End Query Tests", () => {
           customerName: "Sync Test",
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await vi.waitFor(() => {
+          const latest = receivedUpdates[receivedUpdates.length - 1];
+          expect(latest?.find((o: any) => o.id === orderId)).toBeDefined();
+        });
 
-        expect(receivedUpdates.length).toBeGreaterThan(0);
         const latest = receivedUpdates[receivedUpdates.length - 1];
         const syncedOrder = latest.find((o: any) => o.id === orderId);
 
@@ -1721,9 +1724,11 @@ describe("End-to-End Query Tests", () => {
           price: 199,
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await vi.waitFor(() => {
+          const latest = receivedUpdates[receivedUpdates.length - 1];
+          expect(latest?.find((p: any) => p.id === productId)).toBeDefined();
+        });
 
-        expect(receivedUpdates.length).toBeGreaterThan(0);
         const latest = receivedUpdates[receivedUpdates.length - 1];
         const syncedProduct = latest.find((p: any) => p.id === productId);
 
