@@ -16,6 +16,7 @@ import type { RawQueryRequest, SyncDelta } from '../schemas/core-protocol';
 import { toPromiseLike } from '../utils';
 import type { DataSource, QueryStep } from './types';
 import { hashStep } from './utils';
+import { type OrderBy, type SortKey, WindowIndex } from './window-index';
 
 export type SyncDeltaHandler = (delta: SyncDelta) => void;
 
@@ -27,6 +28,15 @@ interface QueryNode {
 	parentQuery?: string;
 	relationName?: string;
 	childQueries: Set<string>;
+	/**
+	 * In-memory window ordering for a root query that declares a `limit`. Present
+	 * iff this is a windowed root scope; drives scope-in / eviction / backfill
+	 * broadcasts without holding row payloads (see ADR-0003). Windowed `include`s
+	 * (per-parent windows) are out of scope here.
+	 */
+	windowIndex?: WindowIndex;
+	/** Whether `windowIndex` has been seeded from an initial resolution. */
+	windowInitialized?: boolean;
 }
 
 interface ObjectNode {
@@ -257,7 +267,22 @@ export class QueryEngine {
 	 * so realtime matching has its object/relation state populated. See ADR-0003.
 	 */
 	get(query: RawQueryRequest, _extra?: { context?: any }): PromiseLike<any[]> {
-		return toPromiseLike(this.storage.get(query)).then((results) => {
+		// A windowed root query needs a deterministic boundary, so resolve it in the
+		// same total order the window maintains (`[...orderBy, id]`); backfill reads
+		// use the same tiebreaker (see ADR-0003). The extra key is harmless for
+		// non-windowed callers, so only add it when a `limit` makes the window real.
+		const resolveQuery: RawQueryRequest =
+			query.limit !== undefined
+				? {
+						...query,
+						sort: [
+							...(query.sort ?? []),
+							{ key: 'id', direction: 'asc' as const },
+						],
+					}
+				: query;
+
+		return toPromiseLike(this.storage.get(resolveQuery)).then((results) => {
 			this.ingest(query, results);
 			return results;
 		});
@@ -344,6 +369,9 @@ export class QueryEngine {
 			if (queryNode) {
 				queryNode.subscriptions.add(callback);
 			} else {
+				const isWindowedRoot =
+					step.stepPath.length === 0 && step.query.limit !== undefined;
+
 				queryNode = {
 					hash: stepHash,
 					queryStep: step,
@@ -352,6 +380,12 @@ export class QueryEngine {
 					subscriptions: new Set([callback]),
 					parentQuery: lastStepHash,
 					childQueries: new Set(),
+					windowIndex: isWindowedRoot
+						? new WindowIndex({
+								limit: step.query.limit as number,
+								orderBy: this.orderByFor(step.query),
+							})
+						: undefined,
 				};
 
 				this.queryNodes.set(queryNode.hash, queryNode);
@@ -520,6 +554,401 @@ export class QueryEngine {
 			this.loadNestedRelations(resourceName, id, result);
 			this.logger.debug('[QueryEngine] Loaded nested relations for', id);
 		}
+
+		// Seed the window ordering from the storage-resolved (ordered, limited)
+		// rows once. Storage returns exactly the top-N in total order, so no
+		// eviction happens here (see ADR-0003).
+		if (queryNode.windowIndex && !queryNode.windowInitialized) {
+			for (const rawResult of results) {
+				const result = inferValue(rawResult);
+				if (!result?.id || queryNode.windowIndex.has(result.id)) continue;
+				queryNode.windowIndex.insert({
+					id: result.id,
+					sortKey: this.sortKeyFor(queryNode, result),
+				});
+			}
+			queryNode.windowInitialized = true;
+		}
+	}
+
+	/** The `orderBy` a windowed root query is ordered by (empty ⇒ order by id). */
+	private orderByFor(query: RawQueryRequest): OrderBy {
+		return (query.sort ?? []).map((s) => ({
+			key: s.key,
+			direction: s.direction,
+		}));
+	}
+
+	/** Extract a row's sort key (own-column values in `orderBy` order). */
+	private sortKeyFor(queryNode: QueryNode, objValue: any): SortKey {
+		return (queryNode.queryStep.query.sort ?? []).map((s) => objValue[s.key]);
+	}
+
+	/** The storage sort for a windowed read: `orderBy` plus the id tiebreaker. */
+	private storageSortFor(queryNode: QueryNode): RawQueryRequest['sort'] {
+		return [
+			...(queryNode.queryStep.query.sort ?? []),
+			{ key: 'id', direction: 'asc' as const },
+		];
+	}
+
+	/** Emit a delta to every subscriber of a query node, isolating callback errors. */
+	private emitToSubscribers(
+		queryNode: QueryNode,
+		delta: SyncDelta,
+		context: string,
+	): void {
+		for (const subscription of Array.from(queryNode.subscriptions)) {
+			try {
+				subscription(delta);
+			} catch (error) {
+				this.logger.error(`[QueryEngine] Error in subscription during ${context}`, {
+					error,
+					queryHash: queryNode.hash,
+					resource: delta.resource,
+					resourceId: delta.resourceId,
+				});
+			}
+		}
+	}
+
+	/**
+	 * Broadcast a scope-out: drop the row from this window's tracking and emit an
+	 * id-only `DELETE`. Used for both evictions (displaced by an insert) and rows
+	 * that left scope; neither requires a database read.
+	 */
+	private emitScopeOut(
+		queryNode: QueryNode,
+		resourceId: string,
+		meta?: SyncDelta['meta'],
+	): void {
+		queryNode.trackedObjects.delete(resourceId);
+		this.objectNodes.get(resourceId)?.matchedQueries.delete(queryNode.hash);
+		this.emitToSubscribers(
+			queryNode,
+			{
+				type: 'SYNC',
+				op: 'DELETE',
+				resource: queryNode.queryStep.query.resource,
+				resourceId,
+				payload: {},
+				meta,
+			},
+			'scope-out DELETE',
+		);
+	}
+
+	/**
+	 * Handle an INSERT against a windowed root query: place the row in the window
+	 * (payload straight from the triggering mutation) and, if it displaced the
+	 * boundary of a full window, broadcast the eviction as an id-only `DELETE`.
+	 */
+	private handleWindowedInsert(
+		queryNode: QueryNode,
+		mutation: SyncDelta,
+		objValue: any,
+	): void {
+		const wi = queryNode.windowIndex;
+		if (!wi) return;
+
+		const result = wi.insert({
+			id: mutation.resourceId,
+			sortKey: this.sortKeyFor(queryNode, objValue),
+		});
+
+		// Sorted past the boundary of a full window: not in scope, emit nothing.
+		if (!result.inserted) return;
+
+		queryNode.trackedObjects.add(mutation.resourceId);
+		this.objectNodes.get(mutation.resourceId)?.matchedQueries.add(queryNode.hash);
+		this.emitToSubscribers(queryNode, mutation, 'windowed scope-in INSERT');
+
+		if (result.evicted) {
+			this.emitScopeOut(queryNode, result.evicted.id, mutation.meta);
+		}
+	}
+
+	/**
+	 * Handle an UPDATE against a windowed root query. Membership is judged per
+	 * ADR-0003: a row staying in the window is a plain field `UPDATE` (within-
+	 * window reordering is left to the client to re-sort); a row entering scope
+	 * is a scope-in `INSERT` (possibly evicting the boundary); a row leaving
+	 * scope is a `DELETE` followed by a single boundary-cursor backfill read.
+	 */
+	private async handleWindowedUpdate(
+		queryNode: QueryNode,
+		mutation: SyncDelta,
+		entityValue: MaterializedLiveType<LiveObjectAny>,
+		objValue: any,
+		predicateMatches: boolean,
+	): Promise<void> {
+		const wi = queryNode.windowIndex;
+		if (!wi) return;
+
+		const id = mutation.resourceId;
+		const wasInWindow = wi.has(id);
+
+		if (predicateMatches) {
+			const sortKey = this.sortKeyFor(queryNode, objValue);
+
+			if (wasInWindow) {
+				// Still matches the predicate: refresh the sort key (removing first
+				// frees a slot so the re-insert never evicts).
+				const prevKey = wi.remove(id)?.sortKey;
+				wi.insert({ id, sortKey });
+
+				// If the row's own sort key worsened enough to land it at the boundary
+				// of a full window, an untracked row just outside may now sort ahead of
+				// it — the window-local re-insert can't see that. Confirm with a single
+				// boundary read before assuming it stayed.
+				if (
+					wi.isFull &&
+					wi.boundary()?.id === id &&
+					!this.sortKeysEqual(prevKey, sortKey)
+				) {
+					await this.reconcileDemotion(queryNode, id, sortKey, mutation);
+					return;
+				}
+
+				// Genuinely still in the window: broadcast the field change only.
+				this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+				return;
+			}
+
+			// Scope-in via update: the mutation payload is partial, so carry the full
+			// object as the INSERT payload.
+			const result = wi.insert({ id, sortKey });
+			if (!result.inserted) return;
+
+			queryNode.trackedObjects.add(id);
+			this.objectNodes.get(id)?.matchedQueries.add(queryNode.hash);
+			this.emitToSubscribers(
+				queryNode,
+				this.fullInsertDelta(queryNode, mutation, entityValue),
+				'windowed scope-in INSERT',
+			);
+			if (result.evicted) {
+				this.emitScopeOut(queryNode, result.evicted.id, mutation.meta);
+			}
+			return;
+		}
+
+		// Predicate no longer matches: scope-out, then backfill the freed slot.
+		if (wasInWindow) {
+			wi.remove(id);
+			this.emitScopeOut(queryNode, id, mutation.meta);
+			await this.backfillWindow(queryNode, mutation.meta);
+		}
+	}
+
+	/** Element-wise equality of two sort keys (both `undefined`-safe). */
+	private sortKeysEqual(a: SortKey | undefined, b: SortKey): boolean {
+		if (!a || a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+		return true;
+	}
+
+	/**
+	 * Resolve an in-window row whose own sort key worsened to the boundary of a
+	 * full window: a single boundary read finds the best untracked row past the
+	 * preceding entry. If that row outranks the demoted one they are swapped
+	 * (scope-out `DELETE` + backfill `INSERT`); otherwise the demoted row keeps
+	 * its slot and only a field `UPDATE` is broadcast. The demoted row is already
+	 * re-inserted at the boundary on entry.
+	 */
+	private async reconcileDemotion(
+		queryNode: QueryNode,
+		id: string,
+		sortKey: SortKey,
+		mutation: SyncDelta,
+	): Promise<void> {
+		const wi = queryNode.windowIndex;
+		if (!wi) return;
+
+		// Free the boundary slot so the cursor is the row *before* the demoted one;
+		// the demoted row still lives in storage past that cursor, so skip it.
+		wi.remove(id);
+		const resource = queryNode.queryStep.query.resource;
+		const where = this.combineWhere(
+			queryNode.queryStep.query.where,
+			this.buildCursorWhere(queryNode, wi.boundary()),
+		);
+
+		const rows = await toPromiseLike(
+			this.storage.get({
+				resource,
+				where,
+				sort: this.storageSortFor(queryNode),
+				limit: 2,
+			}),
+		);
+
+		let candidate: any;
+		let candidateRow: any;
+		for (const row of rows) {
+			const value = inferValue(row);
+			if (!value?.id || value.id === id || wi.has(value.id)) continue;
+			candidate = value;
+			candidateRow = row;
+			break;
+		}
+
+		if (!candidate) {
+			// Nothing outside the window: the demoted row rightfully keeps its slot.
+			wi.insert({ id, sortKey });
+			this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+			return;
+		}
+
+		wi.insert({
+			id: candidate.id,
+			sortKey: this.sortKeyFor(queryNode, candidate),
+		});
+
+		// Full window with `candidate` at the boundary: re-inserting the demoted row
+		// either evicts `candidate` (it still outranks it) or is rejected (it does
+		// not). Either way the window ends in the correct state.
+		if (wi.insert({ id, sortKey }).inserted) {
+			this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+			return;
+		}
+
+		queryNode.trackedObjects.add(candidate.id);
+		this.ensureObjectNode(candidate.id, resource, queryNode.hash).matchedQueries.add(
+			queryNode.hash,
+		);
+		const payload = { ...((candidateRow as any)?.value ?? {}) };
+		delete payload.id;
+		this.emitToSubscribers(
+			queryNode,
+			{
+				type: 'SYNC',
+				op: 'INSERT',
+				resource,
+				resourceId: candidate.id,
+				payload,
+				meta: mutation.meta,
+			},
+			'windowed demotion backfill INSERT',
+		);
+		this.emitScopeOut(queryNode, id, mutation.meta);
+	}
+
+	/** Build a full-object INSERT delta from the mutated entity's own columns. */
+	private fullInsertDelta(
+		queryNode: QueryNode,
+		mutation: SyncDelta,
+		entityValue: MaterializedLiveType<LiveObjectAny>,
+	): SyncDelta {
+		const payload = { ...((entityValue as any)?.value ?? {}) };
+		delete payload.id;
+		return {
+			type: 'SYNC',
+			op: 'INSERT',
+			resource: queryNode.queryStep.query.resource,
+			resourceId: mutation.resourceId,
+			payload,
+			meta: mutation.meta,
+		};
+	}
+
+	/**
+	 * Refill an under-full window with the next rows past its boundary via a
+	 * single boundary-cursor read (`where AND sortKey beyond the last remaining
+	 * visible row, orderBy [...,id], limit = rows needed`). Each backfilled row is
+	 * broadcast as a scope-in `INSERT`. This is the one database read on the
+	 * broadcast path (see ADR-0003).
+	 */
+	private async backfillWindow(
+		queryNode: QueryNode,
+		meta?: SyncDelta['meta'],
+	): Promise<void> {
+		const wi = queryNode.windowIndex;
+		if (!wi) return;
+
+		const need = wi.backfillCount;
+		if (need <= 0) return;
+
+		const resource = queryNode.queryStep.query.resource;
+		const where = this.combineWhere(
+			queryNode.queryStep.query.where,
+			this.buildCursorWhere(queryNode, wi.boundary()),
+		);
+
+		const rows = await toPromiseLike(
+			this.storage.get({
+				resource,
+				where,
+				sort: this.storageSortFor(queryNode),
+				limit: need,
+			}),
+		);
+
+		for (const row of rows) {
+			const value = inferValue(row);
+			if (!value?.id || wi.has(value.id)) continue;
+
+			wi.insert({ id: value.id, sortKey: this.sortKeyFor(queryNode, value) });
+			queryNode.trackedObjects.add(value.id);
+			this.ensureObjectNode(value.id, resource, queryNode.hash).matchedQueries.add(
+				queryNode.hash,
+			);
+
+			const payload = { ...((row as any)?.value ?? {}) };
+			delete payload.id;
+			this.emitToSubscribers(
+				queryNode,
+				{
+					type: 'SYNC',
+					op: 'INSERT',
+					resource,
+					resourceId: value.id,
+					payload,
+					meta,
+				},
+				'windowed backfill INSERT',
+			);
+		}
+	}
+
+	/**
+	 * Cursor predicate selecting rows strictly after `boundary` in the total order
+	 * `[...orderBy, id]`: `OR_i ( AND_{j<i} k_j = v_j AND k_i <cmp> v_i )`, where
+	 * `<cmp>` is `$gt` for ascending keys and `$lt` for descending. Returns
+	 * `undefined` when the window is empty (no cursor — take the top rows).
+	 */
+	private buildCursorWhere(
+		queryNode: QueryNode,
+		boundary: { id: string; sortKey: SortKey } | undefined,
+	): Record<string, any> | undefined {
+		if (!boundary) return undefined;
+
+		const keys = [
+			...(queryNode.queryStep.query.sort ?? []),
+			{ key: 'id', direction: 'asc' as const },
+		];
+		const values = [...boundary.sortKey, boundary.id];
+
+		const clauses: Record<string, any>[] = [];
+		for (let i = 0; i < keys.length; i++) {
+			const conds: Record<string, any>[] = [];
+			for (let j = 0; j < i; j++) conds.push({ [keys[j].key]: values[j] });
+			const op = keys[i].direction === 'desc' ? '$lt' : '$gt';
+			conds.push({ [keys[i].key]: { [op]: values[i] } });
+			clauses.push(conds.length === 1 ? conds[0] : { $and: conds });
+		}
+
+		return clauses.length === 1 ? clauses[0] : { $or: clauses };
+	}
+
+	/** Combine a query's base `where` with a cursor predicate (both optional). */
+	private combineWhere(
+		base: Record<string, any> | undefined,
+		cursor: Record<string, any> | undefined,
+	): Record<string, any> | undefined {
+		if (!cursor) return base;
+		if (!base || Object.keys(base).length === 0) return cursor;
+		return { $and: [base, cursor] };
 	}
 
 	private loadNestedRelations(
@@ -731,6 +1160,11 @@ export class QueryEngine {
 
 					if (!queryNode) continue; // TODO should we throw an error here?
 
+					if (queryNode.windowIndex) {
+						this.handleWindowedInsert(queryNode, mutation, objValue);
+						continue;
+					}
+
 					queryNode.trackedObjects.add(mutation.resourceId);
 
 					if (storedObjectNode) {
@@ -790,8 +1224,28 @@ export class QueryEngine {
 
 			// Step 2: Use getMatchingQueries to determine current matching state
 			this.getMatchingQueries(mutation, objValue).then(
-				(matchingQueryHashes) => {
+				async (matchingQueryHashes) => {
 					const matchingQueriesSet = new Set(matchingQueryHashes);
+
+					// Windowed root scopes decide membership by window position, not by
+					// the predicate alone, so they are handled separately (scope-in /
+					// eviction / backfill) and excluded from the plain partition below.
+					const windowedHashes = new Set<string>();
+					for (const queryNode of Array.from(this.queryNodes.values())) {
+						if (
+							queryNode.windowIndex &&
+							queryNode.queryStep.query.resource === mutation.resource
+						) {
+							windowedHashes.add(queryNode.hash);
+							await this.handleWindowedUpdate(
+								queryNode,
+								mutation,
+								entityValue,
+								objValue,
+								matchingQueriesSet.has(queryNode.hash),
+							);
+						}
+					}
 
 					const newlyMatchedQueries: string[] = [];
 					const noLongerMatchedQueries: string[] = [];
@@ -799,6 +1253,7 @@ export class QueryEngine {
 
 					// Determine newly matched queries
 					for (const queryHash of matchingQueryHashes) {
+						if (windowedHashes.has(queryHash)) continue;
 						if (previouslyMatchedQueries.has(queryHash)) {
 							stillMatchedQueries.push(queryHash);
 						} else {
@@ -808,6 +1263,7 @@ export class QueryEngine {
 
 					// Determine no longer matched queries
 					for (const queryHash of Array.from(previouslyMatchedQueries)) {
+						if (windowedHashes.has(queryHash)) continue;
 						if (!matchingQueriesSet.has(queryHash)) {
 							noLongerMatchedQueries.push(queryHash);
 						}

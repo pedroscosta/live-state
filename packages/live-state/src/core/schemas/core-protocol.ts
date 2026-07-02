@@ -62,16 +62,42 @@ export type GenericMutation = z.infer<typeof genericMutationSchema>;
  * subscribed clients. `op` is a storage-operation marker (not a client
  * procedure) retained because client optimistic reconciliation still matches
  * on it. See ADR-0001.
+ *
+ * `DELETE` is a scope-out marker minted by the query engine (eviction from a
+ * full window or a visible row leaving scope). It carries only the `resourceId`
+ * with an empty `payload`; the client drops the row from the affected window
+ * (see ADR-0003). It is not a storage delete — the row may still exist in the
+ * database, just outside this query's scope.
  */
-export const syncDeltaSchema = z.object({
+export const syncDeltaObjectSchema = z.object({
   id: z.string().optional(),
   type: z.literal("SYNC"),
   resource: z.string(),
   resourceId: z.string(),
-  op: z.enum(["INSERT", "UPDATE"]),
+  op: z.enum(["INSERT", "UPDATE", "DELETE"]),
   payload: mutationPayloadSchema,
   meta: mutationMetaSchema,
 });
+
+/**
+ * A `DELETE` delta is an id-only scope-out marker; its payload must be empty.
+ * Shared so both `syncDeltaSchema` and the extended message schema enforce the
+ * same contract.
+ */
+export const enforceDeleteDeltaPayload = (
+  v: z.infer<typeof syncDeltaObjectSchema>,
+  ctx: z.RefinementCtx
+) => {
+  if (v.op === "DELETE" && Object.keys(v.payload).length > 0)
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "DELETE delta payload must be empty",
+    });
+};
+
+export const syncDeltaSchema = syncDeltaObjectSchema.superRefine(
+  enforceDeleteDeltaPayload
+);
 
 export type SyncDelta = z.infer<typeof syncDeltaSchema>;
 
