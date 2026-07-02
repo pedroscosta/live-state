@@ -408,7 +408,7 @@ const app = server({
 
 # Typed Context
 
-Context is now fully typed throughout the system. Instead of `Record<string, any>`, you can define an application-specific context type that flows from the `RouteFactory` through to authorization handlers, lifecycle hooks (`defineHooks`), and procedure handlers.
+Context is now fully typed throughout the system. Instead of `Record<string, any>`, you can define an application-specific context type that flows from the `RouteFactory` through to procedure handlers (where authorization now lives) and lifecycle hooks (`defineHooks`). Deprecated collection routes also receive it in their `read`/`insert` access rules.
 
 ## Defining Typed Context
 
@@ -461,16 +461,24 @@ Legacy `collectionRoute(...).withHooks(...)` remains for deprecated collection r
 
 The `Server` infers `TContext` from the `contextProvider` return type:
 
+Headers are client-controlled and, under strict Node typings, may be `string | string[] | undefined`. Normalize and validate them before trusting them as auth context (in practice you'd verify a signed token rather than a raw id):
+
 ```typescript
+const first = (h: string | string[] | undefined) =>
+  Array.isArray(h) ? h[0] : h;
+
 const app = server({
   router: appRouter,
   storage,
   schema,
-  // TContext is inferred as { user: string; role: "admin" | "user" }
-  contextProvider: (req) => ({
-    user: req.headers["x-user-id"],
-    role: req.headers["x-role"] as "admin" | "user",
-  }),
+  // TContext is inferred from the validated result: { user: string; role: "admin" | "user" }
+  contextProvider: (req) => {
+    const user = first(req.headers["x-user-id"]);
+    const role = first(req.headers["x-role"]);
+    if (!user) throw new Error("Unauthorized");
+    if (role !== "admin" && role !== "user") throw new Error("Invalid role");
+    return { user, role };
+  },
 });
 ```
 
