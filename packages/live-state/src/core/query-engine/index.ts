@@ -285,25 +285,68 @@ export class QueryEngine {
 	 * so realtime matching has its object/relation state populated. See ADR-0003.
 	 */
 	get(query: RawQueryRequest, _extra?: { context?: any }): PromiseLike<any[]> {
-		// A windowed root query needs a deterministic boundary, so resolve it in the
-		// same total order the window maintains (`[...orderBy, id]`); backfill reads
-		// use the same tiebreaker (see ADR-0003). The extra key is harmless for
-		// non-windowed callers, so only add it when a `limit` makes the window real.
-		const resolveQuery: RawQueryRequest =
-			query.limit !== undefined
+		// A windowed read needs a deterministic boundary, so resolve it in the same
+		// total order the window maintains (`[...orderBy, id]`); backfill reads use
+		// the same tiebreaker (see ADR-0003). This holds for the root `limit` and,
+		// recursively, for every windowed `include`. The extra key is harmless for
+		// non-windowed callers, so only add it where a `limit` makes the window real.
+		const resolveQuery: RawQueryRequest = {
+			...query,
+			...(query.limit !== undefined
 				? {
-						...query,
 						sort: [
 							...(query.sort ?? []),
 							{ key: 'id', direction: 'asc' as const },
 						],
 					}
-				: query;
+				: {}),
+			...(query.include
+				? { include: this.withIncludeTiebreakers(query.include) }
+				: {}),
+		};
 
 		return toPromiseLike(this.storage.get(resolveQuery)).then((results) => {
 			this.ingest(query, results);
 			return results;
 		});
+	}
+
+	/**
+	 * Recursively append the `id` tiebreaker to the `orderBy` of every windowed
+	 * (`limit`ed) `include`, so storage seeds each per-parent window with the same
+	 * total order (`[...orderBy, id]`) that `WindowIndex` and backfill/cursor reads
+	 * use. Returns a new include tree; the original (used by `ingest`, whose
+	 * `sortKeyFor` expects `orderBy` without the tiebreaker the window appends
+	 * itself) is left untouched.
+	 */
+	private withIncludeTiebreakers(
+		include: Record<string, any>,
+	): Record<string, any> {
+		const result: Record<string, any> = {};
+		for (const [relName, value] of Object.entries(include)) {
+			if (isSubQueryInclude(value)) {
+				const nested = value.include
+					? this.withIncludeTiebreakers(value.include)
+					: value.include;
+				result[relName] = {
+					...value,
+					...(nested !== undefined ? { include: nested } : {}),
+					...(value.limit !== undefined
+						? {
+								orderBy: [
+									...(value.orderBy ?? []),
+									{ key: 'id', direction: 'asc' as const },
+								],
+							}
+						: {}),
+				};
+			} else if (value && typeof value === 'object') {
+				result[relName] = this.withIncludeTiebreakers(value);
+			} else {
+				result[relName] = value;
+			}
+		}
+		return result;
 	}
 
 	/**
