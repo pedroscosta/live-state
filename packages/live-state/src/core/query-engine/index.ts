@@ -31,12 +31,30 @@ interface QueryNode {
 	/**
 	 * In-memory window ordering for a root query that declares a `limit`. Present
 	 * iff this is a windowed root scope; drives scope-in / eviction / backfill
-	 * broadcasts without holding row payloads (see ADR-0003). Windowed `include`s
-	 * (per-parent windows) are out of scope here.
+	 * broadcasts without holding row payloads (see ADR-0003).
 	 */
 	windowIndex?: WindowIndex;
 	/** Whether `windowIndex` has been seeded from an initial resolution. */
 	windowInitialized?: boolean;
+	/**
+	 * Per-parent window ordering for a windowed `include` (a `limit` on an
+	 * `include` step), keyed by parent id. Each parent keeps its own bounded
+	 * window (e.g. every project showing its latest 5 tasks); a child write is
+	 * routed to the affected parent's window via its foreign key (see ADR-0003 /
+	 * issue #186).
+	 */
+	windowIndexes?: Map<string, WindowIndex>;
+	/** Parent ids whose window has been seeded from an initial resolution. */
+	seededParents?: Set<string>;
+}
+
+/**
+ * Scopes a windowed read to a single parent of a windowed `include`: the child's
+ * foreign-key column and the parent id. `undefined` for a root window.
+ */
+interface ParentScope {
+	column: string;
+	parentId: string;
 }
 
 interface ObjectNode {
@@ -267,25 +285,68 @@ export class QueryEngine {
 	 * so realtime matching has its object/relation state populated. See ADR-0003.
 	 */
 	get(query: RawQueryRequest, _extra?: { context?: any }): PromiseLike<any[]> {
-		// A windowed root query needs a deterministic boundary, so resolve it in the
-		// same total order the window maintains (`[...orderBy, id]`); backfill reads
-		// use the same tiebreaker (see ADR-0003). The extra key is harmless for
-		// non-windowed callers, so only add it when a `limit` makes the window real.
-		const resolveQuery: RawQueryRequest =
-			query.limit !== undefined
+		// A windowed read needs a deterministic boundary, so resolve it in the same
+		// total order the window maintains (`[...orderBy, id]`); backfill reads use
+		// the same tiebreaker (see ADR-0003). This holds for the root `limit` and,
+		// recursively, for every windowed `include`. The extra key is harmless for
+		// non-windowed callers, so only add it where a `limit` makes the window real.
+		const resolveQuery: RawQueryRequest = {
+			...query,
+			...(query.limit !== undefined
 				? {
-						...query,
 						sort: [
 							...(query.sort ?? []),
 							{ key: 'id', direction: 'asc' as const },
 						],
 					}
-				: query;
+				: {}),
+			...(query.include
+				? { include: this.withIncludeTiebreakers(query.include) }
+				: {}),
+		};
 
 		return toPromiseLike(this.storage.get(resolveQuery)).then((results) => {
 			this.ingest(query, results);
 			return results;
 		});
+	}
+
+	/**
+	 * Recursively append the `id` tiebreaker to the `orderBy` of every windowed
+	 * (`limit`ed) `include`, so storage seeds each per-parent window with the same
+	 * total order (`[...orderBy, id]`) that `WindowIndex` and backfill/cursor reads
+	 * use. Returns a new include tree; the original (used by `ingest`, whose
+	 * `sortKeyFor` expects `orderBy` without the tiebreaker the window appends
+	 * itself) is left untouched.
+	 */
+	private withIncludeTiebreakers(
+		include: Record<string, any>,
+	): Record<string, any> {
+		const result: Record<string, any> = {};
+		for (const [relName, value] of Object.entries(include)) {
+			if (isSubQueryInclude(value)) {
+				const nested = value.include
+					? this.withIncludeTiebreakers(value.include)
+					: value.include;
+				result[relName] = {
+					...value,
+					...(nested !== undefined ? { include: nested } : {}),
+					...(value.limit !== undefined
+						? {
+								orderBy: [
+									...(value.orderBy ?? []),
+									{ key: 'id', direction: 'asc' as const },
+								],
+							}
+						: {}),
+				};
+			} else if (value && typeof value === 'object') {
+				result[relName] = this.withIncludeTiebreakers(value);
+			} else {
+				result[relName] = value;
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -569,6 +630,29 @@ export class QueryEngine {
 			}
 			queryNode.windowInitialized = true;
 		}
+
+		// Seed the per-parent windows of a windowed `include`. Storage already
+		// limited children to the top-N per parent, so grouping the flattened rows
+		// by their foreign key and inserting each into its parent's window never
+		// evicts. A parent is seeded only once; realtime handlers keep it current.
+		const foreignColumn = this.includeForeignColumn(queryNode);
+		if (foreignColumn) {
+			queryNode.seededParents ??= new Set();
+			for (const rawResult of results) {
+				const result = inferValue(rawResult);
+				const childId = result?.id;
+				const parentId = result?.[foreignColumn];
+				if (!childId || parentId == null) continue;
+				if (queryNode.seededParents.has(parentId)) continue;
+				const wi = this.ensureParentWindow(queryNode, parentId);
+				if (wi.has(childId)) continue;
+				wi.insert({ id: childId, sortKey: this.sortKeyFor(queryNode, result) });
+			}
+			for (const rawResult of results) {
+				const parentId = inferValue(rawResult)?.[foreignColumn];
+				if (parentId != null) queryNode.seededParents.add(parentId);
+			}
+		}
 	}
 
 	/** The `orderBy` a windowed root query is ordered by (empty ⇒ order by id). */
@@ -592,6 +676,66 @@ export class QueryEngine {
 		];
 	}
 
+	/**
+	 * The foreign-key column on a windowed `include`'s child that points back at
+	 * its parent (the `foreignColumn` of the parent's `many` relation). Returns
+	 * `undefined` for a node that is not a windowed `many` include, which is the
+	 * signal used to recognize per-parent windows.
+	 */
+	private includeForeignColumn(queryNode: QueryNode): string | undefined {
+		if (
+			queryNode.queryStep.stepPath.length === 0 ||
+			queryNode.queryStep.query.limit === undefined ||
+			!queryNode.relationName ||
+			!queryNode.parentQuery
+		)
+			return undefined;
+
+		const parentNode = this.queryNodes.get(queryNode.parentQuery);
+		const parentResource = parentNode?.queryStep.query.resource;
+		if (!parentResource) return undefined;
+
+		const relation =
+			this.schema[parentResource]?.relations?.[queryNode.relationName];
+		if (relation?.type !== 'many' || !relation.foreignColumn) return undefined;
+
+		return String(relation.foreignColumn);
+	}
+
+	/** Whether a query node maintains per-parent windows (a windowed `include`). */
+	private isWindowedIncludeNode(queryNode: QueryNode): boolean {
+		return this.includeForeignColumn(queryNode) !== undefined;
+	}
+
+	/** Get (or lazily create) the window for one parent of a windowed `include`. */
+	private ensureParentWindow(
+		queryNode: QueryNode,
+		parentId: string,
+	): WindowIndex {
+		if (!queryNode.windowIndexes) queryNode.windowIndexes = new Map();
+		let wi = queryNode.windowIndexes.get(parentId);
+		if (!wi) {
+			wi = new WindowIndex({
+				limit: queryNode.queryStep.query.limit as number,
+				orderBy: this.orderByFor(queryNode.queryStep.query),
+			});
+			queryNode.windowIndexes.set(parentId, wi);
+		}
+		return wi;
+	}
+
+	/** Find the parent window currently holding a child, if any. */
+	private parentWindowHolding(
+		queryNode: QueryNode,
+		id: string,
+	): { parentId: string; wi: WindowIndex } | undefined {
+		if (!queryNode.windowIndexes) return undefined;
+		for (const [parentId, wi] of Array.from(queryNode.windowIndexes)) {
+			if (wi.has(id)) return { parentId, wi };
+		}
+		return undefined;
+	}
+
 	/** Emit a delta to every subscriber of a query node, isolating callback errors. */
 	private emitToSubscribers(
 		queryNode: QueryNode,
@@ -602,12 +746,15 @@ export class QueryEngine {
 			try {
 				subscription(delta);
 			} catch (error) {
-				this.logger.error(`[QueryEngine] Error in subscription during ${context}`, {
-					error,
-					queryHash: queryNode.hash,
-					resource: delta.resource,
-					resourceId: delta.resourceId,
-				});
+				this.logger.error(
+					`[QueryEngine] Error in subscription during ${context}`,
+					{
+						error,
+						queryHash: queryNode.hash,
+						resource: delta.resource,
+						resourceId: delta.resourceId,
+					},
+				);
 			}
 		}
 	}
@@ -645,12 +792,10 @@ export class QueryEngine {
 	 */
 	private handleWindowedInsert(
 		queryNode: QueryNode,
+		wi: WindowIndex,
 		mutation: SyncDelta,
 		objValue: any,
 	): void {
-		const wi = queryNode.windowIndex;
-		if (!wi) return;
-
 		const result = wi.insert({
 			id: mutation.resourceId,
 			sortKey: this.sortKeyFor(queryNode, objValue),
@@ -660,7 +805,9 @@ export class QueryEngine {
 		if (!result.inserted) return;
 
 		queryNode.trackedObjects.add(mutation.resourceId);
-		this.objectNodes.get(mutation.resourceId)?.matchedQueries.add(queryNode.hash);
+		this.objectNodes
+			.get(mutation.resourceId)
+			?.matchedQueries.add(queryNode.hash);
 		this.emitToSubscribers(queryNode, mutation, 'windowed scope-in INSERT');
 
 		if (result.evicted) {
@@ -689,47 +836,12 @@ export class QueryEngine {
 		const wasInWindow = wi.has(id);
 
 		if (predicateMatches) {
-			const sortKey = this.sortKeyFor(queryNode, objValue);
-
 			if (wasInWindow) {
-				// Still matches the predicate: refresh the sort key (removing first
-				// frees a slot so the re-insert never evicts).
-				const prevKey = wi.remove(id)?.sortKey;
-				wi.insert({ id, sortKey });
-
-				// If the row's own sort key worsened enough to land it at the boundary
-				// of a full window, an untracked row just outside may now sort ahead of
-				// it — the window-local re-insert can't see that. Confirm with a single
-				// boundary read before assuming it stayed.
-				if (
-					wi.isFull &&
-					wi.boundary()?.id === id &&
-					!this.sortKeysEqual(prevKey, sortKey)
-				) {
-					await this.reconcileDemotion(queryNode, id, sortKey, mutation);
-					return;
-				}
-
-				// Genuinely still in the window: broadcast the field change only.
-				this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+				await this.refreshInWindow(queryNode, wi, mutation, objValue);
 				return;
 			}
 
-			// Scope-in via update: the mutation payload is partial, so carry the full
-			// object as the INSERT payload.
-			const result = wi.insert({ id, sortKey });
-			if (!result.inserted) return;
-
-			queryNode.trackedObjects.add(id);
-			this.objectNodes.get(id)?.matchedQueries.add(queryNode.hash);
-			this.emitToSubscribers(
-				queryNode,
-				this.fullInsertDelta(queryNode, mutation, entityValue),
-				'windowed scope-in INSERT',
-			);
-			if (result.evicted) {
-				this.emitScopeOut(queryNode, result.evicted.id, mutation.meta);
-			}
+			this.scopeInViaUpdate(queryNode, wi, mutation, entityValue, objValue);
 			return;
 		}
 
@@ -737,7 +849,137 @@ export class QueryEngine {
 		if (wasInWindow) {
 			wi.remove(id);
 			this.emitScopeOut(queryNode, id, mutation.meta);
-			await this.backfillWindow(queryNode, mutation.meta);
+			await this.backfillWindow(queryNode, wi, mutation.meta);
+		}
+	}
+
+	/**
+	 * Refresh the sort key of a row that stays in a window after an update. If the
+	 * row's own sort key worsened enough to land it at the boundary of a full
+	 * window, an untracked row just outside may now sort ahead of it — the
+	 * window-local re-insert can't see that, so a single boundary read confirms
+	 * (see `reconcileDemotion`). Otherwise the field change is broadcast as a
+	 * plain `UPDATE` (within-window reordering is left to the client).
+	 */
+	private async refreshInWindow(
+		queryNode: QueryNode,
+		wi: WindowIndex,
+		mutation: SyncDelta,
+		objValue: any,
+		parentScope?: ParentScope,
+	): Promise<void> {
+		const id = mutation.resourceId;
+		const sortKey = this.sortKeyFor(queryNode, objValue);
+
+		// Removing first frees a slot so the re-insert never evicts.
+		const prevKey = wi.remove(id)?.sortKey;
+		wi.insert({ id, sortKey });
+
+		if (
+			wi.isFull &&
+			wi.boundary()?.id === id &&
+			!this.sortKeysEqual(prevKey, sortKey)
+		) {
+			await this.reconcileDemotion(
+				queryNode,
+				wi,
+				id,
+				sortKey,
+				mutation,
+				parentScope,
+			);
+			return;
+		}
+
+		this.emitToSubscribers(queryNode, mutation, 'windowed UPDATE');
+	}
+
+	/**
+	 * Bring a row into a window via an update. The mutation payload is partial, so
+	 * carry the full object as the INSERT payload; a displaced boundary is emitted
+	 * as an id-only eviction `DELETE`.
+	 */
+	private scopeInViaUpdate(
+		queryNode: QueryNode,
+		wi: WindowIndex,
+		mutation: SyncDelta,
+		entityValue: MaterializedLiveType<LiveObjectAny>,
+		objValue: any,
+	): void {
+		const id = mutation.resourceId;
+		const result = wi.insert({
+			id,
+			sortKey: this.sortKeyFor(queryNode, objValue),
+		});
+		if (!result.inserted) return;
+
+		queryNode.trackedObjects.add(id);
+		this.objectNodes.get(id)?.matchedQueries.add(queryNode.hash);
+		this.emitToSubscribers(
+			queryNode,
+			this.fullInsertDelta(queryNode, mutation, entityValue),
+			'windowed scope-in INSERT',
+		);
+		if (result.evicted) {
+			this.emitScopeOut(queryNode, result.evicted.id, mutation.meta);
+		}
+	}
+
+	/**
+	 * Membership update for a windowed `include`, judged per parent list
+	 * (ADR-0003). Finds the parent window that currently holds the child and the
+	 * parent the child now belongs to, then:
+	 * - same list → a plain field `UPDATE` (or a boundary reconcile);
+	 * - left the old list (removed / re-parented / predicate-out) → `DELETE` to
+	 *   that parent's subscribers plus a backfill of its freed slot;
+	 * - entered a new list → scope-in `INSERT` (payload from the mutation) plus
+	 *   any eviction on that parent's boundary.
+	 *
+	 * Re-parenting A→B therefore decomposes into a `DELETE`+backfill on A and an
+	 * `INSERT` on B; unrelated parents are untouched.
+	 */
+	private async handleWindowedIncludeUpdate(
+		queryNode: QueryNode,
+		mutation: SyncDelta,
+		entityValue: MaterializedLiveType<LiveObjectAny>,
+		objValue: any,
+		belongsToNewParent: boolean,
+	): Promise<void> {
+		const foreignColumn = this.includeForeignColumn(queryNode);
+		if (!foreignColumn) return;
+
+		const id = mutation.resourceId;
+		const newParentId = belongsToNewParent
+			? (objValue[foreignColumn] as string | undefined)
+			: undefined;
+		const held = this.parentWindowHolding(queryNode, id);
+		const oldParentId = held?.parentId;
+
+		// Same list: refresh in place (field UPDATE or boundary reconcile).
+		if (oldParentId !== undefined && oldParentId === newParentId) {
+			await this.refreshInWindow(queryNode, held!.wi, mutation, objValue, {
+				column: foreignColumn,
+				parentId: oldParentId,
+			});
+			return;
+		}
+
+		// Left the old list: DELETE to A's subscribers, then backfill A.
+		if (held) {
+			held.wi.remove(id);
+			this.emitScopeOut(queryNode, id, mutation.meta);
+			await this.backfillWindow(queryNode, held.wi, mutation.meta, {
+				column: foreignColumn,
+				parentId: held.parentId,
+			});
+		}
+
+		// Entered a new list: scope-in INSERT (+ eviction) on B.
+		if (newParentId !== undefined) {
+			const wi = this.ensureParentWindow(queryNode, newParentId);
+			if (!wi.has(id)) {
+				this.scopeInViaUpdate(queryNode, wi, mutation, entityValue, objValue);
+			}
 		}
 	}
 
@@ -758,21 +1000,17 @@ export class QueryEngine {
 	 */
 	private async reconcileDemotion(
 		queryNode: QueryNode,
+		wi: WindowIndex,
 		id: string,
 		sortKey: SortKey,
 		mutation: SyncDelta,
+		parentScope?: ParentScope,
 	): Promise<void> {
-		const wi = queryNode.windowIndex;
-		if (!wi) return;
-
 		// Free the boundary slot so the cursor is the row *before* the demoted one;
 		// the demoted row still lives in storage past that cursor, so skip it.
 		wi.remove(id);
 		const resource = queryNode.queryStep.query.resource;
-		const where = this.combineWhere(
-			queryNode.queryStep.query.where,
-			this.buildCursorWhere(queryNode, wi.boundary()),
-		);
+		const where = this.windowReadWhere(queryNode, wi, parentScope);
 
 		const rows = await toPromiseLike(
 			this.storage.get({
@@ -814,9 +1052,11 @@ export class QueryEngine {
 		}
 
 		queryNode.trackedObjects.add(candidate.id);
-		this.ensureObjectNode(candidate.id, resource, queryNode.hash).matchedQueries.add(
+		this.ensureObjectNode(
+			candidate.id,
+			resource,
 			queryNode.hash,
-		);
+		).matchedQueries.add(queryNode.hash);
 		const payload = { ...((candidateRow as any)?.value ?? {}) };
 		delete payload.id;
 		this.emitToSubscribers(
@@ -861,19 +1101,15 @@ export class QueryEngine {
 	 */
 	private async backfillWindow(
 		queryNode: QueryNode,
+		wi: WindowIndex,
 		meta?: SyncDelta['meta'],
+		parentScope?: ParentScope,
 	): Promise<void> {
-		const wi = queryNode.windowIndex;
-		if (!wi) return;
-
 		const need = wi.backfillCount;
 		if (need <= 0) return;
 
 		const resource = queryNode.queryStep.query.resource;
-		const where = this.combineWhere(
-			queryNode.queryStep.query.where,
-			this.buildCursorWhere(queryNode, wi.boundary()),
-		);
+		const where = this.windowReadWhere(queryNode, wi, parentScope);
 
 		const rows = await toPromiseLike(
 			this.storage.get({
@@ -890,9 +1126,11 @@ export class QueryEngine {
 
 			wi.insert({ id: value.id, sortKey: this.sortKeyFor(queryNode, value) });
 			queryNode.trackedObjects.add(value.id);
-			this.ensureObjectNode(value.id, resource, queryNode.hash).matchedQueries.add(
+			this.ensureObjectNode(
+				value.id,
+				resource,
 				queryNode.hash,
-			);
+			).matchedQueries.add(queryNode.hash);
 
 			const payload = { ...((row as any)?.value ?? {}) };
 			delete payload.id;
@@ -939,6 +1177,28 @@ export class QueryEngine {
 		}
 
 		return clauses.length === 1 ? clauses[0] : { $or: clauses };
+	}
+
+	/**
+	 * The `where` for a windowed boundary read: the query's base `where`, scoped to
+	 * a single parent (`foreignColumn = parentId`) for a windowed `include`, plus
+	 * the boundary cursor predicate.
+	 */
+	private windowReadWhere(
+		queryNode: QueryNode,
+		wi: WindowIndex,
+		parentScope?: ParentScope,
+	): Record<string, any> | undefined {
+		let where = queryNode.queryStep.query.where;
+		if (parentScope) {
+			where = this.combineWhere(where, {
+				[parentScope.column]: parentScope.parentId,
+			});
+		}
+		return this.combineWhere(
+			where,
+			this.buildCursorWhere(queryNode, wi.boundary()),
+		);
 	}
 
 	/** Combine a query's base `where` with a cursor predicate (both optional). */
@@ -1161,7 +1421,29 @@ export class QueryEngine {
 					if (!queryNode) continue; // TODO should we throw an error here?
 
 					if (queryNode.windowIndex) {
-						this.handleWindowedInsert(queryNode, mutation, objValue);
+						this.handleWindowedInsert(
+							queryNode,
+							queryNode.windowIndex,
+							mutation,
+							objValue,
+						);
+						continue;
+					}
+
+					// Windowed `include`: route the child to its parent's window via the
+					// foreign key. `getMatchingQueries` already confirmed the parent is in
+					// scope, so the FK value is a tracked parent.
+					const foreignColumn = this.includeForeignColumn(queryNode);
+					if (foreignColumn) {
+						const parentId = objValue[foreignColumn];
+						if (parentId != null) {
+							this.handleWindowedInsert(
+								queryNode,
+								this.ensureParentWindow(queryNode, parentId),
+								mutation,
+								objValue,
+							);
+						}
 						continue;
 					}
 
@@ -1232,12 +1514,21 @@ export class QueryEngine {
 					// eviction / backfill) and excluded from the plain partition below.
 					const windowedHashes = new Set<string>();
 					for (const queryNode of Array.from(this.queryNodes.values())) {
-						if (
-							queryNode.windowIndex &&
-							queryNode.queryStep.query.resource === mutation.resource
-						) {
+						if (queryNode.queryStep.query.resource !== mutation.resource)
+							continue;
+
+						if (queryNode.windowIndex) {
 							windowedHashes.add(queryNode.hash);
 							await this.handleWindowedUpdate(
+								queryNode,
+								mutation,
+								entityValue,
+								objValue,
+								matchingQueriesSet.has(queryNode.hash),
+							);
+						} else if (this.isWindowedIncludeNode(queryNode)) {
+							windowedHashes.add(queryNode.hash);
+							await this.handleWindowedIncludeUpdate(
 								queryNode,
 								mutation,
 								entityValue,
