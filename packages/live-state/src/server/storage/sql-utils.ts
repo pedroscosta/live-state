@@ -227,6 +227,63 @@ function selectMainColumns(
   return eb.selectFrom(tableName).selectAll(tableName);
 }
 
+/**
+ * Apply a `sort` spec to a query, resolving relational sort keys. An own-column
+ * key (`"name"`) becomes a plain `orderBy`; a relational key (`"author.name"`)
+ * orders by a *related* object's column, resolved with a correlated scalar
+ * subquery rather than a join so it never conflicts with joins the `where`
+ * clause may already add. Shared by the root query (`sql-storage.get`) and every
+ * windowed `include` (`applyInclude`), so relational ordering resolves the same
+ * way at any nesting depth.
+ */
+export function applyRelationalOrderBy(
+  schema: Schema<any>,
+  resource: string,
+  query: SelectQueryBuilder<any, any, any>,
+  sort: { key: string; direction: "asc" | "desc" }[]
+): SelectQueryBuilder<any, any, any> {
+  for (const s of sort) {
+    const dot = s.key.indexOf(".");
+    if (dot !== -1) {
+      const relationName = s.key.slice(0, dot);
+      const field = s.key.slice(dot + 1);
+      const relation = schema?.[resource]?.relations?.[relationName];
+
+      if (relation?.type === "one" && relation.relationalColumn) {
+        const otherResource = relation.entity.name;
+        const relationalColumn = String(relation.relationalColumn);
+        query = query.orderBy(
+          (eb: any) =>
+            eb
+              .selectFrom(otherResource)
+              .select(`${otherResource}.${field}`)
+              .whereRef(
+                `${otherResource}.id`,
+                "=",
+                `${resource}.${relationalColumn}`
+              ),
+          s.direction
+        );
+        continue;
+      }
+
+      // A dotted key that resolves to a relation we can't order by (a `many`
+      // relation, or a `one` without a `relationalColumn`) would otherwise fall
+      // through and hand the raw `"relation.field"` to `orderBy`, surfacing as an
+      // opaque missing-FROM SQL error. Fail with a clear one.
+      if (relation) {
+        throw new Error(
+          `Relational sort on "${s.key}" is only supported for "one" relations with a relationalColumn`
+        );
+      }
+    }
+
+    query = query.orderBy(s.key, s.direction);
+  }
+
+  return query;
+}
+
 export function applyInclude<T extends LiveObjectAny>(
   schema: Schema<any>,
   resource: string,
@@ -308,14 +365,16 @@ export function applyInclude<T extends LiveObjectAny>(
         );
       }
 
-      // Apply sub-query orderBy
+      // Apply sub-query orderBy, resolving relational sort keys (`assignee.name`)
+      // relative to the included resource so a windowed include's `LIMIT` selects
+      // the correct per-parent top-N.
       if (subQueryOptions?.orderBy) {
-        for (const order of subQueryOptions.orderBy) {
-          subQuery = subQuery.orderBy(
-            `${otherresource}.${order.key}`,
-            order.direction
-          );
-        }
+        subQuery = applyRelationalOrderBy(
+          schema,
+          otherresource,
+          subQuery,
+          subQueryOptions.orderBy
+        );
       }
 
       // Apply sub-query limit

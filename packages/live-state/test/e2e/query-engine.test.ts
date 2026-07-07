@@ -2499,4 +2499,194 @@ describe("Query Engine Functional Requirements", () => {
       result.unsubscribe?.();
     });
   });
+
+  // Relational orderBy inside a *windowed include*: each post keeps a top-N
+  // window of its comments ordered by a grandchild relation (the comment's
+  // author name). A rename of a comment author must reorder that post's comment
+  // window via the same reverse-ref fan-out + boundary read as the root case,
+  // and the initial seed must select the correct per-parent top-N (which needs
+  // storage to resolve the relational include orderBy). See #195 / ADR-0003.
+  describe("Relational orderBy in a windowed include (grandchild sort key)", () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 250));
+
+    // A dedicated post whose comments are authored by three fresh users, so the
+    // window is independent of the base-seed data.
+    let post: string;
+    let authorA: string; // "Alice" -> commentA
+    let authorB: string; // "Bob"   -> commentB
+    let authorC: string; // "Carol" -> commentC (outside a top-2 window)
+    let commentA: string;
+    let commentB: string;
+    let commentC: string;
+
+    const setup = async () => {
+      post = generateId();
+      authorA = generateId();
+      authorB = generateId();
+      authorC = generateId();
+      commentA = generateId();
+      commentB = generateId();
+      commentC = generateId();
+
+      await storage.insert(deepSchema.users, {
+        id: authorA,
+        name: "Alice",
+        email: "alice@x.com",
+        orgId: orgId1,
+      });
+      await storage.insert(deepSchema.users, {
+        id: authorB,
+        name: "Bob",
+        email: "bob@x.com",
+        orgId: orgId1,
+      });
+      await storage.insert(deepSchema.users, {
+        id: authorC,
+        name: "Carol",
+        email: "carol@x.com",
+        orgId: orgId1,
+      });
+      await storage.insert(deepSchema.posts, {
+        id: post,
+        title: "Windowed comments",
+        content: "…",
+        authorId: authorA,
+        likes: 0,
+      });
+      await storage.insert(deepSchema.comments, {
+        id: commentA,
+        content: "a",
+        postId: post,
+        authorId: authorA,
+      });
+      await storage.insert(deepSchema.comments, {
+        id: commentB,
+        content: "b",
+        postId: post,
+        authorId: authorB,
+      });
+      await storage.insert(deepSchema.comments, {
+        id: commentC,
+        content: "c",
+        postId: post,
+        authorId: authorC,
+      });
+    };
+
+    // posts -> each post's top-2 comments ordered by the comment author's name.
+    const subscribeWindowedComments = (mutations: any[]) =>
+      handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          include: {
+            comments: {
+              limit: 2,
+              orderBy: [{ key: "author.name", direction: "asc" }],
+            },
+          },
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+    const commentIds = (data: any[]): string[] => {
+      const p = data.find((row: any) => row.value.id.value === post);
+      const comments = p?.value?.comments?.value ?? [];
+      return comments.map((c: any) => c.value.id.value);
+    };
+
+    test("seeds each post's comment window in author-name order", async () => {
+      await setup();
+      const result = await subscribeWindowedComments([]);
+
+      // Top-2 by author name asc: Alice's comment, then Bob's. Carol is outside.
+      expect(commentIds(result.data)).toEqual([commentA, commentB]);
+
+      // The engine-added `author` relation (pulled in only to derive sort keys)
+      // is stripped from the nested comment rows.
+      const p = result.data.find((row: any) => row.value.id.value === post);
+      expect(p.value.comments.value[0].value.author).toBeUndefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("author rename demotes an in-window comment (DELETE) and backfills the unseen one (INSERT)", async () => {
+      await setup();
+      const mutations: any[] = [];
+      const result = await subscribeWindowedComments(mutations);
+      expect(commentIds(result.data)).toEqual([commentA, commentB]);
+
+      // Alice -> "Zed": order becomes Bob, Carol, Zed, so commentA leaves the
+      // top-2 and commentC (never loaded) must be promoted via a boundary read.
+      await storage.update(deepSchema.users, authorA, { name: "Zed" });
+      await settle();
+
+      const del = mutations.find(
+        (m) => m.resourceId === commentA && m.op === "DELETE"
+      );
+      expect(del).toBeDefined();
+      expect(del.payload).toEqual({});
+
+      const backfill = mutations.find(
+        (m) => m.resourceId === commentC && m.op === "INSERT"
+      );
+      expect(backfill).toBeDefined();
+      expect(backfill.payload.content.value).toBe("c");
+      // The INSERT carries the comment's own columns, not the author the engine
+      // included to order the boundary read.
+      expect(backfill.payload.author).toBeUndefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("renaming an out-of-window author promotes its unseen comment (INSERT) and evicts the boundary (DELETE)", async () => {
+      await setup();
+      const mutations: any[] = [];
+      const result = await subscribeWindowedComments(mutations);
+      expect(commentIds(result.data)).toEqual([commentA, commentB]);
+
+      // Carol -> "Aaa" (out-of-window commentC): order becomes Aaa, Alice, Bob,
+      // so commentC enters the top-2 and Bob's commentB is evicted. No in-window
+      // comment changed, so only the boundary read can catch this promotion.
+      await storage.update(deepSchema.users, authorC, { name: "Aaa" });
+      await settle();
+
+      const promoted = mutations.find(
+        (m) => m.resourceId === commentC && m.op === "INSERT"
+      );
+      expect(promoted).toBeDefined();
+      expect(promoted.payload.content.value).toBe("c");
+
+      const evicted = mutations.find(
+        (m) => m.resourceId === commentB && m.op === "DELETE"
+      );
+      expect(evicted).toBeDefined();
+      expect(evicted.payload).toEqual({});
+
+      result.unsubscribe?.();
+    });
+
+    test("author rename that only reorders within the comment window emits no delta", async () => {
+      await setup();
+      const mutations: any[] = [];
+      const result = await subscribeWindowedComments(mutations);
+      expect(commentIds(result.data)).toEqual([commentA, commentB]);
+
+      // Alice -> "Boris": the window is still {commentA, commentB} but their
+      // order flips (Bob before Boris). Membership is unchanged, so nothing is
+      // broadcast — the client re-sorts the rows it holds.
+      await storage.update(deepSchema.users, authorA, { name: "Boris" });
+      await settle();
+
+      expect(
+        mutations.some(
+          (m) =>
+            (m.op === "INSERT" || m.op === "DELETE") &&
+            [commentA, commentB, commentC].includes(m.resourceId)
+        )
+      ).toBe(false);
+
+      result.unsubscribe?.();
+    });
+  });
 });

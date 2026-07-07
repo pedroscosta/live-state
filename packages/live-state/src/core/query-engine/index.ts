@@ -290,9 +290,11 @@ export class QueryEngine {
 		// compute their sort keys. Include it for resolution even if the caller
 		// did not ask for it, then strip the engine-added relations from the
 		// returned rows so the caller's data shape is unchanged.
-		const addedRelations = this.relationalSortDeps(query)
-			.map((d) => d.relationName)
-			.filter((rel) => !(query.include && rel in query.include));
+		const addedRelations = this.addedSortRelations(
+			query.resource,
+			query.sort,
+			query.include,
+		);
 		const resolveInclude: Record<string, any> = { ...(query.include ?? {}) };
 		for (const rel of addedRelations) resolveInclude[rel] = true;
 
@@ -312,23 +314,99 @@ export class QueryEngine {
 					}
 				: {}),
 			...(Object.keys(resolveInclude).length > 0
-				? { include: this.withIncludeTiebreakers(resolveInclude) }
+				? {
+						include: this.prepareResolveInclude(resolveInclude, query.resource),
+					}
 				: {}),
 		};
 
 		return toPromiseLike(this.storage.get(resolveQuery)).then((results) => {
 			this.ingest(query, results);
-			if (addedRelations.length > 0)
-				this.stripRelations(results, addedRelations);
+			this.stripResolveRelations(
+				results,
+				query.resource,
+				query.include,
+				query.sort,
+			);
 			return results;
 		});
 	}
 
-	/** Remove engine-added relations from materialized rows before returning. */
-	private stripRelations(results: any[], relations: string[]): void {
-		for (const row of results) {
-			if (!row?.value) continue;
-			for (const rel of relations) delete row.value[rel];
+	/**
+	 * The relation names a level's relational sort keys (`"author.name"`) need
+	 * that the caller did not already include — the relations the engine adds to
+	 * the resolve `include` purely to derive sort keys, and strips back out before
+	 * returning. Shared by enrichment (`prepareResolveInclude`) and stripping
+	 * (`stripResolveRelations`) so the two can never disagree about what was added.
+	 */
+	private addedSortRelations(
+		resource: string,
+		sort: RawQueryRequest['sort'],
+		existingInclude: Record<string, any> | undefined,
+	): string[] {
+		const added: string[] = [];
+		for (const s of sort ?? []) {
+			const dot = s.key.indexOf('.');
+			if (dot === -1) continue;
+			const relationName = s.key.slice(0, dot);
+			if (!this.schema[resource]?.relations?.[relationName]) continue;
+			if (existingInclude && relationName in existingInclude) continue;
+			if (!added.includes(relationName)) added.push(relationName);
+		}
+		return added;
+	}
+
+	/**
+	 * Recursively strip the engine-added sort relations from a resolved result
+	 * tree so the caller's data shape is unchanged. Walks alongside the caller's
+	 * original query: at each level it deletes exactly the relations
+	 * `addedSortRelations` reports (never one the caller included), then descends
+	 * into each caller-included relation to strip its own added grandchildren.
+	 */
+	private stripResolveRelations(
+		rows: any[],
+		resource: string,
+		callerInclude: Record<string, any> | undefined,
+		sort: RawQueryRequest['sort'],
+	): void {
+		const added = this.addedSortRelations(resource, sort, callerInclude);
+		if (added.length > 0)
+			for (const row of rows) {
+				const value = row?.value;
+				if (!value) continue;
+				for (const rel of added) delete value[rel];
+			}
+
+		if (!callerInclude) return;
+		for (const [relName, sub] of Object.entries(callerInclude)) {
+			const relation = this.schema[resource]?.relations?.[relName];
+			const childResource = relation?.entity.name;
+			if (!childResource) continue;
+
+			const subQuery = isSubQueryInclude(sub) ? sub : null;
+			const childInclude = subQuery
+				? subQuery.include
+				: sub && typeof sub === 'object'
+					? (sub as Record<string, any>)
+					: undefined;
+			const childSort = subQuery?.orderBy;
+
+			for (const row of rows) {
+				const node = row?.value?.[relName];
+				if (!node) continue;
+				const childRows =
+					relation.type === 'many'
+						? Array.isArray(node.value)
+							? node.value
+							: []
+						: [node];
+				this.stripResolveRelations(
+					childRows,
+					childResource,
+					childInclude,
+					childSort,
+				);
+			}
 		}
 	}
 
@@ -400,26 +478,53 @@ export class QueryEngine {
 	}
 
 	/**
-	 * Recursively append the `id` tiebreaker to the `orderBy` of every windowed
-	 * (`limit`ed) `include`, so storage seeds each per-parent window with the same
-	 * total order (`[...orderBy, id]`) that `WindowIndex` and backfill/cursor reads
-	 * use. Returns a new include tree; the original (used by `ingest`, whose
+	 * Prepare the resolve `include` tree for a windowed read, threading each
+	 * level's resource so it can do two resource-dependent transforms:
+	 *
+	 * 1. **Sort-relation enrichment** — for a windowed (`limit`ed) sub-include
+	 *    ordered by a relational key (`assignee.name`), pull in the relation its
+	 *    `orderBy` needs so the child rows carry the objects the per-parent
+	 *    `WindowIndex` derives its sort keys from (stripped back out by
+	 *    `stripResolveRelations`). Gated on `limit`: a non-windowed include seeds
+	 *    no window, so it needs no engine-added relation.
+	 * 2. **Tiebreaker** — append `id` to every windowed `orderBy` so storage seeds
+	 *    each per-parent window in the same total order (`[...orderBy, id]`) the
+	 *    `WindowIndex` and backfill/cursor reads use.
+	 *
+	 * Returns a new include tree; the original (used by `ingest`, whose
 	 * `sortKeyFor` expects `orderBy` without the tiebreaker the window appends
 	 * itself) is left untouched.
 	 */
-	private withIncludeTiebreakers(
+	private prepareResolveInclude(
 		include: Record<string, any>,
+		resource: string,
 	): Record<string, any> {
 		const result: Record<string, any> = {};
 		for (const [relName, value] of Object.entries(include)) {
+			const childResource = this.schema[resource]?.relations?.[relName]?.entity
+				.name as string | undefined;
+
 			if (isSubQueryInclude(value)) {
-				const nested = value.include
-					? this.withIncludeTiebreakers(value.include)
-					: value.include;
+				const windowed = value.limit !== undefined;
+
+				const childInclude: Record<string, any> = { ...(value.include ?? {}) };
+				if (windowed && childResource)
+					for (const rel of this.addedSortRelations(
+						childResource,
+						value.orderBy,
+						value.include,
+					))
+						childInclude[rel] = true;
+
+				const nested =
+					childResource && Object.keys(childInclude).length > 0
+						? this.prepareResolveInclude(childInclude, childResource)
+						: value.include;
+
 				result[relName] = {
 					...value,
 					...(nested !== undefined ? { include: nested } : {}),
-					...(value.limit !== undefined
+					...(windowed
 						? {
 								orderBy: [
 									...(value.orderBy ?? []),
@@ -428,8 +533,8 @@ export class QueryEngine {
 							}
 						: {}),
 				};
-			} else if (value && typeof value === 'object') {
-				result[relName] = this.withIncludeTiebreakers(value);
+			} else if (value && typeof value === 'object' && childResource) {
+				result[relName] = this.prepareResolveInclude(value, childResource);
 			} else {
 				result[relName] = value;
 			}
@@ -1885,16 +1990,18 @@ export class QueryEngine {
 			// itself matches any query, so it runs alongside the matching pass below.
 			// It reads storage, so surface a rejection instead of leaving windows
 			// silently unreconciled with an unhandled promise.
-			void this.handleRelationalSortFanout(mutation, objValue).catch((error) => {
-				this.logger.error(
-					'[QueryEngine] Error during relational sort fan-out',
-					{
-						error,
-						resource: mutation.resource,
-						resourceId: mutation.resourceId,
-					},
-				);
-			});
+			void this.handleRelationalSortFanout(mutation, objValue).catch(
+				(error) => {
+					this.logger.error(
+						'[QueryEngine] Error during relational sort fan-out',
+						{
+							error,
+							resource: mutation.resource,
+							resourceId: mutation.resourceId,
+						},
+					);
+				},
+			);
 
 			// Step 2: Use getMatchingQueries to determine current matching state
 			this.getMatchingQueries(mutation, objValue).then(
