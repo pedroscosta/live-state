@@ -1883,7 +1883,18 @@ export class QueryEngine {
 			// object's field (e.g. posts ordered by `author.name` reacting to an
 			// author rename). This is independent of whether the mutated object
 			// itself matches any query, so it runs alongside the matching pass below.
-			void this.handleRelationalSortFanout(mutation, objValue);
+			// It reads storage, so surface a rejection instead of leaving windows
+			// silently unreconciled with an unhandled promise.
+			void this.handleRelationalSortFanout(mutation, objValue).catch((error) => {
+				this.logger.error(
+					'[QueryEngine] Error during relational sort fan-out',
+					{
+						error,
+						resource: mutation.resource,
+						resourceId: mutation.resourceId,
+					},
+				);
+			});
 
 			// Step 2: Use getMatchingQueries to determine current matching state
 			this.getMatchingQueries(mutation, objValue).then(

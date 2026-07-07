@@ -239,6 +239,16 @@ export class SQLStorage extends Storage {
             );
             return;
           }
+
+          // A dotted key that resolves to a relation we can't order by (a `many`
+          // relation, or a `one` without a `relationalColumn`) would otherwise
+          // fall through and hand the raw `"relation.field"` to `orderBy`,
+          // surfacing as an opaque missing-FROM SQL error. Fail with a clear one.
+          if (relation) {
+            throw new Error(
+              `Relational sort on "${s.key}" is only supported for "one" relations with a relationalColumn`,
+            );
+          }
         }
 
         queryBuilder = queryBuilder.orderBy(s.key, s.direction);
