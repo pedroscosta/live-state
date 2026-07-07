@@ -2332,4 +2332,171 @@ describe("Query Engine Functional Requirements", () => {
       result.unsubscribe?.();
     });
   });
+
+  // Relational orderBy: a windowed root query ordered by a *related* object's
+  // field (`author.name`). A write to the related object (an author rename)
+  // re-orders the window via reverse-ref fan-out plus a boundary cursor read for
+  // rows that were outside the window. See ADR-0003 / issue #187.
+  //
+  // Authors + their single post, ordered by author.name asc:
+  //   Alice Johnson  (userId3) -> postId3
+  //   Bob Williams   (userId4) -> postId4
+  //   Jane Smith     (userId2) -> postId2
+  //   John Doe       (userId1) -> postId1
+  // Window (limit 2) = [postId3 (Alice), postId4 (Bob)].
+  describe("Relational orderBy (sort key from a related object)", () => {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 250));
+
+    test("seeds the window in related-field order", async () => {
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+      });
+
+      // Top-2 by author.name asc: Alice's post, then Bob's.
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // The engine-added `author` relation is stripped from the returned rows.
+      expect(result.data[0].value.author).toBeUndefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("author rename demotes an in-window row (DELETE) and pulls an unseen row in (INSERT)", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // Rename Alice -> "Zoe Zephyr": order becomes Bob, Jane, John, Zoe, so
+      // Alice's post (postId3) leaves the top-2 and Jane's post (postId2) — never
+      // loaded, invisible to the graph — must be promoted via a boundary read.
+      await storage.update(deepSchema.users, userId3, { name: "Zoe Zephyr" });
+
+      await settle();
+
+      const del = mutations.find(
+        (m) => m.resourceId === postId3 && m.op === "DELETE"
+      );
+      expect(del).toBeDefined();
+      // A scope-out carries only the id.
+      expect(del.payload).toEqual({});
+
+      const promoted = mutations.find(
+        (m) => m.resourceId === postId2 && m.op === "INSERT"
+      );
+      expect(promoted).toBeDefined();
+      // The backfilled INSERT carries the row's own columns, not the related
+      // author the engine included only to order the boundary read.
+      expect(promoted.payload.author).toBeUndefined();
+      expect(promoted.payload.title.value).toBe("Second Post");
+
+      // The demoted row must not be broadcast as an in-window UPDATE.
+      expect(
+        mutations.some((m) => m.resourceId === postId3 && m.op === "UPDATE")
+      ).toBe(false);
+
+      result.unsubscribe?.();
+    });
+
+    test("renaming an out-of-window author promotes its unseen row (INSERT) and evicts the boundary (DELETE)", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // Rename John Doe (userId1 -> postId1, currently last and *outside* the
+      // window) to "Aaron Aaronson". Order becomes Aaron, Alice, Bob, Jane, so
+      // postId1 must enter the top-2 and Bob's postId4 is evicted. No in-window
+      // row's author changed, so the reverse-ref fan-out sees nothing: only the
+      // boundary read can discover this previously-unseen promotion (#187).
+      await storage.update(deepSchema.users, userId1, {
+        name: "Aaron Aaronson",
+      });
+
+      await settle();
+
+      const promoted = mutations.find(
+        (m) => m.resourceId === postId1 && m.op === "INSERT"
+      );
+      expect(promoted).toBeDefined();
+      expect(promoted.payload.author).toBeUndefined();
+      expect(promoted.payload.title.value).toBe("First Post");
+
+      const evicted = mutations.find(
+        (m) => m.resourceId === postId4 && m.op === "DELETE"
+      );
+      expect(evicted).toBeDefined();
+      expect(evicted.payload).toEqual({});
+
+      // Alice's post stayed in the window and was not re-broadcast.
+      expect(
+        mutations.some((m) => m.resourceId === postId3)
+      ).toBe(false);
+
+      result.unsubscribe?.();
+    });
+
+    test("author rename that only reorders within the window emits no delta", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // Rename Alice -> "Boris": the window is still {postId3, postId4} but their
+      // order flips (Bob before Boris). Membership is unchanged, so nothing is
+      // broadcast — the client re-sorts the rows it already holds.
+      await storage.update(deepSchema.users, userId3, { name: "Boris" });
+
+      await settle();
+
+      expect(mutations.some((m) => m.op === "INSERT")).toBe(false);
+      expect(mutations.some((m) => m.op === "DELETE")).toBe(false);
+
+      result.unsubscribe?.();
+    });
+  });
 });

@@ -213,6 +213,34 @@ export class SQLStorage extends Storage {
 
     if (sort !== undefined) {
       sort.forEach((s) => {
+        // A relational sort key (`"author.name"`) orders by a related object's
+        // column. Resolve it with a correlated scalar subquery rather than a join
+        // so it never conflicts with joins the `where` clause may already add.
+        const dot = s.key.indexOf(".");
+        if (dot !== -1) {
+          const relationName = s.key.slice(0, dot);
+          const field = s.key.slice(dot + 1);
+          const relation = this.schema?.[resourceName]?.relations?.[relationName];
+
+          if (relation?.type === "one" && relation.relationalColumn) {
+            const otherResource = relation.entity.name;
+            const relationalColumn = String(relation.relationalColumn);
+            queryBuilder = queryBuilder.orderBy(
+              (eb: any) =>
+                eb
+                  .selectFrom(otherResource)
+                  .select(`${otherResource}.${field}`)
+                  .whereRef(
+                    `${otherResource}.id`,
+                    "=",
+                    `${resourceName}.${relationalColumn}`,
+                  ),
+              s.direction,
+            );
+            return;
+          }
+        }
+
         queryBuilder = queryBuilder.orderBy(s.key, s.direction);
       });
     }
