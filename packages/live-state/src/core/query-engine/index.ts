@@ -285,6 +285,17 @@ export class QueryEngine {
 	 * so realtime matching has its object/relation state populated. See ADR-0003.
 	 */
 	get(query: RawQueryRequest, _extra?: { context?: any }): PromiseLike<any[]> {
+		// A relational sort key (`author.name`) orders by a *related* object's
+		// field, so the resolved rows must carry that relation for the window to
+		// compute their sort keys. Include it for resolution even if the caller
+		// did not ask for it, then strip the engine-added relations from the
+		// returned rows so the caller's data shape is unchanged.
+		const addedRelations = this.relationalSortDeps(query)
+			.map((d) => d.relationName)
+			.filter((rel) => !(query.include && rel in query.include));
+		const resolveInclude: Record<string, any> = { ...(query.include ?? {}) };
+		for (const rel of addedRelations) resolveInclude[rel] = true;
+
 		// A windowed read needs a deterministic boundary, so resolve it in the same
 		// total order the window maintains (`[...orderBy, id]`); backfill reads use
 		// the same tiebreaker (see ADR-0003). This holds for the root `limit` and,
@@ -300,15 +311,92 @@ export class QueryEngine {
 						],
 					}
 				: {}),
-			...(query.include
-				? { include: this.withIncludeTiebreakers(query.include) }
+			...(Object.keys(resolveInclude).length > 0
+				? { include: this.withIncludeTiebreakers(resolveInclude) }
 				: {}),
 		};
 
 		return toPromiseLike(this.storage.get(resolveQuery)).then((results) => {
 			this.ingest(query, results);
+			if (addedRelations.length > 0)
+				this.stripRelations(results, addedRelations);
 			return results;
 		});
+	}
+
+	/** Remove engine-added relations from materialized rows before returning. */
+	private stripRelations(results: any[], relations: string[]): void {
+		for (const row of results) {
+			if (!row?.value) continue;
+			for (const rel of relations) delete row.value[rel];
+		}
+	}
+
+	/**
+	 * Relational components of a query's sort spec: sort keys of the form
+	 * `"relation.field"` that order by a *related* object's column. Each carries
+	 * its component index (position in the sort-key tuple), the local relation
+	 * name, the related field, and the target resource. Own-column keys are
+	 * omitted. Drives relational-sort resolution, cursor predicates, and the
+	 * reverse-ref fan-out (see ADR-0003 / issue #187).
+	 */
+	private relationalSortDeps(query: RawQueryRequest): {
+		index: number;
+		relationName: string;
+		field: string;
+		targetResource: string;
+	}[] {
+		const deps: {
+			index: number;
+			relationName: string;
+			field: string;
+			targetResource: string;
+		}[] = [];
+		const sort = query.sort ?? [];
+		for (let i = 0; i < sort.length; i++) {
+			const dot = sort[i].key.indexOf('.');
+			if (dot === -1) continue;
+			const relationName = sort[i].key.slice(0, dot);
+			const field = sort[i].key.slice(dot + 1);
+			const relation = this.schema[query.resource]?.relations?.[relationName];
+			if (!relation) continue;
+			deps.push({
+				index: i,
+				relationName,
+				field,
+				targetResource: relation.entity.name,
+			});
+		}
+		return deps;
+	}
+
+	/**
+	 * The `include` a windowed boundary/backfill read needs so its rows carry the
+	 * related objects that relational sort keys are derived from. `undefined` when
+	 * the sort is own-column only (leaving those reads unchanged).
+	 */
+	private sortRelationInclude(
+		queryNode: QueryNode,
+	): Record<string, any> | undefined {
+		const deps = this.relationalSortDeps(queryNode.queryStep.query);
+		if (deps.length === 0) return undefined;
+		const include: Record<string, any> = {};
+		for (const d of deps) include[d.relationName] = true;
+		return include;
+	}
+
+	/**
+	 * Drop the sort-relation objects a boundary read pulled in for ordering from a
+	 * delta payload, so an `INSERT` broadcast carries only the row's own columns
+	 * and not the related objects the engine included purely to derive sort keys.
+	 */
+	private stripPayloadRelations(
+		payload: Record<string, any>,
+		sortInclude: Record<string, any> | undefined,
+	): Record<string, any> {
+		if (sortInclude)
+			for (const rel of Object.keys(sortInclude)) delete payload[rel];
+		return payload;
 	}
 
 	/**
@@ -663,9 +751,28 @@ export class QueryEngine {
 		}));
 	}
 
-	/** Extract a row's sort key (own-column values in `orderBy` order). */
-	private sortKeyFor(queryNode: QueryNode, objValue: any): SortKey {
-		return (queryNode.queryStep.query.sort ?? []).map((s) => objValue[s.key]);
+	/**
+	 * Extract a row's sort key in `orderBy` order. Own-column keys read the row's
+	 * field; a relational key (`author.name`) reads the included related object.
+	 * When the row does not carry that relation — a bare mutation payload lacks
+	 * it — the component falls back to `previousKey`, so an own-column update
+	 * never clobbers a relational sort-key component it cannot see.
+	 */
+	private sortKeyFor(
+		queryNode: QueryNode,
+		objValue: any,
+		previousKey?: SortKey,
+	): SortKey {
+		return (queryNode.queryStep.query.sort ?? []).map((s, i) => {
+			const dot = s.key.indexOf('.');
+			if (dot === -1) return objValue?.[s.key];
+			const relationName = s.key.slice(0, dot);
+			const field = s.key.slice(dot + 1);
+			const related = objValue?.[relationName];
+			if (related && typeof related === 'object' && field in related)
+				return related[field];
+			return previousKey?.[i];
+		});
 	}
 
 	/** The storage sort for a windowed read: `orderBy` plus the id tiebreaker. */
@@ -869,10 +976,12 @@ export class QueryEngine {
 		parentScope?: ParentScope,
 	): Promise<void> {
 		const id = mutation.resourceId;
-		const sortKey = this.sortKeyFor(queryNode, objValue);
 
 		// Removing first frees a slot so the re-insert never evicts.
 		const prevKey = wi.remove(id)?.sortKey;
+		// A bare mutation payload carries no related objects, so relational sort
+		// components fall back to the previous key rather than being clobbered.
+		const sortKey = this.sortKeyFor(queryNode, objValue, prevKey);
 		wi.insert({ id, sortKey });
 
 		if (
@@ -983,6 +1092,249 @@ export class QueryEngine {
 		}
 	}
 
+	/**
+	 * Reverse-ref fan-out + boundary read for relational sort keys (ADR-0003 /
+	 * issue #187). A write to a related object (e.g. an author rename) can re-order
+	 * every windowed row ordered by that object's field. Per affected windowed
+	 * scope, in two steps:
+	 *
+	 * 1. **Fan-out** — walk `referencedByObjects` to the *known* in-window rows and
+	 *    recompute, component-wise, the touched sort-key component so the in-memory
+	 *    order stays accurate. This is pure in-memory: it neither reads nor emits.
+	 * 2. **Boundary read** — the fan-out sees only tracked rows, so a row that was
+	 *    *outside* the window but should now be promoted in (never loaded, hence
+	 *    invisible to the graph) is caught by re-reading the scope's current top-N
+	 *    and diffing (see `reconcilePromotions`): a demotion out emits `DELETE` +
+	 *    backfill, an unseen promotion emits `INSERT`, pure reordering emits nothing.
+	 */
+	private async handleRelationalSortFanout(
+		mutation: SyncDelta,
+		objValue: any,
+	): Promise<void> {
+		if (!mutation.payload) return;
+		// The mutated related object may not be tracked at all (no in-window row
+		// references it) yet still promote an unseen row, so absence of an object
+		// node does not skip the boundary read below.
+		const objectNode = this.objectNodes.get(mutation.resourceId);
+
+		for (const queryNode of Array.from(this.queryNodes.values())) {
+			const deps = this.relationalSortDeps(queryNode.queryStep.query);
+			if (deps.length === 0) continue;
+
+			const isRootWindow = !!queryNode.windowIndex;
+			const isIncludeWindow = this.isWindowedIncludeNode(queryNode);
+			if (!isRootWindow && !isIncludeWindow) continue;
+
+			// Step 1: component-wise fan-out over the known in-window rows.
+			let touchesSortKey = false;
+			for (const dep of deps) {
+				if (dep.targetResource !== mutation.resource) continue;
+				// The order only moves if the write touched the ordered field.
+				if (!(dep.field in mutation.payload)) continue;
+				touchesSortKey = true;
+
+				const newValue = objValue?.[dep.field];
+
+				// Rows referencing the mutated related object via this relation.
+				const inverseRel = this.getInverseRelationName(
+					queryNode.queryStep.query.resource,
+					mutation.resource,
+					dep.relationName,
+				);
+				const referencing =
+					objectNode && inverseRel
+						? objectNode.referencedByObjects.get(inverseRel)
+						: undefined;
+				if (!referencing || referencing.size === 0) continue;
+
+				for (const rowId of Array.from(referencing)) {
+					if (isRootWindow) {
+						const wi = queryNode.windowIndex!;
+						if (!wi.has(rowId)) continue;
+						this.repositionForRelationalChange(wi, rowId, dep.index, newValue);
+					} else {
+						const held = this.parentWindowHolding(queryNode, rowId);
+						if (!held) continue;
+						this.repositionForRelationalChange(
+							held.wi,
+							rowId,
+							dep.index,
+							newValue,
+						);
+					}
+				}
+			}
+
+			if (!touchesSortKey) continue;
+
+			// Step 2: one boundary read per affected scope to pull in unseen
+			// promotions and reconcile demotions the in-memory fan-out cannot see.
+			if (isRootWindow) {
+				if (queryNode.windowInitialized)
+					await this.reconcilePromotions(
+						queryNode,
+						queryNode.windowIndex!,
+						mutation,
+					);
+			} else if (queryNode.windowIndexes) {
+				const foreignColumn = this.includeForeignColumn(queryNode)!;
+				for (const [parentId, wi] of Array.from(queryNode.windowIndexes)) {
+					await this.reconcilePromotions(queryNode, wi, mutation, {
+						column: foreignColumn,
+						parentId,
+					});
+				}
+			}
+		}
+	}
+
+	/**
+	 * Re-position a single in-window row after a related-object write changed one
+	 * of its relational sort-key components. Replaces only that component (the rest
+	 * of the tuple is unaffected — hence "structured tuples") and keeps the window
+	 * ordered. Membership (demotion out, eviction by an unseen promotion) is not
+	 * decided here — the boundary read in `reconcilePromotions` owns that — so this
+	 * step neither reads nor broadcasts.
+	 */
+	private repositionForRelationalChange(
+		wi: WindowIndex,
+		id: string,
+		componentIndex: number,
+		newValue: SortKey[number],
+	): void {
+		const prev = wi.remove(id);
+		if (!prev) return;
+		const sortKey = [...prev.sortKey];
+		sortKey[componentIndex] = newValue;
+		wi.insert({ id, sortKey });
+	}
+
+	/**
+	 * Boundary read that reconciles a windowed scope after a related-object write
+	 * re-ordered it (ADR-0003 / issue #187). The in-memory fan-out only touches
+	 * rows already in the window; a row that was *outside* it but now belongs in is
+	 * invisible to the graph. Re-read the scope's current top-N under the total
+	 * order and diff against the window:
+	 * - a tracked row no longer in the top-N left scope → id-only `DELETE`;
+	 * - a top-N row not yet tracked is an unseen promotion (or a backfill of a slot
+	 *   a demotion freed) → `INSERT` with its own columns (+ any boundary eviction);
+	 * - a row that merely re-ordered within the window → its key is refreshed but
+	 *   nothing is broadcast (the client re-sorts the rows it holds).
+	 *
+	 * This is the single database read a relational-`orderBy` write incurs.
+	 */
+	private async reconcilePromotions(
+		queryNode: QueryNode,
+		wi: WindowIndex,
+		mutation: SyncDelta,
+		parentScope?: ParentScope,
+	): Promise<void> {
+		const limit = queryNode.queryStep.query.limit;
+		if (limit === undefined) return;
+
+		const resource = queryNode.queryStep.query.resource;
+		const sortInclude = this.sortRelationInclude(queryNode);
+		let where = queryNode.queryStep.query.where;
+		if (parentScope)
+			where = this.combineWhere(where, {
+				[parentScope.column]: parentScope.parentId,
+			});
+
+		const rows = await toPromiseLike(
+			this.storage.get({
+				resource,
+				where,
+				sort: this.storageSortFor(queryNode),
+				limit,
+				include: sortInclude,
+			}),
+		);
+
+		const fresh = rows
+			.map((row) => ({ row, value: inferValue(row) }))
+			.filter((r) => !!r.value?.id);
+		const freshIds = new Set(fresh.map((r) => r.value.id));
+
+		// Rows that dropped out of the true top-N left scope.
+		for (const id of wi.ids()) {
+			if (!freshIds.has(id)) {
+				wi.remove(id);
+				this.emitScopeOut(queryNode, id, mutation.meta);
+			}
+		}
+
+		// Rows now in the true top-N: refresh the keys of those that merely
+		// re-ordered (no delta) and bring in the ones not yet tracked (`INSERT`).
+		for (const { row, value } of fresh) {
+			const sortKey = this.sortKeyFor(queryNode, value);
+
+			if (wi.has(value.id)) {
+				wi.remove(value.id);
+				wi.insert({ id: value.id, sortKey });
+				continue;
+			}
+
+			const result = wi.insert({ id: value.id, sortKey });
+			if (!result.inserted) continue;
+
+			queryNode.trackedObjects.add(value.id);
+			this.ensureObjectNode(
+				value.id,
+				resource,
+				queryNode.hash,
+			).matchedQueries.add(queryNode.hash);
+			// Register the promoted row's relations so a later write to its related
+			// sort object reaches it through the fan-out.
+			this.registerObjectRelations(resource, value.id, value);
+
+			const payload = this.stripPayloadRelations(
+				{ ...((row as any)?.value ?? {}) },
+				sortInclude,
+			);
+			delete payload.id;
+			this.emitToSubscribers(
+				queryNode,
+				{
+					type: 'SYNC',
+					op: 'INSERT',
+					resource,
+					resourceId: value.id,
+					payload,
+					meta: mutation.meta,
+				},
+				'windowed relational promotion INSERT',
+			);
+			if (result.evicted)
+				this.emitScopeOut(queryNode, result.evicted.id, mutation.meta);
+		}
+	}
+
+	/**
+	 * Wire a row's relational-column references into the tracking graph (mirrors
+	 * the per-row relation loading in `trackObjects`). Used when a row enters a
+	 * window outside the normal ingest path so future reverse-ref fan-outs find it.
+	 */
+	private registerObjectRelations(
+		resource: string,
+		id: string,
+		value: any,
+	): void {
+		const relationalColumns = this.getRelationalColumns(resource);
+		for (const [columnName, { relationName, targetResource }] of Array.from(
+			relationalColumns,
+		)) {
+			const targetId = value?.[columnName];
+			if (!targetId) continue;
+			this.ensureObjectNode(targetId, targetResource);
+			const inverse = this.getInverseRelationName(
+				resource,
+				targetResource,
+				relationName,
+			);
+			this.storeRelation(id, targetId, relationName, inverse);
+		}
+	}
+
 	/** Element-wise equality of two sort keys (both `undefined`-safe). */
 	private sortKeysEqual(a: SortKey | undefined, b: SortKey): boolean {
 		if (!a || a.length !== b.length) return false;
@@ -1011,6 +1363,7 @@ export class QueryEngine {
 		wi.remove(id);
 		const resource = queryNode.queryStep.query.resource;
 		const where = this.windowReadWhere(queryNode, wi, parentScope);
+		const sortInclude = this.sortRelationInclude(queryNode);
 
 		const rows = await toPromiseLike(
 			this.storage.get({
@@ -1018,6 +1371,7 @@ export class QueryEngine {
 				where,
 				sort: this.storageSortFor(queryNode),
 				limit: 2,
+				include: sortInclude,
 			}),
 		);
 
@@ -1057,7 +1411,10 @@ export class QueryEngine {
 			resource,
 			queryNode.hash,
 		).matchedQueries.add(queryNode.hash);
-		const payload = { ...((candidateRow as any)?.value ?? {}) };
+		const payload = this.stripPayloadRelations(
+			{ ...((candidateRow as any)?.value ?? {}) },
+			sortInclude,
+		);
 		delete payload.id;
 		this.emitToSubscribers(
 			queryNode,
@@ -1110,6 +1467,7 @@ export class QueryEngine {
 
 		const resource = queryNode.queryStep.query.resource;
 		const where = this.windowReadWhere(queryNode, wi, parentScope);
+		const sortInclude = this.sortRelationInclude(queryNode);
 
 		const rows = await toPromiseLike(
 			this.storage.get({
@@ -1117,6 +1475,7 @@ export class QueryEngine {
 				where,
 				sort: this.storageSortFor(queryNode),
 				limit: need,
+				include: sortInclude,
 			}),
 		);
 
@@ -1132,7 +1491,10 @@ export class QueryEngine {
 				queryNode.hash,
 			).matchedQueries.add(queryNode.hash);
 
-			const payload = { ...((row as any)?.value ?? {}) };
+			const payload = this.stripPayloadRelations(
+				{ ...((row as any)?.value ?? {}) },
+				sortInclude,
+			);
 			delete payload.id;
 			this.emitToSubscribers(
 				queryNode,
@@ -1170,13 +1532,26 @@ export class QueryEngine {
 		const clauses: Record<string, any>[] = [];
 		for (let i = 0; i < keys.length; i++) {
 			const conds: Record<string, any>[] = [];
-			for (let j = 0; j < i; j++) conds.push({ [keys[j].key]: values[j] });
+			for (let j = 0; j < i; j++)
+				conds.push(this.cursorCond(keys[j].key, values[j]));
 			const op = keys[i].direction === 'desc' ? '$lt' : '$gt';
-			conds.push({ [keys[i].key]: { [op]: values[i] } });
+			conds.push(this.cursorCond(keys[i].key, { [op]: values[i] }));
 			clauses.push(conds.length === 1 ? conds[0] : { $and: conds });
 		}
 
 		return clauses.length === 1 ? clauses[0] : { $or: clauses };
+	}
+
+	/**
+	 * A single cursor condition on a sort key. An own-column key maps to a flat
+	 * predicate (`{ likes: { $gt } }`); a relational key (`author.name`) maps to a
+	 * nested relation predicate (`{ author: { name: { $gt } } }`) so the storage
+	 * `where` resolves it through the related table (see `applyWhere`).
+	 */
+	private cursorCond(key: string, cond: any): Record<string, any> {
+		const dot = key.indexOf('.');
+		if (dot === -1) return { [key]: cond };
+		return { [key.slice(0, dot)]: { [key.slice(dot + 1)]: cond } };
 	}
 
 	/**
@@ -1503,6 +1878,23 @@ export class QueryEngine {
 				objValue,
 				mutation.payload,
 			);
+
+			// A write to a *related* object can move a windowed row ordered by that
+			// object's field (e.g. posts ordered by `author.name` reacting to an
+			// author rename). This is independent of whether the mutated object
+			// itself matches any query, so it runs alongside the matching pass below.
+			// It reads storage, so surface a rejection instead of leaving windows
+			// silently unreconciled with an unhandled promise.
+			void this.handleRelationalSortFanout(mutation, objValue).catch((error) => {
+				this.logger.error(
+					'[QueryEngine] Error during relational sort fan-out',
+					{
+						error,
+						resource: mutation.resource,
+						resourceId: mutation.resourceId,
+					},
+				);
+			});
 
 			// Step 2: Use getMatchingQueries to determine current matching state
 			this.getMatchingQueries(mutation, objValue).then(

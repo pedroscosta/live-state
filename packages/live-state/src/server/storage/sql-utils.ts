@@ -115,7 +115,13 @@ function applyJoins<T extends LiveObjectAny>(
   schema: Schema<any>,
   resource: string,
   query: SelectQueryBuilder<any, any, any>,
-  where?: WhereClause<T>
+  where?: WhereClause<T>,
+  // A single relation may be referenced by several branches of the same `where`
+  // (e.g. a cursor predicate `{ $or: [{ author: ... }, { $and: [{ author: ... },
+  // ...] }] }`). Each branch would otherwise `leftJoin` the same table, which the
+  // SQL dialect rejects. Track joined tables so each is joined at most once per
+  // query. `one` relations always join on the same key, so deduping is safe.
+  joined: Set<string> = new Set()
 ) {
   const resourceSchema = schema[resource];
 
@@ -125,12 +131,12 @@ function applyJoins<T extends LiveObjectAny>(
 
   if (where.$and) {
     for (const w of where.$and as WhereClause<T>[]) {
-      query = applyJoins(schema, resource, query, w);
+      query = applyJoins(schema, resource, query, w, joined);
     }
     return query;
   } else if (where.$or) {
     for (const w of where.$or as WhereClause<T>[]) {
-      query = applyJoins(schema, resource, query, w);
+      query = applyJoins(schema, resource, query, w, joined);
     }
     return query;
   }
@@ -147,14 +153,17 @@ function applyJoins<T extends LiveObjectAny>(
     const selfColumn =
       relation.type === "one" ? relation.relationalColumn : "id";
 
-    query = query.leftJoin(
-      otherresource,
-      `${otherresource}.${otherColumnName}`,
-      `${resource}.${selfColumn}`
-    );
+    if (!joined.has(otherresource)) {
+      joined.add(otherresource);
+      query = query.leftJoin(
+        otherresource,
+        `${otherresource}.${otherColumnName}`,
+        `${resource}.${selfColumn}`
+      );
+    }
 
     if (value instanceof Object && !Array.isArray(value) && value !== null) {
-      query = applyJoins(schema, otherresource, query, value);
+      query = applyJoins(schema, otherresource, query, value, joined);
     }
   }
 

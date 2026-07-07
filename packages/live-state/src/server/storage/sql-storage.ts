@@ -213,6 +213,44 @@ export class SQLStorage extends Storage {
 
     if (sort !== undefined) {
       sort.forEach((s) => {
+        // A relational sort key (`"author.name"`) orders by a related object's
+        // column. Resolve it with a correlated scalar subquery rather than a join
+        // so it never conflicts with joins the `where` clause may already add.
+        const dot = s.key.indexOf(".");
+        if (dot !== -1) {
+          const relationName = s.key.slice(0, dot);
+          const field = s.key.slice(dot + 1);
+          const relation = this.schema?.[resourceName]?.relations?.[relationName];
+
+          if (relation?.type === "one" && relation.relationalColumn) {
+            const otherResource = relation.entity.name;
+            const relationalColumn = String(relation.relationalColumn);
+            queryBuilder = queryBuilder.orderBy(
+              (eb: any) =>
+                eb
+                  .selectFrom(otherResource)
+                  .select(`${otherResource}.${field}`)
+                  .whereRef(
+                    `${otherResource}.id`,
+                    "=",
+                    `${resourceName}.${relationalColumn}`,
+                  ),
+              s.direction,
+            );
+            return;
+          }
+
+          // A dotted key that resolves to a relation we can't order by (a `many`
+          // relation, or a `one` without a `relationalColumn`) would otherwise
+          // fall through and hand the raw `"relation.field"` to `orderBy`,
+          // surfacing as an opaque missing-FROM SQL error. Fail with a clear one.
+          if (relation) {
+            throw new Error(
+              `Relational sort on "${s.key}" is only supported for "one" relations with a relationalColumn`,
+            );
+          }
+        }
+
         queryBuilder = queryBuilder.orderBy(s.key, s.direction);
       });
     }
