@@ -36,11 +36,19 @@ const project = object('projects', {
 	status: string(),
 });
 
+// `assigneeId` is nullable so the priority-ordered tests can keep inserting
+// tasks without an assignee; the relational-orderBy test below sets it.
+const user = object('users', {
+	id: id(),
+	name: string(),
+});
+
 const task = object('tasks', {
 	id: id(),
 	title: string(),
 	priority: number(),
 	projectId: reference('projects.id'),
+	assigneeId: reference('users.id').nullable(),
 });
 
 const projectRelations = createRelations(project, ({ many }) => ({
@@ -49,13 +57,20 @@ const projectRelations = createRelations(project, ({ many }) => ({
 
 const taskRelations = createRelations(task, ({ one }) => ({
 	project: one(project, 'projectId'),
+	assignee: one(user, 'assigneeId'),
+}));
+
+const userRelations = createRelations(user, ({ many }) => ({
+	assignedTasks: many(task, 'assigneeId'),
 }));
 
 const testSchema = createSchema({
 	projects: project,
 	tasks: task,
+	users: user,
 	projectRelations,
 	taskRelations,
+	userRelations,
 });
 
 const publicRoute = routeFactory();
@@ -65,6 +80,7 @@ const testRouter = router({
 	routes: {
 		projects: publicRoute.withProcedures(() => ({})),
 		tasks: publicRoute.withProcedures(() => ({})),
+		users: publicRoute.withProcedures(() => ({})),
 	},
 });
 
@@ -385,6 +401,79 @@ describe('Windowed includes (per-parent windows)', () => {
 		expect(mutations.some((m) => m.resourceId === c1 && m.op === 'INSERT')).toBe(
 			false,
 		);
+
+		result.unsubscribe?.();
+	});
+
+	// Dialect parity for #195: seeding a windowed include ordered by a *relational*
+	// key (`assignee.name`) requires storage to resolve that key with a correlated
+	// subquery inside the include's `LIMIT`. The primary relational-include suite
+	// runs on Postgres (query-engine.test.ts); this pins the same behavior on the
+	// SQLite dialect.
+	test('seeds a windowed include ordered by a relational key (assignee.name) on SQLite', async () => {
+		const proj = generateId();
+		await storage.insert(testSchema.projects, {
+			id: proj,
+			name: 'Sort',
+			status: 'active',
+		});
+
+		// Three assignees; the top-2 by name are Ann and Bea, Cid is outside.
+		const users: { id: string; name: string }[] = [];
+		for (const name of ['Ann', 'Bea', 'Cid']) {
+			const uid = generateId();
+			await storage.insert(testSchema.users, { id: uid, name });
+			users.push({ id: uid, name });
+		}
+		const userByName = (name: string) => users.find((u) => u.name === name)!.id;
+
+		// Insert in a deliberately shuffled order so a correct seed can only come
+		// from ordering by the assignee's name, not insertion/id order.
+		const tCid = generateId();
+		const tAnn = generateId();
+		const tBea = generateId();
+		await storage.insert(testSchema.tasks, {
+			id: tCid,
+			title: 't-cid',
+			priority: 0,
+			projectId: proj,
+			assigneeId: userByName('Cid'),
+		});
+		await storage.insert(testSchema.tasks, {
+			id: tAnn,
+			title: 't-ann',
+			priority: 0,
+			projectId: proj,
+			assigneeId: userByName('Ann'),
+		});
+		await storage.insert(testSchema.tasks, {
+			id: tBea,
+			title: 't-bea',
+			priority: 0,
+			projectId: proj,
+			assigneeId: userByName('Bea'),
+		});
+
+		const result = await handleQuery({
+			req: {
+				type: 'QUERY',
+				resource: 'projects',
+				where: { id: proj },
+				include: {
+					tasks: {
+						limit: 2,
+						orderBy: [{ key: 'assignee.name', direction: 'asc' }],
+					},
+				},
+			},
+		});
+
+		// Top-2 tasks by assignee name asc: Ann's task, then Bea's.
+		expect(windowIds(result.data, proj)).toEqual([tAnn, tBea]);
+
+		// The engine-added `assignee` relation is stripped from the nested rows.
+		const parent = result.data.find((p: any) => p.value.id.value === proj);
+		expect(parent.value.tasks.value[0].value.assignee).toBeUndefined();
 
 		result.unsubscribe?.();
 	});
