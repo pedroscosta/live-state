@@ -1,6 +1,6 @@
 {
   "name": "@live-state/sync",
-  "version": "0.0.7",
+  "version": "1.0.0-canary-1",
   "private": false,
   "publishConfig": {
     "access": "public"
