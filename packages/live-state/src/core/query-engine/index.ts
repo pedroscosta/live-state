@@ -464,6 +464,67 @@ export class QueryEngine {
 	}
 
 	/**
+	 * The foreign-key columns backing a windowed node's relational sort deps
+	 * (e.g. `authorId` for an `author.name` sort). An own-row write to one of
+	 * these reassigns which related object supplies a sort component, so the row's
+	 * previous key is stale and its true related object must be resolved (#196).
+	 */
+	private relationalSortFkColumns(queryNode: QueryNode): Set<string> {
+		const cols = new Set<string>();
+		const deps = this.relationalSortDeps(queryNode.queryStep.query);
+		if (deps.length === 0) return cols;
+		const relationalColumns = this.getRelationalColumns(
+			queryNode.queryStep.query.resource,
+		);
+		for (const [column, { relationName }] of Array.from(relationalColumns))
+			if (deps.some((d) => d.relationName === relationName)) cols.add(column);
+		return cols;
+	}
+
+	/** Whether a mutation payload reassigns one of a node's sorted-relation FKs. */
+	private ownWriteTouchesSortRelationFk(
+		queryNode: QueryNode,
+		payload: Record<string, any> | undefined,
+	): boolean {
+		if (!payload) return false;
+		for (const column of Array.from(this.relationalSortFkColumns(queryNode)))
+			if (column in payload) return true;
+		return false;
+	}
+
+	/**
+	 * Resolve a row's related sort objects (the relations its relational sort keys
+	 * are derived from) so its sort key reflects the true related field rather than
+	 * the FK-only mutation payload or an absent previous key (#196). Reads the row
+	 * with the sort relations `include`d and returns the enriched value; a node with
+	 * no relational sort deps resolves to the input value with no read.
+	 */
+	private async resolveSortRelations(
+		queryNode: QueryNode,
+		resourceId: string,
+		objValue: any,
+	): Promise<any> {
+		const sortInclude = this.sortRelationInclude(queryNode);
+		if (!sortInclude) return objValue;
+		const rows = await toPromiseLike(
+			this.storage.get({
+				resource: queryNode.queryStep.query.resource,
+				where: { id: resourceId },
+				include: sortInclude,
+			}),
+		);
+		const enriched = rows[0] ? inferValue(rows[0]) : undefined;
+		if (!enriched || typeof enriched !== 'object') return objValue;
+		// Mark each sort relation as resolved even when it's null/missing: a key
+		// present with an absent relation signals NULLS ordering to `sortKeyFor`,
+		// so an FK reassigned to `null` sorts NULLS-first rather than falling back
+		// to the previous key's stale component (#196).
+		for (const rel of Object.keys(sortInclude))
+			if (!(rel in enriched)) enriched[rel] = undefined;
+		return enriched;
+	}
+
+	/**
 	 * Drop the sort-relation objects a boundary read pulled in for ordering from a
 	 * delta payload, so an `INSERT` broadcast carries only the row's own columns
 	 * and not the related objects the engine included purely to derive sort keys.
@@ -859,9 +920,11 @@ export class QueryEngine {
 	/**
 	 * Extract a row's sort key in `orderBy` order. Own-column keys read the row's
 	 * field; a relational key (`author.name`) reads the included related object.
-	 * When the row does not carry that relation — a bare mutation payload lacks
-	 * it — the component falls back to `previousKey`, so an own-column update
-	 * never clobbers a relational sort-key component it cannot see.
+	 * When the row does not carry that relation at all — a bare mutation payload
+	 * lacks it — the component falls back to `previousKey`, so an own-column update
+	 * never clobbers a relational sort-key component it cannot see. When the
+	 * relation key is present but its object is null/missing (a resolved read),
+	 * the component is `undefined` (NULLS ordering) rather than the stale fallback.
 	 */
 	private sortKeyFor(
 		queryNode: QueryNode,
@@ -876,6 +939,11 @@ export class QueryEngine {
 			const related = objValue?.[relationName];
 			if (related && typeof related === 'object' && field in related)
 				return related[field];
+			// The relation key is present but its object is null/missing — it was
+			// resolved (e.g. FK reassigned to `null`), so order NULLS-first instead
+			// of reusing the stale previous-key component (#196).
+			if (objValue && typeof objValue === 'object' && relationName in objValue)
+				return undefined;
 			return previousKey?.[i];
 		});
 	}
@@ -1047,6 +1115,19 @@ export class QueryEngine {
 		const id = mutation.resourceId;
 		const wasInWindow = wi.has(id);
 
+		// A row scoping in has no previous key, and an own-row write that reassigned
+		// the sorted relation's FK invalidates the previous key's relational
+		// component — both need the related sort object resolved so the sort key is
+		// derived from the true related field, not an `undefined`/stale fallback
+		// (#196). An unrelated own-field update of an in-window row keeps the #187
+		// fast path (previous-key fallback, no read).
+		if (
+			predicateMatches &&
+			(!wasInWindow ||
+				this.ownWriteTouchesSortRelationFk(queryNode, mutation.payload))
+		)
+			objValue = await this.resolveSortRelations(queryNode, id, objValue);
+
 		if (predicateMatches) {
 			if (wasInWindow) {
 				await this.refreshInWindow(queryNode, wi, mutation, objValue);
@@ -1168,9 +1249,21 @@ export class QueryEngine {
 			: undefined;
 		const held = this.parentWindowHolding(queryNode, id);
 		const oldParentId = held?.parentId;
+		const sameList = oldParentId !== undefined && oldParentId === newParentId;
+
+		// Resolve the related sort object when a fresh relational sort component is
+		// needed: entering a new parent's window (no previous key there) or an
+		// own-row write that reassigned the sorted relation's FK on a same-list
+		// refresh (#196). A same-list unrelated update keeps the previous-key
+		// fast path, and non-relational windows resolve to a no-op (no read).
+		if (
+			(newParentId !== undefined && !sameList) ||
+			this.ownWriteTouchesSortRelationFk(queryNode, mutation.payload)
+		)
+			objValue = await this.resolveSortRelations(queryNode, id, objValue);
 
 		// Same list: refresh in place (field UPDATE or boundary reconcile).
-		if (oldParentId !== undefined && oldParentId === newParentId) {
+		if (sameList) {
 			await this.refreshInWindow(queryNode, held!.wi, mutation, objValue, {
 				column: foreignColumn,
 				parentId: oldParentId,
@@ -1894,63 +1987,94 @@ export class QueryEngine {
 
 			const storedObjectNode = this.objectNodes.get(mutation.resourceId);
 
-			this.getMatchingQueries(mutation, objValue).then((matchingQueries) => {
-				for (const queryHash of matchingQueries) {
-					const queryNode = this.queryNodes.get(queryHash);
+			this.getMatchingQueries(mutation, objValue).then(
+				async (matchingQueries) => {
+					try {
+						for (const queryHash of matchingQueries) {
+							const queryNode = this.queryNodes.get(queryHash);
 
-					if (!queryNode) continue; // TODO should we throw an error here?
+							if (!queryNode) continue; // TODO should we throw an error here?
 
-					if (queryNode.windowIndex) {
-						this.handleWindowedInsert(
-							queryNode,
-							queryNode.windowIndex,
-							mutation,
-							objValue,
-						);
-						continue;
-					}
+							if (queryNode.windowIndex) {
+								// A new row carries no previous key, so a relational sort key must be
+								// derived from the row's actual related object rather than an absent
+								// fallback (#196); resolve it before placing the row in the window.
+								// Non-relational windows resolve to a no-op (no read).
+								const insertValue = await this.resolveSortRelations(
+									queryNode,
+									mutation.resourceId,
+									objValue,
+								);
+								this.handleWindowedInsert(
+									queryNode,
+									queryNode.windowIndex,
+									mutation,
+									insertValue,
+								);
+								continue;
+							}
 
-					// Windowed `include`: route the child to its parent's window via the
-					// foreign key. `getMatchingQueries` already confirmed the parent is in
-					// scope, so the FK value is a tracked parent.
-					const foreignColumn = this.includeForeignColumn(queryNode);
-					if (foreignColumn) {
-						const parentId = objValue[foreignColumn];
-						if (parentId != null) {
-							this.handleWindowedInsert(
-								queryNode,
-								this.ensureParentWindow(queryNode, parentId),
-								mutation,
-								objValue,
-							);
+							// Windowed `include`: route the child to its parent's window via the
+							// foreign key. `getMatchingQueries` already confirmed the parent is in
+							// scope, so the FK value is a tracked parent.
+							const foreignColumn = this.includeForeignColumn(queryNode);
+							if (foreignColumn) {
+								const parentId = objValue[foreignColumn];
+								if (parentId != null) {
+									const insertValue = await this.resolveSortRelations(
+										queryNode,
+										mutation.resourceId,
+										objValue,
+									);
+									this.handleWindowedInsert(
+										queryNode,
+										this.ensureParentWindow(queryNode, parentId),
+										mutation,
+										insertValue,
+									);
+								}
+								continue;
+							}
+
+							queryNode.trackedObjects.add(mutation.resourceId);
+
+							if (storedObjectNode) {
+								storedObjectNode.matchedQueries.add(queryHash);
+							}
+
+							for (const subscription of Array.from(queryNode.subscriptions)) {
+								try {
+									subscription(mutation);
+								} catch (error) {
+									this.logger.error(
+										'[QueryEngine] Error in subscription callback during INSERT mutation',
+										{
+											error,
+											queryHash: queryNode.hash,
+											resource: mutation.resource,
+											resourceId: mutation.resourceId,
+											stepPath: queryNode.queryStep.stepPath.join('.'),
+										},
+									);
+								}
+							}
 						}
-						continue;
+					} catch (error) {
+						this.logger.error('[QueryEngine] Error handling INSERT mutation', {
+							error,
+							resource: mutation.resource,
+							resourceId: mutation.resourceId,
+						});
 					}
-
-					queryNode.trackedObjects.add(mutation.resourceId);
-
-					if (storedObjectNode) {
-						storedObjectNode.matchedQueries.add(queryHash);
-					}
-
-					for (const subscription of Array.from(queryNode.subscriptions)) {
-						try {
-							subscription(mutation);
-						} catch (error) {
-							this.logger.error(
-								'[QueryEngine] Error in subscription callback during INSERT mutation',
-								{
-									error,
-									queryHash: queryNode.hash,
-									resource: mutation.resource,
-									resourceId: mutation.resourceId,
-									stepPath: queryNode.queryStep.stepPath.join('.'),
-								},
-							);
-						}
-					}
-				}
-			});
+				},
+				(error: unknown) => {
+					this.logger.error('[QueryEngine] Error handling INSERT mutation', {
+						error,
+						resource: mutation.resource,
+						resourceId: mutation.resourceId,
+					});
+				},
+			);
 
 			return;
 		}
