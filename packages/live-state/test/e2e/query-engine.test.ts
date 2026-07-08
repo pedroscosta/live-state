@@ -2498,6 +2498,206 @@ describe("Query Engine Functional Requirements", () => {
 
       result.unsubscribe?.();
     });
+
+    // Own-row writes (an INSERT, or a reassignment of the sorted relation's FK)
+    // carry only the FK column, not the related object, so the sort key's
+    // relational component must be resolved from storage rather than trusted from
+    // the payload / previous key. See issue #196.
+    test("inserting a post whose author sorts outside the window is not wrongly promoted", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // New author "Boris" sorts *after* Bob Williams, so the new post belongs
+      // outside the top-2. Without resolving the related object the sort key's
+      // relational component is `undefined`, which sorts first (NULLS-first) and
+      // would wrongly place the row at the top of the window.
+      const borisId = generateId();
+      const newPostId = generateId();
+      await storage.insert(deepSchema.users, {
+        id: borisId,
+        name: "Boris",
+        email: "boris@techinc.com",
+        orgId: orgId2,
+      });
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: "Boris Post",
+        content: "By Boris",
+        authorId: borisId,
+        likes: 1,
+      });
+
+      await settle();
+
+      expect(
+        mutations.some((m) => m.resourceId === newPostId && m.op === "INSERT")
+      ).toBe(false);
+      expect(mutations.some((m) => m.op === "DELETE")).toBe(false);
+
+      result.unsubscribe?.();
+    });
+
+    test("inserting a post whose author sorts into the window places it and evicts the boundary", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // New author "Amy Adams" sorts between Alice Johnson and Bob Williams, so
+      // the new post enters the top-2 at the second slot and evicts Bob's post.
+      const amyId = generateId();
+      const newPostId = generateId();
+      await storage.insert(deepSchema.users, {
+        id: amyId,
+        name: "Amy Adams",
+        email: "amy@techinc.com",
+        orgId: orgId2,
+      });
+      await storage.insert(deepSchema.posts, {
+        id: newPostId,
+        title: "Amy Post",
+        content: "By Amy",
+        authorId: amyId,
+        likes: 1,
+      });
+
+      await settle();
+
+      const inserted = mutations.find(
+        (m) => m.resourceId === newPostId && m.op === "INSERT"
+      );
+      expect(inserted).toBeDefined();
+      expect(inserted.payload.title.value).toBe("Amy Post");
+      // The engine-added `author` relation is not leaked into the INSERT payload.
+      expect(inserted.payload.author).toBeUndefined();
+
+      const evicted = mutations.find(
+        (m) => m.resourceId === postId4 && m.op === "DELETE"
+      );
+      expect(evicted).toBeDefined();
+      expect(evicted.payload).toEqual({});
+
+      result.unsubscribe?.();
+    });
+
+    test("reassigning an in-window post's author FK demotes it out (DELETE) and promotes an unseen row (INSERT)", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // Reassign Alice's post (postId3, in-window) to John Doe. Its sort key must
+      // follow the *new* author (John Doe sorts last), so it leaves the top-2 and
+      // Jane's post (postId2) — never loaded, invisible to the graph — is promoted
+      // via the boundary read. The FK-only payload's stale previous key ("Alice
+      // Johnson") would otherwise keep it wrongly in the window.
+      await storage.update(deepSchema.posts, postId3, { authorId: userId1 });
+
+      await settle();
+
+      const del = mutations.find(
+        (m) => m.resourceId === postId3 && m.op === "DELETE"
+      );
+      expect(del).toBeDefined();
+      expect(del.payload).toEqual({});
+
+      const promoted = mutations.find(
+        (m) => m.resourceId === postId2 && m.op === "INSERT"
+      );
+      expect(promoted).toBeDefined();
+      expect(promoted.payload.title.value).toBe("Second Post");
+      expect(promoted.payload.author).toBeUndefined();
+
+      result.unsubscribe?.();
+    });
+
+    test("reassigning an out-of-window post's author FK scopes it in (INSERT) and evicts the boundary (DELETE)", async () => {
+      const mutations: any[] = [];
+
+      const result = await handleQuery({
+        req: {
+          type: "QUERY",
+          resource: "posts",
+          sort: [{ key: "author.name", direction: "asc" }],
+          limit: 2,
+        },
+        subscription: (m) => mutations.push(m),
+      });
+
+      expect(result.data.map((p: any) => p.value.id.value)).toEqual([
+        postId3,
+        postId4,
+      ]);
+
+      // Reassign Jane's post (postId2, currently outside the window) to a new
+      // author "Aaron Aaronson" who sorts first. The row has no previous key, so
+      // its relational sort component must be resolved from the new related object
+      // rather than defaulting to `undefined`; it then enters the top-2 and evicts
+      // Bob's post.
+      const aaronId = generateId();
+      await storage.insert(deepSchema.users, {
+        id: aaronId,
+        name: "Aaron Aaronson",
+        email: "aaron@acme.com",
+        orgId: orgId1,
+      });
+      await storage.update(deepSchema.posts, postId2, { authorId: aaronId });
+
+      await settle();
+
+      const inserted = mutations.find(
+        (m) => m.resourceId === postId2 && m.op === "INSERT"
+      );
+      expect(inserted).toBeDefined();
+      expect(inserted.payload.title.value).toBe("Second Post");
+      expect(inserted.payload.author).toBeUndefined();
+
+      const evicted = mutations.find(
+        (m) => m.resourceId === postId4 && m.op === "DELETE"
+      );
+      expect(evicted).toBeDefined();
+      expect(evicted.payload).toEqual({});
+
+      result.unsubscribe?.();
+    });
   });
 
   // Relational orderBy inside a *windowed include*: each post keeps a top-N
