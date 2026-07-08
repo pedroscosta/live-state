@@ -14,6 +14,8 @@ import {
 } from '../../utils';
 import type { RawQueryRequest, SyncDelta } from '../schemas/core-protocol';
 import { toPromiseLike } from '../utils';
+import { RelationGraph } from './relation-graph';
+import { relationalColumns } from './schema-relations';
 import type { DataSource, QueryStep } from './types';
 import { hashStep } from './utils';
 import { type OrderBy, type SortKey, WindowIndex } from './window-index';
@@ -23,7 +25,6 @@ export type SyncDeltaHandler = (delta: SyncDelta) => void;
 interface QueryNode {
 	hash: string;
 	queryStep: QueryStep;
-	trackedObjects: Set<string>;
 	subscriptions: Set<SyncDeltaHandler>;
 	parentQuery?: string;
 	relationName?: string;
@@ -57,20 +58,12 @@ interface ParentScope {
 	parentId: string;
 }
 
-interface ObjectNode {
-	id: string;
-	type: string;
-	matchedQueries: Set<string>;
-	referencesObjects: Map<string, string>;
-	referencedByObjects: Map<string, Set<string>>;
-}
-
 export class QueryEngine {
 	private storage: DataSource;
 	private schema: Schema<any>;
 	private logger: Logger;
 	private queryNodes: Map<string, QueryNode> = new Map();
-	private objectNodes: Map<string, ObjectNode> = new Map();
+	private graph: RelationGraph;
 
 	constructor(opts: {
 		storage: DataSource;
@@ -80,203 +73,7 @@ export class QueryEngine {
 		this.storage = opts.storage;
 		this.schema = opts.schema;
 		this.logger = opts.logger;
-	}
-
-	private getRelationalColumns(
-		resourceName: string,
-	): Map<string, { relationName: string; targetResource: string }> {
-		const result = new Map<
-			string,
-			{ relationName: string; targetResource: string }
-		>();
-		const resourceSchema = this.schema[resourceName];
-
-		if (!resourceSchema?.relations) return result;
-
-		for (const [relationName, relation] of Object.entries(
-			resourceSchema.relations,
-		)) {
-			// "one" relations have relationalColumn on the source entity
-			if (relation.type === 'one' && relation.relationalColumn) {
-				result.set(String(relation.relationalColumn), {
-					relationName,
-					targetResource: relation.entity.name,
-				});
-			}
-		}
-
-		return result;
-	}
-
-	private ensureObjectNode(
-		id: string,
-		type: string,
-		matchedQuery?: string,
-	): ObjectNode {
-		let objectNode = this.objectNodes.get(id);
-
-		if (!objectNode) {
-			objectNode = {
-				id,
-				type,
-				matchedQueries: new Set(matchedQuery ? [matchedQuery] : []),
-				referencesObjects: new Map(),
-				referencedByObjects: new Map(),
-			};
-			this.objectNodes.set(id, objectNode);
-		} else if (matchedQuery) {
-			objectNode.matchedQueries.add(matchedQuery);
-		}
-
-		return objectNode;
-	}
-
-	private storeRelation(
-		sourceId: string,
-		targetId: string,
-		relationName: string,
-		inverseRelationName?: string,
-	): void {
-		const sourceNode = this.objectNodes.get(sourceId);
-		const targetNode = this.objectNodes.get(targetId);
-
-		if (sourceNode) {
-			sourceNode.referencesObjects.set(relationName, targetId);
-		}
-
-		if (targetNode && inverseRelationName) {
-			let referencedBy =
-				targetNode.referencedByObjects.get(inverseRelationName);
-			if (!referencedBy) {
-				referencedBy = new Set();
-				targetNode.referencedByObjects.set(inverseRelationName, referencedBy);
-			}
-			referencedBy.add(sourceId);
-		}
-	}
-
-	private removeRelation(
-		sourceId: string,
-		targetId: string,
-		relationName: string,
-		inverseRelationName?: string,
-	): void {
-		const sourceNode = this.objectNodes.get(sourceId);
-		const targetNode = this.objectNodes.get(targetId);
-
-		if (sourceNode) {
-			sourceNode.referencesObjects.delete(relationName);
-		}
-
-		if (targetNode && inverseRelationName) {
-			const referencedBy =
-				targetNode.referencedByObjects.get(inverseRelationName);
-			if (referencedBy) {
-				referencedBy.delete(sourceId);
-				if (referencedBy.size === 0) {
-					targetNode.referencedByObjects.delete(inverseRelationName);
-				}
-			}
-		}
-	}
-
-	private getInverseRelationName(
-		sourceResource: string,
-		targetResource: string,
-		relationName: string,
-	): string | undefined {
-		const sourceSchema = this.schema[sourceResource];
-		if (!sourceSchema?.relations) return undefined;
-
-		const sourceRelation = sourceSchema.relations[relationName];
-		if (!sourceRelation) return undefined;
-
-		const targetSchema = this.schema[targetResource];
-		if (!targetSchema?.relations) return undefined;
-
-		// For a "many" relation, find the "one" relation on target with matching relationalColumn
-		if (sourceRelation.type === 'many' && sourceRelation.foreignColumn) {
-			for (const [inverseName, relation] of Object.entries(
-				targetSchema.relations,
-			)) {
-				if (
-					relation.entity.name === sourceResource &&
-					relation.type === 'one' &&
-					relation.relationalColumn === sourceRelation.foreignColumn
-				) {
-					return inverseName;
-				}
-			}
-		}
-
-		// For a "one" relation, find the "many" relation on target with matching foreignColumn
-		if (sourceRelation.type === 'one' && sourceRelation.relationalColumn) {
-			for (const [inverseName, relation] of Object.entries(
-				targetSchema.relations,
-			)) {
-				if (
-					relation.entity.name === sourceResource &&
-					relation.type === 'many' &&
-					relation.foreignColumn === sourceRelation.relationalColumn
-				) {
-					return inverseName;
-				}
-			}
-		}
-
-		return undefined;
-	}
-
-	private updateRelationsFromMutation(
-		resourceName: string,
-		resourceId: string,
-		objValue: any,
-		payload?: Record<string, any>,
-	): void {
-		const relationalColumns = this.getRelationalColumns(resourceName);
-		const objectNode = this.objectNodes.get(resourceId);
-
-		if (!objectNode) return;
-
-		for (const [columnName, { relationName, targetResource }] of Array.from(
-			relationalColumns,
-		)) {
-			const wasUpdated = payload && columnName in payload;
-
-			if (!wasUpdated) continue;
-
-			const inverseRelationName = this.getInverseRelationName(
-				resourceName,
-				targetResource,
-				relationName,
-			);
-
-			const previousTargetId = objectNode.referencesObjects.get(relationName);
-
-			const newTargetId = objValue[columnName];
-
-			if (previousTargetId === newTargetId) continue;
-
-			if (previousTargetId) {
-				this.removeRelation(
-					resourceId,
-					previousTargetId,
-					relationName,
-					inverseRelationName,
-				);
-			}
-
-			if (newTargetId) {
-				this.ensureObjectNode(newTargetId, targetResource);
-
-				this.storeRelation(
-					resourceId,
-					newTargetId,
-					relationName,
-					inverseRelationName,
-				);
-			}
-		}
+		this.graph = new RelationGraph(opts.schema);
 	}
 
 	/**
@@ -473,10 +270,11 @@ export class QueryEngine {
 		const cols = new Set<string>();
 		const deps = this.relationalSortDeps(queryNode.queryStep.query);
 		if (deps.length === 0) return cols;
-		const relationalColumns = this.getRelationalColumns(
+		const cols2 = relationalColumns(
+			this.schema,
 			queryNode.queryStep.query.resource,
 		);
-		for (const [column, { relationName }] of Array.from(relationalColumns))
+		for (const [column, { relationName }] of Array.from(cols2))
 			if (deps.some((d) => d.relationName === relationName)) cols.add(column);
 		return cols;
 	}
@@ -691,7 +489,6 @@ export class QueryEngine {
 					hash: stepHash,
 					queryStep: step,
 					relationName: currentRelationName,
-					trackedObjects: new Set(),
 					subscriptions: new Set([callback]),
 					parentQuery: lastStepHash,
 					childQueries: new Set(),
@@ -840,34 +637,11 @@ export class QueryEngine {
 
 		if (!queryNode) return;
 
-		const relationalColumns = this.getRelationalColumns(resourceName);
-
 		for (const rawResult of results) {
 			const result = inferValue(rawResult);
-			const id = result.id;
-
-			this.ensureObjectNode(id, resourceName, stepHash);
-			queryNode.trackedObjects.add(id);
-
-			for (const [columnName, { relationName, targetResource }] of Array.from(
-				relationalColumns,
-			)) {
-				const targetId = result[columnName];
-				if (targetId) {
-					this.ensureObjectNode(targetId, targetResource);
-
-					const inverseRelationName = this.getInverseRelationName(
-						resourceName,
-						targetResource,
-						relationName,
-					);
-
-					this.storeRelation(id, targetId, relationName, inverseRelationName);
-				}
-			}
-
-			this.loadNestedRelations(resourceName, id, result);
-			this.logger.debug('[QueryEngine] Loaded nested relations for', id);
+			this.graph.ingest(resourceName, result);
+			this.graph.setMatched(result.id, stepHash);
+			this.logger.debug('[QueryEngine] Loaded nested relations for', result.id);
 		}
 
 		// Seed the window ordering from the storage-resolved (ordered, limited)
@@ -1049,8 +823,7 @@ export class QueryEngine {
 		resourceId: string,
 		meta?: SyncDelta['meta'],
 	): void {
-		queryNode.trackedObjects.delete(resourceId);
-		this.objectNodes.get(resourceId)?.matchedQueries.delete(queryNode.hash);
+		this.graph.clearMatched(resourceId, queryNode.hash);
 		this.emitToSubscribers(
 			queryNode,
 			{
@@ -1084,10 +857,7 @@ export class QueryEngine {
 		// Sorted past the boundary of a full window: not in scope, emit nothing.
 		if (!result.inserted) return;
 
-		queryNode.trackedObjects.add(mutation.resourceId);
-		this.objectNodes
-			.get(mutation.resourceId)
-			?.matchedQueries.add(queryNode.hash);
+		this.graph.setMatched(mutation.resourceId, queryNode.hash);
 		this.emitToSubscribers(queryNode, mutation, 'windowed scope-in INSERT');
 
 		if (result.evicted) {
@@ -1208,8 +978,7 @@ export class QueryEngine {
 		});
 		if (!result.inserted) return;
 
-		queryNode.trackedObjects.add(id);
-		this.objectNodes.get(id)?.matchedQueries.add(queryNode.hash);
+		this.graph.setMatched(id, queryNode.hash);
 		this.emitToSubscribers(
 			queryNode,
 			this.fullInsertDelta(queryNode, mutation, entityValue),
@@ -1296,7 +1065,7 @@ export class QueryEngine {
 	 * every windowed row ordered by that object's field. Per affected windowed
 	 * scope, in two steps:
 	 *
-	 * 1. **Fan-out** — walk `referencedByObjects` to the *known* in-window rows and
+	 * 1. **Fan-out** — walk the graph's reverse refs to the *known* in-window rows and
 	 *    recompute, component-wise, the touched sort-key component so the in-memory
 	 *    order stays accurate. This is pure in-memory: it neither reads nor emits.
 	 * 2. **Boundary read** — the fan-out sees only tracked rows, so a row that was
@@ -1311,10 +1080,8 @@ export class QueryEngine {
 	): Promise<void> {
 		if (!mutation.payload) return;
 		// The mutated related object may not be tracked at all (no in-window row
-		// references it) yet still promote an unseen row, so absence of an object
-		// node does not skip the boundary read below.
-		const objectNode = this.objectNodes.get(mutation.resourceId);
-
+		// references it) yet still promote an unseen row, so an empty reverse-ref
+		// set does not skip the boundary read below.
 		for (const queryNode of Array.from(this.queryNodes.values())) {
 			const deps = this.relationalSortDeps(queryNode.queryStep.query);
 			if (deps.length === 0) continue;
@@ -1334,16 +1101,12 @@ export class QueryEngine {
 				const newValue = objValue?.[dep.field];
 
 				// Rows referencing the mutated related object via this relation.
-				const inverseRel = this.getInverseRelationName(
+				const referencing = this.graph.referencedBy(
+					mutation.resourceId,
 					queryNode.queryStep.query.resource,
-					mutation.resource,
 					dep.relationName,
 				);
-				const referencing =
-					objectNode && inverseRel
-						? objectNode.referencedByObjects.get(inverseRel)
-						: undefined;
-				if (!referencing || referencing.size === 0) continue;
+				if (referencing.size === 0) continue;
 
 				for (const rowId of Array.from(referencing)) {
 					if (isRootWindow) {
@@ -1475,15 +1238,10 @@ export class QueryEngine {
 			const result = wi.insert({ id: value.id, sortKey });
 			if (!result.inserted) continue;
 
-			queryNode.trackedObjects.add(value.id);
-			this.ensureObjectNode(
-				value.id,
-				resource,
-				queryNode.hash,
-			).matchedQueries.add(queryNode.hash);
+			this.graph.setMatched(value.id, queryNode.hash);
 			// Register the promoted row's relations so a later write to its related
 			// sort object reaches it through the fan-out.
-			this.registerObjectRelations(resource, value.id, value);
+			this.graph.ingest(resource, value);
 
 			const payload = this.stripPayloadRelations(
 				{ ...((row as any)?.value ?? {}) },
@@ -1504,32 +1262,6 @@ export class QueryEngine {
 			);
 			if (result.evicted)
 				this.emitScopeOut(queryNode, result.evicted.id, mutation.meta);
-		}
-	}
-
-	/**
-	 * Wire a row's relational-column references into the tracking graph (mirrors
-	 * the per-row relation loading in `trackObjects`). Used when a row enters a
-	 * window outside the normal ingest path so future reverse-ref fan-outs find it.
-	 */
-	private registerObjectRelations(
-		resource: string,
-		id: string,
-		value: any,
-	): void {
-		const relationalColumns = this.getRelationalColumns(resource);
-		for (const [columnName, { relationName, targetResource }] of Array.from(
-			relationalColumns,
-		)) {
-			const targetId = value?.[columnName];
-			if (!targetId) continue;
-			this.ensureObjectNode(targetId, targetResource);
-			const inverse = this.getInverseRelationName(
-				resource,
-				targetResource,
-				relationName,
-			);
-			this.storeRelation(id, targetId, relationName, inverse);
 		}
 	}
 
@@ -1603,12 +1335,7 @@ export class QueryEngine {
 			return;
 		}
 
-		queryNode.trackedObjects.add(candidate.id);
-		this.ensureObjectNode(
-			candidate.id,
-			resource,
-			queryNode.hash,
-		).matchedQueries.add(queryNode.hash);
+		this.graph.setMatched(candidate.id, queryNode.hash);
 		const payload = this.stripPayloadRelations(
 			{ ...((candidateRow as any)?.value ?? {}) },
 			sortInclude,
@@ -1682,12 +1409,7 @@ export class QueryEngine {
 			if (!value?.id || wi.has(value.id)) continue;
 
 			wi.insert({ id: value.id, sortKey: this.sortKeyFor(queryNode, value) });
-			queryNode.trackedObjects.add(value.id);
-			this.ensureObjectNode(
-				value.id,
-				resource,
-				queryNode.hash,
-			).matchedQueries.add(queryNode.hash);
+			this.graph.setMatched(value.id, queryNode.hash);
 
 			const payload = this.stripPayloadRelations(
 				{ ...((row as any)?.value ?? {}) },
@@ -1784,66 +1506,6 @@ export class QueryEngine {
 		return { $and: [base, cursor] };
 	}
 
-	private loadNestedRelations(
-		resourceName: string,
-		objectId: string,
-		data: any,
-	): void {
-		const resourceSchema = this.schema[resourceName];
-		if (!resourceSchema?.relations) return;
-
-		for (const [relationName, relation] of Object.entries(
-			resourceSchema.relations,
-		)) {
-			const nestedData = data[relationName];
-			if (!nestedData) continue;
-
-			const targetResource = relation.entity.name;
-			const inverseRelationName = this.getInverseRelationName(
-				resourceName,
-				targetResource,
-				relationName,
-			);
-
-			if (relation.type === 'one') {
-				if (nestedData && typeof nestedData === 'object' && nestedData.id) {
-					this.ensureObjectNode(nestedData.id, targetResource);
-					this.storeRelation(
-						objectId,
-						nestedData.id,
-						relationName,
-						inverseRelationName,
-					);
-					this.loadNestedRelations(targetResource, nestedData.id, nestedData);
-				}
-			} else if (relation.type === 'many') {
-				if (Array.isArray(nestedData)) {
-					for (const item of nestedData) {
-						if (item && typeof item === 'object' && item.id) {
-							this.ensureObjectNode(item.id, targetResource);
-							// For "many" relations, the relation is stored on the child pointing to parent
-							// But we also track the reverse reference
-							const reverseInverse = this.getInverseRelationName(
-								targetResource,
-								resourceName,
-								relationName,
-							);
-							if (reverseInverse) {
-								this.storeRelation(
-									item.id,
-									objectId,
-									reverseInverse,
-									relationName,
-								);
-							}
-							this.loadNestedRelations(targetResource, item.id, item);
-						}
-					}
-				}
-			}
-		}
-	}
-
 	/**
 	 * Builds an include object from a query node's child queries recursively.
 	 * This allows fetching related data when an object moves into scope.
@@ -1909,9 +1571,7 @@ export class QueryEngine {
 		}
 
 		// Track this object in the query
-		queryNode.trackedObjects.add(id);
-		const objectNode = this.ensureObjectNode(id, resourceName, queryNode.hash);
-		objectNode.matchedQueries.add(queryNode.hash);
+		this.graph.setMatched(id, queryNode.hash);
 
 		// Process child queries and send INSERTs for related objects
 		for (const childHash of Array.from(queryNode.childQueries)) {
@@ -1946,46 +1606,13 @@ export class QueryEngine {
 		entityValue: MaterializedLiveType<LiveObjectAny>,
 	) {
 		if (mutation.op === 'INSERT') {
-			if (this.objectNodes.has(mutation.resourceId)) return;
+			if (this.graph.has(mutation.resourceId)) return;
 
 			const objValue = inferValue(entityValue);
 
 			if (!objValue) return;
 
-			const newObjectNode: ObjectNode = {
-				id: mutation.resourceId,
-				type: mutation.resource,
-				matchedQueries: new Set(),
-				referencesObjects: new Map(),
-				referencedByObjects: new Map(),
-			};
-
-			this.objectNodes.set(mutation.resourceId, newObjectNode);
-
-			const relationalColumns = this.getRelationalColumns(mutation.resource);
-			for (const [columnName, { relationName, targetResource }] of Array.from(
-				relationalColumns,
-			)) {
-				const targetId = objValue[columnName];
-				if (targetId) {
-					this.ensureObjectNode(targetId, targetResource);
-
-					const inverseRelationName = this.getInverseRelationName(
-						mutation.resource,
-						targetResource,
-						relationName,
-					);
-
-					this.storeRelation(
-						mutation.resourceId,
-						targetId,
-						relationName,
-						inverseRelationName,
-					);
-				}
-			}
-
-			const storedObjectNode = this.objectNodes.get(mutation.resourceId);
+			this.graph.applyWrite(mutation.resource, mutation.resourceId, objValue);
 
 			this.getMatchingQueries(mutation, objValue).then(
 				async (matchingQueries) => {
@@ -2036,11 +1663,7 @@ export class QueryEngine {
 								continue;
 							}
 
-							queryNode.trackedObjects.add(mutation.resourceId);
-
-							if (storedObjectNode) {
-								storedObjectNode.matchedQueries.add(queryHash);
-							}
+							this.graph.setMatched(mutation.resourceId, queryHash);
 
 							for (const subscription of Array.from(queryNode.subscriptions)) {
 								try {
@@ -2083,25 +1706,13 @@ export class QueryEngine {
 
 			if (!objValue) return;
 
-			// Step 1: Ensure object node exists and update object relations first
-			let objectNode = this.objectNodes.get(mutation.resourceId);
+			// Step 1: Snapshot prior membership, then update object relations (which
+			// ensures the node exists) before checking query matching.
 			const previouslyMatchedQueries = new Set(
-				objectNode?.matchedQueries ?? [],
+				this.graph.matchedQueriesOf(mutation.resourceId),
 			);
 
-			if (!objectNode) {
-				objectNode = {
-					id: mutation.resourceId,
-					type: mutation.resource,
-					matchedQueries: new Set(),
-					referencesObjects: new Map(),
-					referencedByObjects: new Map(),
-				};
-				this.objectNodes.set(mutation.resourceId, objectNode);
-			}
-
-			// Update object relations before checking query matching
-			this.updateRelationsFromMutation(
+			this.graph.applyWrite(
 				mutation.resource,
 				mutation.resourceId,
 				objValue,
@@ -2183,30 +1794,12 @@ export class QueryEngine {
 						}
 					}
 
-					// Update query node tracking
+					// Update object → query membership
 					for (const queryHash of newlyMatchedQueries) {
-						const queryNode = this.queryNodes.get(queryHash);
-						if (queryNode) {
-							queryNode.trackedObjects.add(mutation.resourceId);
-						}
+						this.graph.setMatched(mutation.resourceId, queryHash);
 					}
-
 					for (const queryHash of noLongerMatchedQueries) {
-						const queryNode = this.queryNodes.get(queryHash);
-						if (queryNode) {
-							queryNode.trackedObjects.delete(mutation.resourceId);
-						}
-					}
-
-					// Update object node matched queries
-					const currentObjectNode = this.objectNodes.get(mutation.resourceId);
-					if (currentObjectNode) {
-						for (const queryHash of newlyMatchedQueries) {
-							currentObjectNode.matchedQueries.add(queryHash);
-						}
-						for (const queryHash of noLongerMatchedQueries) {
-							currentObjectNode.matchedQueries.delete(queryHash);
-						}
+						this.graph.clearMatched(mutation.resourceId, queryHash);
 					}
 
 					// Notify subscriptions for still matched and no longer matched queries
@@ -2290,38 +1883,29 @@ export class QueryEngine {
 				const where = queryNode.queryStep.query.where;
 				const resource = queryNode.queryStep.query.resource;
 				const resourceId = mutation.resourceId;
-				const objectNode = this.objectNodes.get(resourceId);
 
-				if (!objectNode) return { hash: queryNode.hash, matches: false };
+				if (!this.graph.has(resourceId))
+					return { hash: queryNode.hash, matches: false };
 
 				if (queryNode.relationName) {
-					// queryNode.relationName is the relation from the parent's perspective (e.g., "posts" on User)
-					// but referencesObjects uses the relation from this object's perspective (e.g., "author" on Post)
-					// So we need to find the inverse relation name
+					// queryNode.relationName is the parent-side relation (e.g. "posts"
+					// on User); the graph resolves the inverse ("author" on Post) and
+					// follows this object's FK up to its parent internally.
 					const parentQuery = queryNode.parentQuery
 						? this.queryNodes.get(queryNode.parentQuery)
 						: undefined;
 					const parentResource = parentQuery?.queryStep.query.resource;
 
-					const inverseRelationName = parentResource
-						? this.getInverseRelationName(
+					const relatedObj = parentResource
+						? this.graph.reference(
+								resourceId,
 								parentResource,
-								resource,
 								queryNode.relationName,
 							)
 						: undefined;
-
-					const relatedObj = inverseRelationName
-						? objectNode.referencesObjects.get(inverseRelationName)
-						: undefined;
 					if (!relatedObj) return { hash: queryNode.hash, matches: false };
 
-					const relatedObjNode = this.objectNodes.get(relatedObj);
-					if (
-						!relatedObjNode ||
-						!parentQuery ||
-						!relatedObjNode.matchedQueries.has(parentQuery.hash)
-					)
+					if (!parentQuery || !this.graph.matches(relatedObj, parentQuery.hash))
 						return { hash: queryNode.hash, matches: false };
 
 					// Relation membership holds; fall through to re-apply the

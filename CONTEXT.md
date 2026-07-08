@@ -41,6 +41,10 @@ _Avoid_: treating this as a client-facing request; after removal, clients cannot
 The server-side component that maintains realtime subscriptions to **Tracked Queries** and broadcasts **Sync Deltas** to subscribed connections as committed writes change which objects are in **scope**. After ADR-0003 it does *not* resolve queries by breaking them into sub-queries; it delegates resolution to **Storage** (one query, `include` joins and all) and owns only matching-and-broadcasting.
 _Avoid_: describing it as a query *resolver* or as the thing that runs sub-queries through routes (that path is gone).
 
+**Relation Graph**:
+The **Query Engine**'s in-memory graph of the objects it currently tracks and the relations between them, used for relation-membership matching and the reverse-ref fan-out (see ADR-0003). Each **Object Node** is keyed by id and holds only its outgoing relations (`references`), its inbound relations (`referencedBy`), and the set of query hashes it currently matches — no row payloads. The graph owns the paired `references`/`referencedBy` invariant and all inverse-relation-name resolution *internally*: callers traverse edges in query-relation terms (`reference(child, parentResource, parentRelation)`, `referencedBy(related, fromResource, relation)`) and never compute an inverse name. Writes enter through two methods — `ingest` (a resolved, possibly nested storage tree; additive) and `applyWrite` (a mutation; diff-aware, FK→null unlinks, re-parent = unlink+link).
+_Avoid_: treating the graph as a store of rows (it holds no payloads); conflating **Object Node** membership (`matchedQueries`) with the **Window** ordering index (that is `WindowIndex`).
+
 ### Realtime scope
 
 **Scope**:
