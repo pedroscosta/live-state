@@ -26,12 +26,41 @@ type InferQueryResult<
   ? Simplify<InferLiveObject<TCollection, TInclude>> | undefined
   : Simplify<InferLiveObject<TCollection, TInclude>>[];
 
+/**
+ * Type-only brand recording a {@link QueryBuilder}'s inferable parameters.
+ *
+ * `CustomQueryResult` (client entry point) has to recognise a query-builder
+ * value returned from a route handler whose type flows through the *server*
+ * entry point. The two entry points are emitted as separate `.d.ts` graphs, so
+ * each gets its own `declare class QueryBuilder`; because the class has
+ * `private` members, TypeScript compares those declarations *nominally* and any
+ * `extends QueryBuilder<...>` check across the boundary fails. Narrowing on this
+ * structural brand instead makes the check independent of class identity — and
+ * therefore also of duplicate installed package versions.
+ */
+export interface QueryBuilderBrand<
+  TCollection extends LiveObjectAny,
+  TInclude extends IncludeClause<TCollection>,
+  TSingle extends boolean,
+> {
+  collection: TCollection;
+  include: TInclude;
+  single: TSingle;
+}
+
 export class QueryBuilder<
   TCollection extends LiveObjectAny,
   TInclude extends IncludeClause<TCollection> = {},
   TSingle extends boolean = false,
   TShouldAwait extends boolean = false,
 > {
+  /** Never assigned at runtime; exists only to carry {@link QueryBuilderBrand}. */
+  declare readonly __queryBuilderBrand: QueryBuilderBrand<
+    TCollection,
+    TInclude,
+    TSingle
+  >;
+
   private _collection: TCollection;
   private _client: QueryExecutor;
   private _where: WhereClause<TCollection>;
