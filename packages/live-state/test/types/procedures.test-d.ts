@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   createSchema,
   id,
+  type IncludeClause,
+  type LiveObjectAny,
   number,
   object,
   reference,
@@ -609,5 +611,76 @@ describe("QueryBuilder-returning custom queries - fetch vs websocket", () => {
     const result = wsQuery.users.usersByAge({ minAge: 18 });
 
     expectTypeOf(result).toMatchTypeOf<PromiseLike<any>>();
+  });
+});
+
+/**
+ * Regression — cross-entry-point QueryBuilder identity.
+ *
+ * Published consumers import the router from `@live-state/sync/server` and the
+ * client from `@live-state/sync/client`. Those entry points are emitted as
+ * separate `.d.ts` graphs, so each carries its own `declare class QueryBuilder`;
+ * because the class has `private` members it is compared nominally, and the two
+ * declarations are unrelated. The in-repo tests above import everything from
+ * `src`, so they only ever see a single `QueryBuilder` identity and cannot
+ * reproduce this.
+ *
+ * `ForeignQueryBuilder` stands in for the *other* bundle's copy: a distinct
+ * nominal class (private member) that shares only the structural
+ * `__queryBuilderBrand`. A route handler returning it must still narrow to a
+ * loadable that exposes `buildQueryRequest`. Before the brand-based narrowing
+ * this fell through to `Promise<ForeignQueryBuilder<...>>` and `.buildQueryRequest`
+ * was missing — the exact published-consumer symptom.
+ */
+class ForeignQueryBuilder<
+  TCollection extends LiveObjectAny,
+  TInclude extends IncludeClause<TCollection> = {},
+  TSingle extends boolean = false,
+> {
+  private _foreignNominalMarker!: TCollection;
+  declare readonly __queryBuilderBrand: {
+    collection: TCollection;
+    include: TInclude;
+    single: TSingle;
+  };
+}
+
+const routerWithForeignBuilderQuery = createRouter({
+  schema,
+  routes: {
+    users: publicRoute.withProcedures(({ query }) => ({
+      usersByAgeForeign: query(z.object({ minAge: z.number() })).handler(
+        async () => {
+          // A query-builder-shaped value whose class identity differs from the
+          // client bundle's `QueryBuilder` (as it does across published entry
+          // points). Runtime is irrelevant here — this is a type-only test.
+          return null as unknown as ForeignQueryBuilder<typeof user>;
+        }
+      ),
+    })),
+    posts: publicRoute.withProcedures(() => ({})),
+  },
+});
+
+describe("cross-entry-point QueryBuilder identity", () => {
+  test("ws client narrows a foreign-identity QueryBuilder to a loadable", () => {
+    const {
+      store: { query: wsQuery },
+    } = createClient<typeof routerWithForeignBuilderQuery>({
+      url: "ws://localhost:5001/ws",
+      schema,
+      storage: false,
+    });
+
+    const result = wsQuery.users.usersByAgeForeign({ minAge: 18 });
+
+    // The loadable must expose `buildQueryRequest` (regressed pre-fix).
+    expectTypeOf(result).toHaveProperty("buildQueryRequest");
+    expectTypeOf(result.buildQueryRequest).toBeFunction();
+
+    // And it must still await to the inferred row type from the brand.
+    expectTypeOf(result).toMatchTypeOf<
+      PromiseLike<{ id: string; name: string; email: string; age: number }[]>
+    >();
   });
 });

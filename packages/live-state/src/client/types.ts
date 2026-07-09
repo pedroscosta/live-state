@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { QueryBuilder } from '../core/query';
 import type { CustomQueryRequest } from '../core/schemas/core-protocol';
 import type { Promisify } from '../core/utils';
-import type { InferLiveObject, LiveObjectAny } from '../schema';
+import type { IncludeClause, InferLiveObject, LiveObjectAny } from '../schema';
 import type { Simplify } from '../utils';
 
 /**
@@ -37,24 +37,42 @@ type CustomQueryLoadable<TOutput> = PromiseLike<TOutput> & {
 	buildQueryRequest: () => CustomQueryRequest;
 };
 
+/**
+ * Narrow a custom-query handler return type to its loadable client shape.
+ *
+ * The match keys off {@link QueryBuilderBrand} — a structural, type-only brand —
+ * rather than `extends QueryBuilder<...>`. `QueryBuilder` carries `private`
+ * members, so its class identity is nominal and the server- and client-bundle
+ * `.d.ts` graphs emit two incompatible declarations; a class-based check fails
+ * for published consumers who import the router from `@live-state/sync/server`
+ * and the client from `@live-state/sync/client`. The brand is compared by shape,
+ * so it survives that split (and duplicate installed versions).
+ */
 type CustomQueryResult<
 	TOutput,
 	TShouldAwait extends boolean = false,
-> = UnwrapPromise<TOutput> extends QueryBuilder<
-	infer TCollection,
-	infer TInclude,
-	infer TSingle,
-	any
->
-	? TShouldAwait extends true
-		? TSingle extends true
-			? Promise<Simplify<InferLiveObject<TCollection, TInclude>> | undefined>
-			: Promise<Simplify<InferLiveObject<TCollection, TInclude>>[]>
-		: TSingle extends true
-			? CustomQueryLoadable<
-					Simplify<InferLiveObject<TCollection, TInclude>> | undefined
-				>
-			: CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInclude>>[]>
+> = UnwrapPromise<TOutput> extends {
+	readonly __queryBuilderBrand: {
+		collection: infer TCollection extends LiveObjectAny;
+		include: infer TInclude;
+		single: infer TSingle;
+	};
+}
+	? // `TInclude` is inferred unconstrained; intersecting with its declared
+		// constraint restores assignability to `InferLiveObject` (a no-op for a
+		// well-formed brand, which always carries a valid include clause).
+		TInclude & IncludeClause<TCollection> extends infer TInc extends
+			IncludeClause<TCollection>
+		? TShouldAwait extends true
+			? TSingle extends true
+				? Promise<Simplify<InferLiveObject<TCollection, TInc>> | undefined>
+				: Promise<Simplify<InferLiveObject<TCollection, TInc>>[]>
+			: TSingle extends true
+				? CustomQueryLoadable<
+						Simplify<InferLiveObject<TCollection, TInc>> | undefined
+					>
+				: CustomQueryLoadable<Simplify<InferLiveObject<TCollection, TInc>>[]>
+		: never
 	: Promisify<UnwrapPromise<TOutput>>;
 
 type CustomQueryFunction<
