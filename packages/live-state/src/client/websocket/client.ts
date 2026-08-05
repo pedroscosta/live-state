@@ -51,6 +51,11 @@ export type MessageReceivedEvent = {
   message: ServerMessage;
 };
 
+export type MessageSentEvent = {
+  type: "MESSAGE_SENT";
+  message: ClientMessage;
+};
+
 export type ClientStorageLoadedEvent = {
   type: "CLIENT_STORAGE_LOADED";
   resource: string;
@@ -156,6 +161,7 @@ const BOOTSTRAP_STATUS_RANK: Record<ClientBootstrapStatus, number> = {
 export type ClientEvents =
   | ConnectionStateChangeEvent
   | MessageReceivedEvent
+  | MessageSentEvent
   | ClientStorageLoadedEvent
   | DataLoadRequestedEvent
   | DataLoadReplyEvent
@@ -695,7 +701,13 @@ class InnerClient implements QueryExecutor {
   }
 
   private sendWsMessage(message: ClientMessage) {
-    if (this.ws?.connected()) this.ws.send(JSON.stringify(message));
+    if (!this.ws?.connected()) return;
+
+    this.ws.send(JSON.stringify(message));
+    this.emitEvent({
+      type: "MESSAGE_SENT",
+      message,
+    });
   }
 
   private emitEvent(event: ClientEvents) {
