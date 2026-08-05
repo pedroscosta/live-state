@@ -703,10 +703,11 @@ class InnerClient implements QueryExecutor {
   private sendWsMessage(message: ClientMessage) {
     if (!this.ws?.connected()) return;
 
-    this.ws.send(JSON.stringify(message));
+    const serializedMessage = JSON.stringify(message);
+    this.ws.send(serializedMessage);
     this.emitEvent({
       type: "MESSAGE_SENT",
-      message,
+      message: JSON.parse(serializedMessage),
     });
   }
 

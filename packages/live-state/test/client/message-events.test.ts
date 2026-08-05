@@ -108,7 +108,7 @@ describe('client outbound message events', () => {
 			input: {},
 		});
 		const queryPromise = (client.store.query.posts as any)
-			.somePostsQuery({})
+			.somePostsQuery()
 			.then((value: unknown) => value);
 		const mutationPromise = (client.store.mutate as any).posts.createPost({
 			id: 'post-1',
@@ -128,6 +128,10 @@ describe('client outbound message events', () => {
 				message,
 			})),
 		);
+		const customQueryEvent = sentEvents.find(
+			(event) => event.message.type === 'CUSTOM_QUERY',
+		);
+		expect(customQueryEvent?.message).not.toHaveProperty('input');
 
 		for (const message of sentMessages) {
 			if (message.type === 'CUSTOM_QUERY' || message.type === 'MUTATE') {
