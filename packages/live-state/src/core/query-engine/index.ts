@@ -13,7 +13,7 @@ import {
 	type Logger,
 } from '../../utils';
 import type { RawQueryRequest, SyncDelta } from '../schemas/core-protocol';
-import { toPromiseLike } from '../utils';
+import { generateId, toPromiseLike } from '../utils';
 import { RelationGraph } from './relation-graph';
 import { relationalColumns } from './schema-relations';
 import type { DataSource, QueryStep } from './types';
@@ -1521,9 +1521,17 @@ export class QueryEngine {
 			if (!childNode || !childNode.relationName) continue;
 
 			const nestedInclude = this.buildIncludeFromChildQueries(childHash);
+			const childQuery = childNode.queryStep.query;
+			const childInclude: Record<string, any> = {};
+
+			if (childQuery.where !== undefined) childInclude.where = childQuery.where;
+			if (childQuery.limit !== undefined) childInclude.limit = childQuery.limit;
+			if (childQuery.sort !== undefined) childInclude.orderBy = childQuery.sort;
+			if (Object.keys(nestedInclude).length > 0)
+				childInclude.include = nestedInclude;
 
 			include[childNode.relationName] =
-				Object.keys(nestedInclude).length > 0 ? nestedInclude : true;
+				Object.keys(childInclude).length > 0 ? childInclude : true;
 		}
 
 		return include;
@@ -1541,15 +1549,18 @@ export class QueryEngine {
 	): void {
 		const id = data?.value?.id?.value as string | undefined;
 		if (!id) return;
+		const payload = { ...data.value };
+		delete payload.id;
 
 		// Send INSERT for this object. Carry the source mutation's meta so the
 		// originating client can reconcile optimistic state via originMutationId.
 		const insertMutation: SyncDelta = {
+			id: generateId(),
 			op: 'INSERT',
 			resource: resourceName,
 			resourceId: id,
 			type: 'SYNC',
-			payload: data.value,
+			payload,
 			meta,
 		};
 
@@ -1593,12 +1604,41 @@ export class QueryEngine {
 			} else if (relatedItems && typeof relatedItems === 'object') {
 				this.sendInsertsForTree(
 					childQueryNode,
-					relatedItems,
+					relatedData,
 					childResource,
 					meta,
 				);
 			}
 		}
+	}
+
+	/**
+	 * Resolve and broadcast an INSERT together with the relation subtree owned by
+	 * a query node. INSERT mutations contain only the written row, so a related
+	 * row written before its parent cannot be discovered by the child query until
+	 * the parent INSERT wires the graph edge.
+	 */
+	private async sendFullInsertTree(
+		queryNode: QueryNode,
+		mutation: SyncDelta,
+	): Promise<boolean> {
+		if (queryNode.childQueries.size === 0) return false;
+
+		const include = this.buildIncludeFromChildQueries(queryNode.hash);
+		const results = await this.get({
+			resource: mutation.resource,
+			where: { id: mutation.resourceId },
+			include,
+		});
+		if (!results || results.length === 0) return false;
+
+		this.sendInsertsForTree(
+			queryNode,
+			results[0],
+			mutation.resource,
+			mutation.meta,
+		);
+		return true;
 	}
 
 	public handleMutation(
@@ -1664,6 +1704,8 @@ export class QueryEngine {
 							}
 
 							this.graph.setMatched(mutation.resourceId, queryHash);
+
+							if (await this.sendFullInsertTree(queryNode, mutation)) continue;
 
 							for (const subscription of Array.from(queryNode.subscriptions)) {
 								try {
