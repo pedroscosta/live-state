@@ -1521,9 +1521,17 @@ export class QueryEngine {
 			if (!childNode || !childNode.relationName) continue;
 
 			const nestedInclude = this.buildIncludeFromChildQueries(childHash);
+			const childQuery = childNode.queryStep.query;
+			const childInclude: Record<string, any> = {};
+
+			if (childQuery.where !== undefined) childInclude.where = childQuery.where;
+			if (childQuery.limit !== undefined) childInclude.limit = childQuery.limit;
+			if (childQuery.sort !== undefined) childInclude.orderBy = childQuery.sort;
+			if (Object.keys(nestedInclude).length > 0)
+				childInclude.include = nestedInclude;
 
 			include[childNode.relationName] =
-				Object.keys(nestedInclude).length > 0 ? nestedInclude : true;
+				Object.keys(childInclude).length > 0 ? childInclude : true;
 		}
 
 		return include;

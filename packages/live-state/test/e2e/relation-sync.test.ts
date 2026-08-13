@@ -46,20 +46,40 @@ const message = object('messages', {
 	body: string(),
 });
 
+const reply = object('replies', {
+	id: id(),
+	body: string(),
+	threadId: string(),
+});
+
 const authorRelations = createRelations(author, ({ many }) => ({
 	threads: many(thread, 'authorId'),
 }));
 
-const threadRelations = createRelations(thread, ({ one }) => ({
+const threadRelations = createRelations(thread, ({ one, many }) => ({
 	author: one(author, 'authorId'),
 	message: one(message, 'messageId'),
+	replies: many(reply, 'threadId'),
 }));
 
 const messageRelations = createRelations(message, ({ many }) => ({
 	threads: many(thread, 'messageId'),
 }));
 
+const replyRelations = createRelations(reply, ({ one }) => ({
+	thread: one(thread, 'threadId'),
+}));
+
 const threadInclude = { author: true, message: true } as const;
+const filteredRepliesThreadInclude = {
+	author: true,
+	message: true,
+	replies: {
+		where: { body: { $not: 'Excluded reply' } },
+		limit: 1,
+		orderBy: [{ key: 'body', direction: 'asc' }],
+	},
+} as const;
 
 const relationTreeInput = z.object({
 	authorId: z.string(),
@@ -71,9 +91,11 @@ const testSchema = createSchema({
 	authors: author,
 	threads: thread,
 	messages: message,
+	replies: reply,
 	authorRelations,
 	threadRelations,
 	messageRelations,
+	replyRelations,
 });
 
 const publicRoute = routeFactory();
@@ -84,6 +106,9 @@ const testRouter = router({
 		threads: publicRoute.withProcedures(({ mutation, query }) => ({
 			listRelationTree: query().handler(({ db }) =>
 				db.threads.include(threadInclude),
+			),
+			listRelationTreeWithFilteredReplies: query().handler(({ db }) =>
+				db.threads.include(filteredRepliesThreadInclude),
 			),
 			listRoots: query().handler(({ db }) => db.threads),
 			createRelationTree: mutation(relationTreeInput).handler(
@@ -256,6 +281,25 @@ describe('Relation tree sync E2E', () => {
 			id: messageId,
 			body: 'Existing message',
 		});
+	};
+
+	const seedReplies = async (
+		threadId: string,
+		replies: { id: string; body: string }[],
+	) => {
+		// Bypass storage mutations so the child rows exist without creating a
+		// placeholder parent in the live relation graph before the root INSERT.
+		const insertReply = sqliteDb.prepare(
+			'INSERT INTO replies (id, body, threadId) VALUES (?, ?, ?)',
+		);
+		const insertReplyMeta = sqliteDb.prepare(
+			'INSERT INTO replies_meta (id) VALUES (?)',
+		);
+
+		for (const row of replies) {
+			insertReply.run(row.id, row.body, threadId);
+			insertReplyMeta.run(row.id);
+		}
 	};
 
 	const expectHydratedThread = (
@@ -586,6 +630,67 @@ describe('Relation tree sync E2E', () => {
 			}
 		} finally {
 			removeEventListener();
+			client.client.ws.disconnect();
+		}
+	});
+
+	test('a relation tree preserves filters and limits on many relations', async () => {
+		const authorId = generateId();
+		const threadId = generateId();
+		const messageId = generateId();
+		const includedReplyId = generateId();
+		const limitedOutReplyId = generateId();
+		const excludedReplyId = generateId();
+		await seedRelatedRows(authorId, messageId);
+		await seedReplies(threadId, [
+			{ id: includedReplyId, body: 'Included reply' },
+			{ id: limitedOutReplyId, body: 'Second included reply' },
+			{ id: excludedReplyId, body: 'Excluded reply' },
+		]);
+
+		const client = createTestClient();
+		let unsubscribeQueries: (() => void) | undefined;
+
+		try {
+			await waitForConnection(client);
+			const remoteQuery =
+				client.store.query.threads.listRelationTreeWithFilteredReplies();
+			unsubscribeQueries = await loadRemoteQueries(client, [
+				remoteQuery.buildQueryRequest(),
+			]);
+
+			await client.store.mutate.threads.createThreadWithExistingRelations({
+				authorId,
+				threadId,
+				messageId,
+			});
+
+			await waitUntil(() => {
+				const hydratedThread = client.store.query.threads
+					.include(filteredRepliesThreadInclude)
+					.get()
+					.find((row) => row.id === threadId);
+				return hydratedThread?.replies?.some(
+					(row) => row.id === includedReplyId,
+				);
+			}, 'filtered relation tree after root INSERT');
+
+			const hydratedThread = client.store.query.threads
+				.include(filteredRepliesThreadInclude)
+				.get()
+				.find((row) => row.id === threadId);
+			expect(hydratedThread?.replies).toEqual([
+				expect.objectContaining({ id: includedReplyId }),
+			]);
+			expect(
+				client.store.query.replies
+					.get()
+					.some(
+						(row) => row.id === limitedOutReplyId || row.id === excludedReplyId,
+					),
+			).toBe(false);
+		} finally {
+			unsubscribeQueries?.();
 			client.client.ws.disconnect();
 		}
 	});
