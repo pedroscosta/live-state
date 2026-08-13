@@ -638,13 +638,13 @@ describe('Relation tree sync E2E', () => {
 		const authorId = generateId();
 		const threadId = generateId();
 		const messageId = generateId();
-		const includedReplyId = generateId();
 		const limitedOutReplyId = generateId();
+		const includedReplyId = generateId();
 		const excludedReplyId = generateId();
 		await seedRelatedRows(authorId, messageId);
 		await seedReplies(threadId, [
-			{ id: includedReplyId, body: 'Included reply' },
-			{ id: limitedOutReplyId, body: 'Second included reply' },
+			{ id: limitedOutReplyId, body: 'Zulu reply' },
+			{ id: includedReplyId, body: 'Alpha reply' },
 			{ id: excludedReplyId, body: 'Excluded reply' },
 		]);
 
