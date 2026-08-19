@@ -34,6 +34,15 @@ const schema = createSchema({
 
 type TestSchema = typeof schema;
 
+const updateCollection = object("update", {
+  id: id(),
+  name: string(),
+});
+
+const collisionSchema = createSchema({ update: updateCollection });
+
+type CollisionSchema = typeof collisionSchema;
+
 describe("routeFactory<TSchema>() - typed db in procedure handlers", () => {
   const typedRoute = routeFactory<TestSchema>();
 
@@ -155,6 +164,22 @@ describe("routeFactory<TSchema>() - procedure-only routes", () => {
     typedRoute.withProcedures(({ query }) => ({
       getStats: query().handler(async ({ db }) => {
         expectTypeOf(db).toEqualTypeOf<ServerDB<TestSchema>>();
+        return {};
+      }),
+    }));
+  });
+});
+
+describe("routeFactory<TSchema>() - legacy method name collisions", () => {
+  const typedRoute = routeFactory<CollisionSchema>();
+
+  test("update collection retains its query facade and legacy method", () => {
+    typedRoute.withProcedures(({ mutation }) => ({
+      edit: mutation().handler(async ({ db }) => {
+        db.update.one("update-1").get();
+        await db.update(collisionSchema.update, "update-1", {
+          name: "updated",
+        });
         return {};
       }),
     }));
