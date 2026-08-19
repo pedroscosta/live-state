@@ -3,13 +3,13 @@
 import { QueryBuilder, type QueryExecutor } from '../../core/query';
 import type { RawQueryRequest } from '../../core/schemas/core-protocol';
 import type {
-  InferInsert,
-  InferLiveCollection,
-  InferUpdate,
-  LiveCollectionAny,
-  LiveTypeAny,
-  MaterializedLiveType,
-  Schema,
+	InferInsert,
+	InferLiveCollection,
+	InferUpdate,
+	LiveCollectionAny,
+	LiveTypeAny,
+	MaterializedLiveType,
+	Schema,
 } from '../../schema';
 import { inferValue } from '../../schema';
 import type { Simplify } from '../../utils';
@@ -113,6 +113,25 @@ export type ServerDB<TSchema extends Schema<any>> = {
 };
 
 /**
+ * Keeps a deprecated method callable while exposing a collection facade when a
+ * collection name collides with that method.
+ */
+const mergeCollectionWithLegacyMethod = <T extends LiveCollectionAny>(
+	legacyMethod: (...args: any[]) => any,
+	collection: ServerCollection<T>,
+): ServerCollection<T> & ((...args: any[]) => any) => {
+	return new Proxy(legacyMethod, {
+		get(target, property, receiver) {
+			if (property in collection) {
+				const value = Reflect.get(collection, property);
+				return typeof value === 'function' ? value.bind(collection) : value;
+			}
+			return Reflect.get(target, property, receiver);
+		},
+	}) as ServerCollection<T> & ((...args: any[]) => any);
+};
+
+/**
  * Creates a ServerDB proxy that wraps a Storage instance with QueryBuilder-based syntax.
  *
  * @example
@@ -192,98 +211,108 @@ export function createServerDB<TSchema extends Schema<any>>(
 		return collection;
 	};
 
+	type LegacyMethod = (...args: any[]) => any;
+	const createLegacyMethod = (prop: string): LegacyMethod | undefined => {
+		// Handle deprecated Storage methods
+		if (prop === 'findOne') {
+			return storage.findOne.bind(storage);
+		}
+		if (prop === 'find') {
+			return storage.find.bind(storage);
+		}
+		if (prop === 'insert') {
+			return <T extends LiveCollectionAny>(
+				resource: T,
+				value: Simplify<InferInsert<T>>,
+			) => {
+				const now = storage._getTimestamp();
+				return storage
+					.rawInsert(
+						resource.name,
+						(value as any).id as string,
+						{
+							value: Object.fromEntries(
+								Object.entries(value).map(([k, v]) => [
+									k,
+									{ value: v, _meta: { timestamp: now } },
+								]),
+							),
+						} as unknown as MaterializedLiveType<T>,
+						undefined,
+						context,
+					)
+					.then((result) => inferValue(result.data));
+			};
+		}
+		if (prop === 'update') {
+			return <T extends LiveCollectionAny>(
+				resource: T,
+				resourceId: string,
+				value: InferUpdate<T>,
+			) => {
+				const now = storage._getTimestamp();
+				const { id: _, ...rest } = value as any;
+				return storage
+					.rawUpdate(
+						resource.name,
+						resourceId,
+						{
+							value: Object.fromEntries(
+								Object.entries(rest).map(([k, v]) => [
+									k,
+									{ value: v, _meta: { timestamp: now } },
+								]),
+							),
+						} as unknown as MaterializedLiveType<T>,
+						undefined,
+						context,
+					)
+					.then((result) => {
+						const inferred = inferValue(result.data) as any;
+						const filtered: any = {};
+						for (const key of Object.keys(rest)) {
+							if (key in inferred) {
+								filtered[key] = inferred[key];
+							}
+						}
+						return filtered;
+					});
+			};
+		}
+
+		// Handle transaction
+		if (prop === 'transaction') {
+			return async <T>(
+				fn: (opts: {
+					trx: ServerDB<TSchema>;
+					commit: () => Promise<void>;
+					rollback: () => Promise<void>;
+				}) => Promise<T>,
+			): Promise<T> => {
+				return storage.transaction(async ({ trx, commit, rollback }) => {
+					const trxDB = createServerDB(trx, schema, context);
+					return fn({ trx: trxDB, commit, rollback });
+				});
+			};
+		}
+
+		return undefined;
+	};
+
 	const handler: ProxyHandler<object> = {
 		get(_target, prop: string) {
-			// Handle deprecated Storage methods
-			if (prop === 'findOne') {
-				return storage.findOne.bind(storage);
-			}
-			if (prop === 'find') {
-				return storage.find.bind(storage);
-			}
-			if (prop === 'insert') {
-				return <T extends LiveCollectionAny>(
-					resource: T,
-					value: Simplify<InferInsert<T>>,
-				) => {
-					const now = storage._getTimestamp();
-					return storage
-						.rawInsert(
-							resource.name,
-							(value as any).id as string,
-							{
-								value: Object.fromEntries(
-									Object.entries(value).map(([k, v]) => [
-										k,
-										{ value: v, _meta: { timestamp: now } },
-									]),
-								),
-							} as unknown as MaterializedLiveType<T>,
-							undefined,
-							context,
-						)
-						.then((result) => inferValue(result.data));
-				};
-			}
-			if (prop === 'update') {
-				return <T extends LiveCollectionAny>(
-					resource: T,
-					resourceId: string,
-					value: InferUpdate<T>,
-				) => {
-					const now = storage._getTimestamp();
-					const { id: _, ...rest } = value as any;
-					return storage
-						.rawUpdate(
-							resource.name,
-							resourceId,
-							{
-								value: Object.fromEntries(
-									Object.entries(rest).map(([k, v]) => [
-										k,
-										{ value: v, _meta: { timestamp: now } },
-									]),
-								),
-							} as unknown as MaterializedLiveType<T>,
-							undefined,
-							context,
-						)
-						.then((result) => {
-							const inferred = inferValue(result.data) as any;
-							const filtered: any = {};
-							for (const key of Object.keys(rest)) {
-								if (key in inferred) {
-									filtered[key] = inferred[key];
-								}
-							}
-							return filtered;
-						});
-				};
+			const legacyMethod = createLegacyMethod(prop);
+
+			// Handle collection access (e.g., db.users, db.posts). If a collection
+			// name collides with a legacy method, expose both APIs on one value.
+			if (Object.hasOwn(schema, prop)) {
+				const collection = createCollection(schema[prop]);
+				return legacyMethod
+					? mergeCollectionWithLegacyMethod(legacyMethod, collection)
+					: collection;
 			}
 
-			// Handle transaction
-			if (prop === 'transaction') {
-				return async <T>(
-					fn: (opts: {
-						trx: ServerDB<TSchema>;
-						commit: () => Promise<void>;
-						rollback: () => Promise<void>;
-					}) => Promise<T>,
-				): Promise<T> => {
-					return storage.transaction(async ({ trx, commit, rollback }) => {
-						const trxDB = createServerDB(trx, schema, context);
-						return fn({ trx: trxDB, commit, rollback });
-					});
-				};
-			}
-
-			// Handle collection access (e.g., db.users, db.posts)
-			if (prop in schema) {
-				const resourceSchema = schema[prop];
-				return createCollection(resourceSchema);
-			}
-
-			return undefined;
+			return legacyMethod;
 		},
 	};
 
