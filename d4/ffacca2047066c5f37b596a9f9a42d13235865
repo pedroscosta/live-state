@@ -1,0 +1,23 @@
+packages/live-state/test/server/hooks.test.ts
+  s_89dc296d04794b::t_2dd7802051b598 247-252,258,272-277,279,281-282
+  s_89dc296d04794b::t_17f460699539c2 245-246,253-257,259-271,278,280
+packages/live-state/src/server/storage/sql-storage.ts
+  s_89dc296d04794b::t_00d2314dbe935d 32,301,383,449,562
+  s_89dc296d04794b::t_1c04e0d97fc465 267-269,271,283,398-400,402,416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d4ffacca2047066c5f37b596a9f9a42d13235865",
+  "prompts": {},
+  "sessions": {
+    "s_89dc296d04794b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01a6a-492e-7663-944a-90e1d9b3a421",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
