@@ -1,0 +1,26 @@
+packages/live-state/test/types/server-db.test-d.ts
+  s_bff399d562c657::t_6f7c66d792bc77 37-45,173-178,180-182
+  s_bff399d562c657::t_7f17e48ce34978 179
+packages/live-state/src/server/storage/server-query-builder.ts
+  s_bff399d562c657::t_7f17e48ce34978 308
+  s_bff399d562c657::t_58d9a44bd54917 6-12
+  s_bff399d562c657::t_7ed4707fdf9a13 116-133,214-275,277-278,280-304,306-307,309-312,315
+packages/live-state/test/server/storage/server-query-builder.test.ts
+  s_bff399d562c657::t_b66dbdaa3703e4 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b46aad1288290acd5301bb23c0a8dd7061616dab",
+  "prompts": {},
+  "sessions": {
+    "s_bff399d562c657": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01a36-d9a0-76c1-aeec-6fb73a04772a",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
