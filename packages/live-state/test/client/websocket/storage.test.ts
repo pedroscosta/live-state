@@ -244,7 +244,10 @@ describe("KVStorage", () => {
   test("should recreate metadata and clear mutations when schema changes", async () => {
     const { openDB } = await import("idb");
     const mockOpenDB = openDB as any;
-    vi.mocked(hash).mockResolvedValue("mock-hash");
+    vi.mocked(hash)
+      .mockResolvedValueOnce("schema-hash")
+      .mockResolvedValueOnce("users-hash")
+      .mockResolvedValueOnce("posts-hash");
 
     mockIndexedDB.databases.mockResolvedValue([
       { name: "test-db", version: 1 },
@@ -300,14 +303,14 @@ describe("KVStorage", () => {
     expect(persistedMetadata.has("mutationStack")).toBe(false);
     expect(mockMetaDB.put).toHaveBeenCalledWith(
       "databases",
-      {
-        schemaHash: "mock-hash",
-        objectHashes: {
-          users: "mock-hash",
-          posts: "mock-hash",
-          __meta: "mock-hash",
-        },
-      },
+      expect.objectContaining({
+        schemaHash: "schema-hash",
+        objectHashes: expect.objectContaining({
+          users: "users-hash",
+          posts: "posts-hash",
+          __meta: "schema-hash",
+        }),
+      }),
       "test-db"
     );
   });
@@ -315,7 +318,10 @@ describe("KVStorage", () => {
   test("should preserve metadata when schema is unchanged", async () => {
     const { openDB } = await import("idb");
     const mockOpenDB = openDB as any;
-    vi.mocked(hash).mockResolvedValue("mock-hash");
+    vi.mocked(hash)
+      .mockResolvedValueOnce("schema-hash")
+      .mockResolvedValueOnce("users-hash")
+      .mockResolvedValueOnce("posts-hash");
 
     mockIndexedDB.databases.mockResolvedValue([
       { name: "test-db", version: 2 },
@@ -323,17 +329,20 @@ describe("KVStorage", () => {
     mockMetaDB.objectStoreNames.contains.mockReturnValue(true);
     mockMetaDB.getAllRecords.mockResolvedValue({
       "test-db": {
-        schemaHash: "mock-hash",
+        schemaHash: "schema-hash",
         objectHashes: {
-          users: "mock-hash",
-          posts: "mock-hash",
-          __meta: "mock-hash",
+          users: "users-hash",
+          posts: "posts-hash",
+          __meta: "schema-hash",
         },
       },
     });
     const persistedMetadata = new Map([
       ["mutationStack", [{ mutationId: "pending-mutation" }]],
     ]);
+    mockDB.get.mockImplementation((_storeName, key) =>
+      Promise.resolve(persistedMetadata.get(key))
+    );
 
     mockOpenDB.mockImplementation((name: string) =>
       Promise.resolve(name === "live-state-databases" ? mockMetaDB : mockDB)
@@ -344,7 +353,7 @@ describe("KVStorage", () => {
     expect(mockOpenDB).toHaveBeenCalledWith("test-db", 2, expect.any(Object));
     expect(mockDB.deleteObjectStore).not.toHaveBeenCalled();
     expect(mockDB.createObjectStore).not.toHaveBeenCalled();
-    expect(persistedMetadata.get("mutationStack")).toEqual([
+    expect(await storage.getMeta("mutationStack")).toEqual([
       { mutationId: "pending-mutation" },
     ]);
   });
