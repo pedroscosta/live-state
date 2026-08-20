@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { KVStorage } from "../../../src/client/websocket/storage";
 import { DefaultMutationMessage } from "../../../src/core/schemas/web-socket";
 import { Schema } from "../../../src/schema";
+import { hash } from "../../../src/utils";
 
 // Mock IndexedDB
 const mockIndexedDB = {
@@ -240,43 +241,47 @@ describe("KVStorage", () => {
     expect(mockDB.createObjectStore).toHaveBeenCalledWith("__meta");
   });
 
-  test("should delete and recreate object stores when hash changes", async () => {
+  test("should recreate metadata and clear mutations when schema changes", async () => {
     const { openDB } = await import("idb");
     const mockOpenDB = openDB as any;
+    vi.mocked(hash).mockResolvedValue("mock-hash");
 
-    mockIndexedDB.databases.mockResolvedValue([]);
+    mockIndexedDB.databases.mockResolvedValue([
+      { name: "test-db", version: 1 },
+    ]);
 
-    // Setup meta DB mock
     mockMetaDB.objectStoreNames.contains.mockReturnValue(true);
     mockMetaDB.getAllRecords.mockResolvedValue({
       "test-db": {
         schemaHash: "old-hash",
-        objectHashes: { users: "old-user-hash", posts: "old-post-hash" },
+        objectHashes: {
+          users: "old-user-hash",
+          posts: "old-post-hash",
+          __meta: "old-hash",
+        },
       },
     });
 
-    // Setup main DB mock
-    let storeExists = false;
-    mockDB.objectStoreNames.contains.mockImplementation(() => {
-      storeExists = !storeExists;
-      return storeExists;
+    const objectStores = new Set(["users", "posts", "__meta"]);
+    const persistedMetadata = new Map([
+      ["mutationStack", [{ mutationId: "pending-mutation" }]],
+    ]);
+    mockDB.objectStoreNames.contains.mockImplementation((storeName) =>
+      objectStores.has(storeName)
+    );
+    mockDB.deleteObjectStore.mockImplementation((storeName) => {
+      objectStores.delete(storeName);
+      if (storeName === "__meta") persistedMetadata.clear();
     });
-
-    let metaUpgradeCalled = false;
-    let mainUpgradeCalled = false;
+    mockDB.createObjectStore.mockImplementation((storeName) => {
+      objectStores.add(storeName);
+    });
 
     mockOpenDB.mockImplementation((name: any, version: any, options: any) => {
       if (name === "live-state-databases") {
-        if (options?.upgrade && !metaUpgradeCalled) {
-          options.upgrade(mockMetaDB);
-          metaUpgradeCalled = true;
-        }
         return Promise.resolve(mockMetaDB);
       } else if (name === "test-db") {
-        if (options?.upgrade && !mainUpgradeCalled) {
-          options.upgrade(mockDB);
-          mainUpgradeCalled = true;
-        }
+        options.upgrade(mockDB);
         return Promise.resolve(mockDB);
       }
       return Promise.resolve(mockDB);
@@ -289,6 +294,59 @@ describe("KVStorage", () => {
 
     expect(mockDB.deleteObjectStore).toHaveBeenCalledWith("posts");
     expect(mockDB.createObjectStore).toHaveBeenCalledWith("posts");
+
+    expect(mockDB.deleteObjectStore).toHaveBeenCalledWith("__meta");
+    expect(mockDB.createObjectStore).toHaveBeenCalledWith("__meta");
+    expect(persistedMetadata.has("mutationStack")).toBe(false);
+    expect(mockMetaDB.put).toHaveBeenCalledWith(
+      "databases",
+      {
+        schemaHash: "mock-hash",
+        objectHashes: {
+          users: "mock-hash",
+          posts: "mock-hash",
+          __meta: "mock-hash",
+        },
+      },
+      "test-db"
+    );
+  });
+
+  test("should preserve metadata when schema is unchanged", async () => {
+    const { openDB } = await import("idb");
+    const mockOpenDB = openDB as any;
+    vi.mocked(hash).mockResolvedValue("mock-hash");
+
+    mockIndexedDB.databases.mockResolvedValue([
+      { name: "test-db", version: 2 },
+    ]);
+    mockMetaDB.objectStoreNames.contains.mockReturnValue(true);
+    mockMetaDB.getAllRecords.mockResolvedValue({
+      "test-db": {
+        schemaHash: "mock-hash",
+        objectHashes: {
+          users: "mock-hash",
+          posts: "mock-hash",
+          __meta: "mock-hash",
+        },
+      },
+    });
+    const persistedMetadata = new Map([
+      ["mutationStack", [{ mutationId: "pending-mutation" }]],
+    ]);
+
+    mockOpenDB.mockImplementation((name: string) =>
+      Promise.resolve(name === "live-state-databases" ? mockMetaDB : mockDB)
+    );
+
+    await storage.init(mockSchema, "test-db");
+
+    expect(mockOpenDB).toHaveBeenCalledWith("test-db", 2, expect.any(Object));
+    expect(mockDB.deleteObjectStore).not.toHaveBeenCalled();
+    expect(mockDB.createObjectStore).not.toHaveBeenCalled();
+    expect(persistedMetadata.get("mutationStack")).toEqual([
+      { mutationId: "pending-mutation" },
+    ]);
   });
 
   test("should get all data for resource type", async () => {
