@@ -1,0 +1,19 @@
+packages/live-state/test/client/websocket/storage.test.ts
+  s_b7900a28026826::t_283dbde8a7f276 247-250,306-313,321-324,332,334-336,343-345,356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "71dbf5b598583eb793e1ec773739f646c20fb2ee",
+  "prompts": {},
+  "sessions": {
+    "s_b7900a28026826": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01c99-4c34-7880-a13c-1b6b1ece1606",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
