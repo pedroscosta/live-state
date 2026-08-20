@@ -242,6 +242,44 @@ describe("Server hooks registry", () => {
 		expect(beforeArgs.value.name).toBe("Alpha");
 	});
 
+	test("all hooks receive a ServerDB collection facade", async () => {
+		const observedNames: Array<string | undefined> = [];
+		testServer = server({
+			router: testRouter,
+			storage,
+			schema,
+			hooks: defineHooks<typeof schema>({
+				groups: {
+					beforeInsert: async ({ db, value }) => {
+						observedNames.push(
+							(await db.groups.one(value.id).get())?.name,
+						);
+					},
+					afterInsert: async ({ db, value }) => {
+						observedNames.push(
+							(await db.groups.one(value.id).get())?.name,
+						);
+					},
+					beforeUpdate: async ({ db, value }) => {
+						observedNames.push(
+							(await db.groups.one(value.id).get())?.name,
+						);
+					},
+					afterUpdate: async ({ db, value }) => {
+						observedNames.push(
+							(await db.groups.one(value.id).get())?.name,
+						);
+					},
+				},
+			}),
+		});
+
+		await insertGroup(testServer, "g1", "Alpha");
+		await updateGroup(testServer, "g1", "Beta");
+
+		expect(observedNames).toEqual([undefined, "Alpha", "Alpha", "Beta"]);
+	});
+
 	test("beforeUpdate and afterUpdate fire on update", async () => {
 		const beforeUpdate = vi.fn();
 		const afterUpdate = vi.fn();

@@ -29,6 +29,7 @@ import {
 } from "./dialect-helpers";
 import { type RawMutationResult, Storage } from "./interface";
 import { initializeSchema } from "./schema-init";
+import { createServerDB } from "./server-query-builder";
 import { applyInclude, applyRelationalOrderBy, applyWhere } from "./sql-utils";
 
 export class SQLStorage extends Storage {
@@ -263,8 +264,11 @@ export class SQLStorage extends Storage {
     mutationId?: string,
     context?: Record<string, any>,
   ): Promise<RawMutationResult<T>> {
+    const schema = this.schema;
+    if (!schema) throw new Error("Schema not initialized");
+
     const hooks: any = this.server?.getHooks(resourceName);
-    const entity = this.schema?.[resourceName];
+    const entity = schema[resourceName];
 
     const [mergedRecord, acceptedValues] = entity?.mergeMutation?.(
       "set",
@@ -276,6 +280,7 @@ export class SQLStorage extends Storage {
       return { data: value, acceptedValues: null };
     }
 
+    const hookDB = hooks ? createServerDB(this, schema, context) : undefined;
     let processedValue = mergedRecord as MaterializedLiveType<T>;
     const rawValueWithId = {
       ...processedValue,
@@ -293,7 +298,7 @@ export class SQLStorage extends Storage {
         ctx: context,
         value: inferredValue as any,
         rawValue: rawValueWithId,
-        db: this,
+        db: hookDB,
       });
 
       if (hookResult) {
@@ -375,7 +380,7 @@ export class SQLStorage extends Storage {
         ctx: context,
         value: inferredValue as any,
         rawValue: finalRawValue,
-        db: this,
+        db: hookDB,
       });
     }
 
@@ -390,8 +395,11 @@ export class SQLStorage extends Storage {
     mutationId?: string,
     context?: Record<string, any>,
   ): Promise<RawMutationResult<T>> {
+    const schema = this.schema;
+    if (!schema) throw new Error("Schema not initialized");
+
     const hooks: any = this.server?.getHooks(resourceName);
-    const entity = this.schema?.[resourceName];
+    const entity = schema[resourceName];
 
     const existingRecord = await this.rawFindById<T>(resourceName, resourceId);
 
@@ -405,6 +413,7 @@ export class SQLStorage extends Storage {
       return { data: value, acceptedValues: null };
     }
 
+    const hookDB = hooks ? createServerDB(this, schema, context) : undefined;
     let processedValue = mergedRecord as MaterializedLiveType<T>;
     const rawValueWithId = {
       ...processedValue,
@@ -437,7 +446,7 @@ export class SQLStorage extends Storage {
         rawValue: rawValueWithId,
         previousValue: previousInferredValue,
         previousRawValue: existingRecord,
-        db: this,
+        db: hookDB,
       });
 
       if (hookResult) {
@@ -550,7 +559,7 @@ export class SQLStorage extends Storage {
           rawValue: updatedRawValueWithId,
           previousValue: previousInferredValue,
           previousRawValue: existingRecord,
-          db: this,
+          db: hookDB,
         });
       }
     }
