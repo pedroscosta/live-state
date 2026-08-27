@@ -28,6 +28,8 @@ export class KVStorage {
       )
     );
 
+    objectHashes[META_KEY] = schemaHash;
+
     const metaDb = await openDB("live-state-databases", 1, {
       upgrade(db) {
         if (!db.objectStoreNames.contains(DATABASES_KEY))
