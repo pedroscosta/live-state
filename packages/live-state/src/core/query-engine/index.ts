@@ -1929,26 +1929,53 @@ export class QueryEngine {
 				if (!this.graph.has(resourceId))
 					return { hash: queryNode.hash, matches: false };
 
-				if (queryNode.relationName) {
-					// queryNode.relationName is the parent-side relation (e.g. "posts"
-					// on User); the graph resolves the inverse ("author" on Post) and
-					// follows this object's FK up to its parent internally.
+				const relationName = queryNode.relationName;
+				if (relationName) {
 					const parentQuery = queryNode.parentQuery
 						? this.queryNodes.get(queryNode.parentQuery)
 						: undefined;
-					const parentResource = parentQuery?.queryStep.query.resource;
 
-					const relatedObj = parentResource
-						? this.graph.reference(
-								resourceId,
-								parentResource,
-								queryNode.relationName,
-							)
-						: undefined;
-					if (!relatedObj) return { hash: queryNode.hash, matches: false };
-
-					if (!parentQuery || !this.graph.matches(relatedObj, parentQuery.hash))
+					if (!parentQuery) {
 						return { hash: queryNode.hash, matches: false };
+					}
+
+					const parentResource = parentQuery.queryStep.query.resource;
+					const parentRelation =
+						this.schema[parentResource]?.relations?.[relationName];
+
+					if (!parentRelation) {
+						return { hash: queryNode.hash, matches: false };
+					}
+
+					if (parentRelation.type === 'one') {
+						// A `one` relation stores its FK on the parent row, so the
+						// related object has to look back at all parent rows and match
+						// when any of them is in the parent query's scope.
+						const parentIds = this.graph.referencedBy(
+							resourceId,
+							parentResource,
+							relationName,
+						);
+						if (
+							!Array.from(parentIds).some((parentId) =>
+								this.graph.matches(parentId, parentQuery.hash),
+							)
+						)
+							return { hash: queryNode.hash, matches: false };
+					} else {
+						// A `many` relation stores its FK on this child row, so follow
+						// the child's outgoing edge to its parent.
+						const relatedObj = this.graph.reference(
+							resourceId,
+							parentResource,
+							relationName,
+						);
+						if (
+							!relatedObj ||
+							!this.graph.matches(relatedObj, parentQuery.hash)
+						)
+							return { hash: queryNode.hash, matches: false };
+					}
 
 					// Relation membership holds; fall through to re-apply the
 					// include's own `where` predicate so a related-but-filtered-out
