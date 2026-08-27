@@ -174,18 +174,25 @@ describe("End-to-End Query Tests", () => {
       logLevel: LogLevel.DEBUG,
     });
 
-    // Wait for storage to initialize
-    // await storage.init(testSchema);
+    // Server initialization is asynchronous. Wait for a real server request
+    // before using the storage directly so setup cannot race schema creation.
+    await testServer.handleCustomQuery({
+      req: {
+        type: "CUSTOM_QUERY",
+        resource: "users",
+        procedure: "list",
+        input: undefined,
+        headers: {},
+        cookies: {},
+        queryParams: {},
+        context: {},
+      },
+    });
 
     // Clean up all tables before each test
-    try {
-      await pool.query(
-        "TRUNCATE TABLE users, users_meta, posts, posts_meta RESTART IDENTITY CASCADE"
-      );
-    } catch (error) {
-      // Ignore errors if tables don't exist yet (first run)
-      // They will be created by storage.init()
-    }
+    await pool.query(
+      "TRUNCATE TABLE users, users_meta, posts, posts_meta RESTART IDENTITY CASCADE"
+    );
 
     // Create Express server
     const { app } = expressWs(express());
@@ -541,7 +548,7 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 performs INSERT mutation
-        client1.store.mutate.users.insert({
+        await client1.store.mutate.users.insert({
           id: userId,
           name: userName,
           email: userEmail,
@@ -596,7 +603,7 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 performs UPDATE mutation
-        client1.store.mutate.users.update({
+        await client1.store.mutate.users.update({
           id: userId,
           name: updatedName,
         });
@@ -637,7 +644,7 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 performs first INSERT mutation
-        client1.store.mutate.users.insert({
+        await client1.store.mutate.users.insert({
           id: userId1,
           name: "User 1",
           email: "user1@example.com",
@@ -647,7 +654,7 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 performs second INSERT mutation
-        client1.store.mutate.users.insert({
+        await client1.store.mutate.users.insert({
           id: userId2,
           name: "User 2",
           email: "user2@example.com",
@@ -696,7 +703,7 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 first creates a user, then a post
-        client1.store.mutate.users.insert({
+        await client1.store.mutate.users.insert({
           id: userId,
           name: "Author",
           email: "author@example.com",
@@ -704,7 +711,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        client1.store.mutate.posts.insert({
+        await client1.store.mutate.posts.insert({
           id: postId,
           title: "New Post",
           content: "Post Content",
@@ -754,7 +761,7 @@ describe("End-to-End Query Tests", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Client1 performs INSERT mutation
-        client1.store.mutate.users.insert({
+        await client1.store.mutate.users.insert({
           id: userId,
           name: "Test User",
           email: "test@example.com",
@@ -1032,9 +1039,6 @@ describe("End-to-End Query Tests", () => {
     beforeEach(async () => {
       orderStorage = new SQLStorage(pool);
 
-      // Initialize storage to create tables and enum types
-      await orderStorage.init(orderSchema);
-
       orderServer = server({
         router: orderRouter,
         storage: orderStorage,
@@ -1042,14 +1046,23 @@ describe("End-to-End Query Tests", () => {
         logLevel: LogLevel.DEBUG,
       });
 
+      await orderServer.handleCustomQuery({
+        req: {
+          type: "CUSTOM_QUERY",
+          resource: "orders",
+          procedure: "list",
+          input: undefined,
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+      });
+
       // Clean up tables
-      try {
-        await pool.query(
-          "TRUNCATE TABLE orders, orders_meta RESTART IDENTITY CASCADE"
-        );
-      } catch (error) {
-        // Ignore errors if tables don't exist yet
-      }
+      await pool.query(
+        "TRUNCATE TABLE orders, orders_meta RESTART IDENTITY CASCADE"
+      );
 
       const { app } = expressWs(express());
       app.use(express.json());
@@ -1166,7 +1179,7 @@ describe("End-to-End Query Tests", () => {
       test("should handle enum field mutations (insert)", async () => {
         const orderId = generateId();
 
-        orderWsClient.store.mutate.orders.insert({
+        await orderWsClient.store.mutate.orders.insert({
           id: orderId,
           status: "shipped",
           priority: "medium",
@@ -1195,7 +1208,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        orderWsClient.store.mutate.orders.update({
+        await orderWsClient.store.mutate.orders.update({
           id: orderId,
           status: "delivered",
           priority: "high",
@@ -1280,7 +1293,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        client1.store.mutate.orders.insert({
+        await client1.store.mutate.orders.insert({
           id: orderId,
           status: "processing",
           priority: "high",
@@ -1413,9 +1426,6 @@ describe("End-to-End Query Tests", () => {
     beforeEach(async () => {
       productStorage = new SQLStorage(pool);
 
-      // Initialize storage to create tables
-      await productStorage.init(productSchema);
-
       productServer = server({
         router: productRouter,
         storage: productStorage,
@@ -1423,14 +1433,23 @@ describe("End-to-End Query Tests", () => {
         logLevel: LogLevel.DEBUG,
       });
 
+      await productServer.handleCustomQuery({
+        req: {
+          type: "CUSTOM_QUERY",
+          resource: "products",
+          procedure: "list",
+          input: undefined,
+          headers: {},
+          cookies: {},
+          queryParams: {},
+          context: {},
+        },
+      });
+
       // Clean up tables
-      try {
-        await pool.query(
-          "TRUNCATE TABLE products, products_meta RESTART IDENTITY CASCADE"
-        );
-      } catch (error) {
-        // Ignore errors if tables don't exist yet
-      }
+      await pool.query(
+        "TRUNCATE TABLE products, products_meta RESTART IDENTITY CASCADE"
+      );
 
       const { app } = expressWs(express());
       app.use(express.json());
@@ -1582,7 +1601,7 @@ describe("End-to-End Query Tests", () => {
           },
         };
 
-        productWsClient.store.mutate.products.insert({
+        await productWsClient.store.mutate.products.insert({
           id: productId,
           name: "New Product",
           metadata,
@@ -1627,7 +1646,7 @@ describe("End-to-End Query Tests", () => {
           },
         };
 
-        productWsClient.store.mutate.products.update({
+        await productWsClient.store.mutate.products.update({
           id: productId,
           metadata: updatedMetadata,
         });
@@ -1716,7 +1735,7 @@ describe("End-to-End Query Tests", () => {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        client1.store.mutate.products.insert({
+        await client1.store.mutate.products.insert({
           id: productId,
           name: "Synced Product",
           metadata,
