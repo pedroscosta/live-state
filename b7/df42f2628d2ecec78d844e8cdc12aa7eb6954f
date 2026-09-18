@@ -1,0 +1,50 @@
+packages/live-state/src/server/transport-layers/http.ts
+  s_4629176c8d26f9::t_b346f0358c2594 7,11-12,46,71,89-90,93-94,102-103,106-107,132-133,136-143,166,170-175,179
+  s_4629176c8d26f9::t_1229f4b425860b 10,13-14
+packages/live-state/test/server/transport-layers/web-socket.test.ts
+  s_4629176c8d26f9::t_f3f09dcbee0a3c 13,381,413-457
+packages/live-state/src/index.ts
+  s_4629176c8d26f9::t_b346f0358c2594 2
+packages/live-state/src/client/index.ts
+  s_4629176c8d26f9::t_b346f0358c2594 6
+packages/live-state/src/client/websocket/client.ts
+  s_4629176c8d26f9::t_8452f952f2b2c5 100,345-352,374
+  s_4629176c8d26f9::t_b346f0358c2594 17,356,555-557,680-681
+packages/live-state/test/server/transport-layers/http.test.ts
+  s_4629176c8d26f9::t_f3f09dcbee0a3c 11,229-234,252-256,270-274,348-381
+packages/live-state/src/client/fetch/index.ts
+  s_4629176c8d26f9::t_b346f0358c2594 2-3,55-57
+packages/live-state/src/server/transport-layers/web-socket.ts
+  s_4629176c8d26f9::t_b346f0358c2594 6,125,164,199
+packages/live-state/test/client/optimistic-custom-mutations.test.ts
+  s_4629176c8d26f9::t_f3f09dcbee0a3c 5,348-353,357-368
+packages/live-state/src/server/index.ts
+  s_4629176c8d26f9::t_1229f4b425860b 11
+packages/live-state/src/core/schemas/web-socket.ts
+  s_4629176c8d26f9::t_1229f4b425860b 77-85
+packages/live-state/test/client/fetch.test.ts
+  s_4629176c8d26f9::t_f3f09dcbee0a3c 4,528-563
+packages/live-state/src/errors.ts
+  s_4629176c8d26f9::t_1229f4b425860b 1-42,49-50,52-96
+  s_4629176c8d26f9::t_44afc1039abfa3 43-44,48,51
+  s_4629176c8d26f9::t_3205a31aac02d7 45-47
+packages/live-state/src/server/router.ts
+  s_4629176c8d26f9::t_3205a31aac02d7 290,334
+  s_4629176c8d26f9::t_44afc1039abfa3 6,18-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b7df42f2628d2ecec78d844e8cdc12aa7eb6954f",
+  "prompts": {},
+  "sessions": {
+    "s_4629176c8d26f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0b23c-00f1-7860-b4b1-48b3da39265e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
