@@ -1,6 +1,7 @@
 import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
 import { z } from "zod";
 import { createClient } from "../../src/client/fetch";
+import { PublicError } from "../../src/errors";
 import { createSchema, object, id, string, reference } from "../../src/schema";
 import { router as createRouter, routeFactory } from "../../src/server/router";
 
@@ -524,6 +525,42 @@ describe("createClient", () => {
   });
 
   describe("error handling", () => {
+    test("should reconstruct public errors", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        statusText: "Conflict",
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: "ORDER_ALREADY_APPROVED",
+              message: "The order was already approved",
+              status: 409,
+              details: { orderId: "order-1" },
+            },
+          }),
+      });
+
+      const client = createClient({
+        url: "http://localhost:3000",
+        schema: mockSchema,
+        credentials: async () => ({}),
+      });
+
+      try {
+        await client.query.users.list();
+        expect.fail("Expected query to reject");
+      } catch (error) {
+        expect(error).toBeInstanceOf(PublicError);
+        expect(error).toMatchObject({
+          code: "ORDER_ALREADY_APPROVED",
+          message: "The order was already approved",
+          status: 409,
+          details: { orderId: "order-1" },
+        });
+      }
+    });
+
     test("should handle fetch errors", async () => {
       const error = new Error("Network error");
       mockFetch.mockRejectedValueOnce(error);

@@ -3,6 +3,7 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { z } from 'zod';
+import { PublicError } from '../errors';
 import { type Schema } from '../schema';
 import type {
 	BaseRequest,
@@ -13,6 +14,38 @@ import type {
 	Storage,
 } from '.';
 import { createServerDB, type ServerDB } from './storage/server-query-builder';
+
+type ValidationIssue = {
+	message: string;
+	path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+};
+
+const createValidationError = (
+	issues: ReadonlyArray<ValidationIssue>,
+): PublicError<'VALIDATION_ERROR'> => {
+	const publicIssues = issues.map((issue) => ({
+		message: issue.message,
+		path:
+			issue.path?.map((part) =>
+				typeof part === 'object' && 'key' in part
+					? String(part.key)
+					: String(part),
+			) ?? [],
+	}));
+	const message = publicIssues
+		.map((issue) => {
+			const path = issue.path.join('.');
+			return path ? `${path}: ${issue.message}` : issue.message;
+		})
+		.join(', ');
+
+	return new PublicError({
+		code: 'VALIDATION_ERROR',
+		message: `Validation failed: ${message}`,
+		status: 400,
+		details: { issues: publicIssues },
+	});
+};
 
 export type AnyRoute = Route<
 	Middleware<any>,
@@ -254,24 +287,7 @@ export class Route<
 						: validationResult;
 
 				if (result.issues) {
-					const errorMessage = result.issues
-						.map(
-							(issue: {
-								message: string;
-								path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
-							}) => {
-								const path = issue.path
-									?.map((p) =>
-										typeof p === 'object' && 'key' in p
-											? String(p.key)
-											: String(p),
-									)
-									.join('.');
-								return path ? `${path}: ${issue.message}` : issue.message;
-							},
-						)
-						.join(', ');
-					throw new Error(`Validation failed: ${errorMessage}`);
+					throw createValidationError(result.issues);
 				}
 
 				req.input = result.value;
@@ -315,24 +331,7 @@ export class Route<
 					: validationResult;
 
 			if (result.issues) {
-				const errorMessage = result.issues
-					.map(
-						(issue: {
-							message: string;
-							path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
-						}) => {
-							const path = issue.path
-								?.map((p) =>
-									typeof p === 'object' && 'key' in p
-										? String(p.key)
-										: String(p),
-								)
-								.join('.');
-							return path ? `${path}: ${issue.message}` : issue.message;
-						},
-					)
-					.join(', ');
-				throw new Error(`Validation failed: ${errorMessage}`);
+				throw createValidationError(result.issues);
 			}
 
 			req.input = result.value;

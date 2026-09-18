@@ -4,7 +4,13 @@ import {
   type HttpMutation,
   httpGenericMutationSchema,
 } from "../../core/schemas/http";
+import { PublicError, serializePublicError } from "../../errors";
 import type { AnyRouter, Server } from "..";
+
+const errorResponse = (error: unknown): Response => {
+  const serialized = serializePublicError(error);
+  return Response.json({ error: serialized }, { status: serialized.status });
+};
 
 /**
  * Recursively normalizes null values in parsed query strings.
@@ -37,7 +43,7 @@ const normalizeNullValues = (value: any): any => {
 };
 
 export const httpTransportLayer = (
-  server: Server<AnyRouter, any>
+  server: Server<AnyRouter, any>,
 ): ((request: Request) => Promise<Response>) => {
   const logger = server.logger;
 
@@ -62,7 +68,7 @@ export const httpTransportLayer = (
       const searchParams = url.searchParams;
 
       const rawParsedQs = normalizeNullValues(
-        qs.parse(searchParams.toString())
+        qs.parse(searchParams.toString()),
       ) as Record<string, any>;
 
       const initialContext =
@@ -80,12 +86,12 @@ export const httpTransportLayer = (
 
           if (secondToLast === "query") {
             if (segments.length < 3) {
-              return Response.json(
-                {
+              return errorResponse(
+                new PublicError({
                   message: "Invalid path structure for custom query",
                   code: "INVALID_PATH",
-                },
-                { status: 400 }
+                  status: 400,
+                }),
               );
             }
 
@@ -93,12 +99,12 @@ export const httpTransportLayer = (
             const rawBody: any = request.body ? await request.json() : {};
 
             if (!resource || resource.trim() === "") {
-              return Response.json(
-                {
+              return errorResponse(
+                new PublicError({
                   message: "Invalid resource in path",
                   code: "INVALID_RESOURCE",
-                },
-                { status: 400 }
+                  status: 400,
+                }),
               );
             }
 
@@ -123,13 +129,18 @@ export const httpTransportLayer = (
           const { success, data, error } =
             httpGenericMutationSchema.safeParse(rawBody);
           if (!success) {
-            return Response.json(
-              {
+            return errorResponse(
+              new PublicError({
                 message: "Invalid mutation",
                 code: "INVALID_REQUEST",
-                details: error,
-              },
-              { status: 400 }
+                status: 400,
+                details: {
+                  issues: error.issues.map((issue) => ({
+                    message: issue.message,
+                    path: issue.path.map(String),
+                  })),
+                },
+              }),
             );
           }
           const body: HttpMutation = data;
@@ -152,23 +163,20 @@ export const httpTransportLayer = (
         } catch (e) {
           logger.error("Error parsing mutation from the client:", e);
 
-          return Response.json(
-            { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },
-            { status: 500 }
-          );
+          return errorResponse(e);
         }
       }
 
-      return Response.json(
-        { message: "Not found", code: "NOT_FOUND" },
-        { status: 404 }
+      return errorResponse(
+        new PublicError({
+          message: "Not found",
+          code: "NOT_FOUND",
+          status: 404,
+        }),
       );
     } catch (e) {
       logger.error("Unexpected error:", e);
-      return Response.json(
-        { message: "Internal server error", code: "INTERNAL_SERVER_ERROR" },
-        { status: 500 }
-      );
+      return errorResponse(e);
     }
   };
 };

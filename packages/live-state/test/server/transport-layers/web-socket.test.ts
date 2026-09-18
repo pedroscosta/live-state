@@ -10,6 +10,7 @@ import {
 import WebSocket from "ws";
 import { ClientMessage } from "../../../src/core/schemas/web-socket";
 import { generateId } from "../../../src/core/utils";
+import { PublicError } from "../../../src/errors";
 import { Server } from "../../../src/server";
 import { AnyRouter } from "../../../src/server/router";
 import { webSocketAdapter } from "../../../src/server/transport-layers/web-socket";
@@ -377,7 +378,7 @@ describe("webSocketAdapter", () => {
     );
   });
 
-  test("should handle MUTATE message error", async () => {
+  test("should mask unexpected MUTATE message errors", async () => {
     wsHandler(mockWebSocket, mockRequest);
 
     const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
@@ -409,7 +410,51 @@ describe("webSocketAdapter", () => {
         id: "msg-1",
         type: "REJECT",
         resource: "users",
-        message: "Validation failed",
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Internal server error",
+          status: 500,
+        },
+      }),
+    );
+  });
+
+  test("should expose public MUTATE errors", async () => {
+    wsHandler(mockWebSocket, mockRequest);
+
+    const messageHandler = (mockWebSocket.on as Mock).mock.calls.find(
+      (call) => call[0] === "message",
+    )?.[1];
+    const mutateMessage = {
+      type: "MUTATE",
+      resource: "orders",
+      payload: { id: "order-1" },
+      id: "msg-public-error",
+      procedure: "approve",
+    };
+
+    (mockServer.handleMutation as Mock).mockRejectedValue(
+      new PublicError({
+        code: "ORDER_ALREADY_APPROVED",
+        message: "The order was already approved",
+        status: 409,
+        details: { orderId: "order-1" },
+      }),
+    );
+
+    await messageHandler(Buffer.from(JSON.stringify(mutateMessage)));
+
+    expect(mockWebSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        id: "msg-public-error",
+        type: "REJECT",
+        resource: "orders",
+        error: {
+          code: "ORDER_ALREADY_APPROVED",
+          message: "The order was already approved",
+          status: 409,
+          details: { orderId: "order-1" },
+        },
       }),
     );
   });

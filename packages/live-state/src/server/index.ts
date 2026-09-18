@@ -8,6 +8,7 @@ import { type Hooks, type HooksRegistry, mergeEntityHooks } from './hooks';
 import type { AnyRoute, AnyRouter, QueryProcedureRequest } from './router';
 import type { Storage } from './storage';
 
+export * from '../errors';
 export * from './adapters/express';
 export * from './hooks';
 export * from './router';

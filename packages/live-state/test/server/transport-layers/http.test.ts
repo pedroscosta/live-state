@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import { Server } from "../../../src/server";
+import { PublicError } from "../../../src/errors";
 import { AnyRouter } from "../../../src/server/router";
 import { httpTransportLayer } from "../../../src/server/transport-layers/http";
 
@@ -225,9 +226,12 @@ describe("httpTransportLayer", () => {
 
     expect(response.status).toBe(400);
     expect(responseData).toEqual({
-      message: "Invalid mutation",
-      code: "INVALID_REQUEST",
-      details: expect.any(Object),
+      error: {
+        message: "Invalid mutation",
+        code: "INVALID_REQUEST",
+        status: 400,
+        details: { issues: expect.any(Array) },
+      },
     });
   });
 
@@ -245,8 +249,11 @@ describe("httpTransportLayer", () => {
 
     expect(response.status).toBe(500);
     expect(responseData).toEqual({
-      message: "Internal server error",
-      code: "INTERNAL_SERVER_ERROR",
+      error: {
+        message: "Internal server error",
+        code: "INTERNAL_SERVER_ERROR",
+        status: 500,
+      },
     });
   });
 
@@ -260,8 +267,11 @@ describe("httpTransportLayer", () => {
 
     expect(response.status).toBe(404);
     expect(responseData).toEqual({
-      message: "Not found",
-      code: "NOT_FOUND",
+      error: {
+        message: "Not found",
+        code: "NOT_FOUND",
+        status: 404,
+      },
     });
   });
 
@@ -335,8 +345,40 @@ describe("httpTransportLayer", () => {
 
     expect(response.status).toBe(500);
     expect(responseData).toEqual({
-      message: "Internal server error",
-      code: "INTERNAL_SERVER_ERROR",
+      error: {
+        message: "Internal server error",
+        code: "INTERNAL_SERVER_ERROR",
+        status: 500,
+      },
+    });
+  });
+
+  test("should expose public errors from handlers", async () => {
+    const request = new Request("http://localhost/orders/approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ payload: { id: "order-1" } }),
+    });
+
+    (mockServer.handleMutation as Mock).mockRejectedValue(
+      new PublicError({
+        code: "ORDER_ALREADY_APPROVED",
+        message: "The order was already approved",
+        status: 409,
+        details: { orderId: "order-1" },
+      }),
+    );
+
+    const response = await httpHandler(request);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "ORDER_ALREADY_APPROVED",
+        message: "The order was already approved",
+        status: 409,
+        details: { orderId: "order-1" },
+      },
     });
   });
 
