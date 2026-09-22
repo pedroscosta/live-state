@@ -1,4 +1,6 @@
 import { consumeGeneratable } from "../../core/utils";
+import { deserializePublicError, isErrorEnvelope } from "../../errors";
+export { PublicError } from "../../errors";
 import type { ClientOptions } from "..";
 import type { Client, ClientRouterConstraint } from "../types";
 import { createObservable } from "../utils";
@@ -50,6 +52,9 @@ const safeFetch = async (
     data = await res.text().catch(() => undefined);
   }
   if (!res.ok) {
+    if (isErrorEnvelope(data)) {
+      throw deserializePublicError(data.error);
+    }
     throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`, {
       cause: data,
     });

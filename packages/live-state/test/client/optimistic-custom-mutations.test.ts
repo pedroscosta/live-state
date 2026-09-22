@@ -2,6 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { defineOptimisticMutations } from '../../src/client/optimistic';
 import { createClient } from '../../src/client/websocket/client';
+import { PublicError } from '../../src/errors';
 import {
 	createSchema,
 	id,
@@ -344,11 +345,27 @@ describe('custom optimistic mutations (websocket client)', () => {
 				type: 'REJECT',
 				id: sentMessage.id,
 				resource: 'posts',
-				message: 'Nope',
+				error: {
+					code: 'NOT_ALLOWED',
+					message: 'Nope',
+					status: 403,
+					details: { postId: 'post-reject' },
+				},
 			})
 		);
 
-		await expect(mutationPromise).rejects.toThrow('Nope');
+		try {
+			await mutationPromise;
+			expect.fail('Expected mutation to reject');
+		} catch (error) {
+			expect(error).toBeInstanceOf(PublicError);
+			expect(error).toMatchObject({
+				code: 'NOT_ALLOWED',
+				message: 'Nope',
+				status: 403,
+				details: { postId: 'post-reject' },
+			});
+		}
 		expect(client.store.query.posts.one('post-reject').get()).toBeUndefined();
 		expect(
 			events.find((event) => event.type === 'OPTIMISTIC_MUTATION_UNDONE')

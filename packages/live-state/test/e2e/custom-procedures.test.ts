@@ -26,7 +26,13 @@ import {
   reference,
   string,
 } from "../../src/schema";
-import { routeFactory, router, server, expressAdapter } from "../../src/server";
+import {
+  PublicError,
+  routeFactory,
+  router,
+  server,
+  expressAdapter,
+} from "../../src/server";
 import { SQLStorage } from "../../src/server/storage";
 import { generateId } from "../../src/core/utils";
 import { createClient } from "../../src/client";
@@ -185,7 +191,10 @@ const testRouter = router({
           })
         ).handler(async ({ req, db }) => {
           if (req.input.reject) {
-            throw new Error("Custom insert rejected");
+            throw new PublicError({
+              code: "CUSTOM_INSERT_REJECTED",
+              message: "Custom insert rejected",
+            });
           }
 
           await db.users.insert({

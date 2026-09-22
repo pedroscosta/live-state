@@ -14,6 +14,7 @@ import {
   syncReplyDataSchema,
 } from "../../core/schemas/web-socket";
 import { generateId } from "../../core/utils";
+import { deserializePublicError, PublicError } from "../../errors";
 import type {
   LiveObjectAny,
   LiveObjectMutationInput,
@@ -96,6 +97,7 @@ export type MutationRejectedEvent = {
   type: "MUTATION_REJECTED";
   mutationId: string;
   resource: string;
+  error: PublicError;
 };
 
 export type SubscriptionCreatedEvent = {
@@ -340,11 +342,18 @@ class InnerClient implements QueryExecutor {
           this.logger.error("Error merging sync delta from the server:", e);
         }
       } else if (parsedMessage.type === "REJECT") {
+        const error = parsedMessage.error
+          ? deserializePublicError(parsedMessage.error)
+          : new PublicError({
+              code: "MUTATION_REJECTED",
+              message: parsedMessage.message ?? "Mutation rejected",
+              status: 400,
+            });
+
         if (this.replyHandlers[parsedMessage.id]) {
           clearTimeout(this.replyHandlers[parsedMessage.id].timeoutHandle);
           this.emitUndoEvents(this.store.undoCustomMutation(parsedMessage.id));
-          const message = parsedMessage.message ?? "Mutation rejected";
-          this.replyHandlers[parsedMessage.id].reject?.(new Error(message));
+          this.replyHandlers[parsedMessage.id].reject?.(error);
           delete this.replyHandlers[parsedMessage.id];
         }
 
@@ -362,6 +371,7 @@ class InnerClient implements QueryExecutor {
           type: "MUTATION_REJECTED",
           mutationId: parsedMessage.id,
           resource: parsedMessage.resource,
+          error,
         });
 
         if (rejectedMutation) {
@@ -542,7 +552,9 @@ class InnerClient implements QueryExecutor {
       this.replyHandlers[mutationMessage.id] = {
         timeoutHandle: setTimeout(() => {
           delete this.replyHandlers[mutationMessage.id];
-          this.emitUndoEvents(this.store.undoCustomMutation(mutationMessage.id));
+          this.emitUndoEvents(
+            this.store.undoCustomMutation(mutationMessage.id),
+          );
           reject(new Error("Reply timeout"));
         }, 5000),
         handler: (data: any) => {
@@ -665,7 +677,8 @@ class InnerClient implements QueryExecutor {
 
   private setBootstrapStatus(next: ClientBootstrapStatus) {
     if (
-      BOOTSTRAP_STATUS_RANK[next] <= BOOTSTRAP_STATUS_RANK[this._bootstrapStatus]
+      BOOTSTRAP_STATUS_RANK[next] <=
+      BOOTSTRAP_STATUS_RANK[this._bootstrapStatus]
     )
       return;
     this._bootstrapStatus = next;

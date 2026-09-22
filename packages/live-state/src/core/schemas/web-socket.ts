@@ -74,6 +74,15 @@ export const svRejectMsgSchema = z.object({
 	id: msgId,
 	type: z.literal('REJECT'),
 	resource: z.string(),
+	error: z
+		.object({
+			code: z.string(),
+			message: z.string(),
+			status: z.number().int().min(400).max(599),
+			details: z.json().optional(),
+		})
+		.optional(),
+	// Kept for clients reconnecting to a server running the previous protocol.
 	message: z.string().optional(),
 });
 

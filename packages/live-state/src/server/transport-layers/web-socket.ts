@@ -3,6 +3,7 @@ import cookie from "cookie";
 import { parse } from "qs";
 import type WebSocket from "ws";
 import type { GenericMutation } from "../../core/schemas/core-protocol";
+import { serializePublicError } from "../../errors";
 import {
   clientMessageSchema,
   type ServerMessage,
@@ -121,7 +122,7 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
               id,
               type: "REJECT",
               resource: queryOrCustom.resource,
-              message: (e as Error).message,
+              error: serializePublicError(e),
             });
             logger.error("Error handling query from the client:", e);
           }
@@ -160,7 +161,7 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
               id,
               type: "REJECT",
               resource,
-              message: (e as Error).message,
+              error: serializePublicError(e),
             });
             logger.error("Error handling custom query from the client:", e);
           }
@@ -195,7 +196,7 @@ export const webSocketAdapter = (server: Server<AnyRouter, any>) => {
               id: parsedMessage.id,
               type: "REJECT",
               resource,
-              message: (e as Error).message,
+              error: serializePublicError(e),
             });
             logger.error("Error parsing mutation from the client:", e);
           }
