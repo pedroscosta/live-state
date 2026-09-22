@@ -78,7 +78,7 @@ export const svRejectMsgSchema = z.object({
 		.object({
 			code: z.string(),
 			message: z.string(),
-			status: z.number(),
+			status: z.number().int().min(400).max(599),
 			details: z.json().optional(),
 		})
 		.optional(),

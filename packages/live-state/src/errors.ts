@@ -86,11 +86,15 @@ export const isErrorEnvelope = (value: unknown): value is ErrorEnvelope => {
 	}
 
 	const error = (value as { error?: unknown }).error;
+	const status = (error as SerializedPublicError | undefined)?.status;
 	return (
 		typeof error === 'object' &&
 		error !== null &&
 		typeof (error as SerializedPublicError).code === 'string' &&
 		typeof (error as SerializedPublicError).message === 'string' &&
-		typeof (error as SerializedPublicError).status === 'number'
+		status !== undefined &&
+		Number.isInteger(status) &&
+		status >= 400 &&
+		status <= 599
 	);
 };
