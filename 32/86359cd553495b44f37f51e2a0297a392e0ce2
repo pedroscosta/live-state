@@ -1,0 +1,27 @@
+packages/live-state/test/client/fetch.test.ts
+  s_4629176c8d26f9::t_1169bc7b58c462 4,527-528,532,536-537,539,545,552,556-557,559
+packages/live-state/src/core/schemas/web-socket.ts
+  s_4629176c8d26f9::t_1169bc7b58c462 81
+packages/live-state/src/errors.ts
+  s_4629176c8d26f9::t_273533754fb02c 96
+  s_4629176c8d26f9::t_1169bc7b58c462 89,95,97-98
+packages/live-state/test/errors.test.ts
+  s_4629176c8d26f9::t_1169bc7b58c462 1-25,27-37
+  s_4629176c8d26f9::t_273533754fb02c 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3286359cd553495b44f37f51e2a0297a392e0ce2",
+  "prompts": {},
+  "sessions": {
+    "s_4629176c8d26f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0b23c-00f1-7860-b4b1-48b3da39265e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
