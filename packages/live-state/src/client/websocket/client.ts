@@ -215,6 +215,7 @@ class InnerClient implements QueryExecutor {
     string,
     { query: CustomQueryRequest; subCounter: number }
   > = new Map();
+  private subscriptionRequestQueries: Record<string, string> = {};
 
   private eventListeners: Set<(event: ClientEvents) => void> = new Set();
 
@@ -289,15 +290,17 @@ class InnerClient implements QueryExecutor {
       });
 
       if (e.open) {
-        Array.from(this.remoteSubscriptions.values()).forEach(({ query }) => {
-          this.sendWsMessage({
-            id: generateId(),
-            type: "SUBSCRIBE",
-            ...query,
-          });
-        });
+        Array.from(this.remoteSubscriptions.entries()).forEach(
+          ([queryHash, { query }]) => {
+            this.sendSubscription(query, queryHash);
+          },
+        );
 
         this.replayCustomMutationStack();
+      } else {
+        // Replies from the closed transport can no longer arrive. Reconnect
+        // creates fresh request ids for every active subscription.
+        this.subscriptionRequestQueries = {};
       }
     });
   }
@@ -393,16 +396,24 @@ class InnerClient implements QueryExecutor {
         }
 
         const parsedSyncData = syncReplyDataSchema.parse(data);
+        const queryHash = this.subscriptionRequestQueries[id];
+        delete this.subscriptionRequestQueries[id];
+
+        // A reply can race with the final unsubscribe. It no longer represents
+        // an active Membership Set, so do not resurrect either the set or rows.
+        if (queryHash && !this.remoteSubscriptions.has(queryHash)) return;
 
         this.emitEvent({
           type: "DATA_LOAD_REPLY",
           resource: parsedSyncData.resource,
           itemCount: parsedSyncData.data.length,
+          subscriptionId: id,
         });
 
         this.store.loadConsolidatedState(
           parsedSyncData.resource,
           parsedSyncData.data,
+          queryHash,
         );
 
         this.emitEvent({
@@ -428,12 +439,6 @@ class InnerClient implements QueryExecutor {
       subscriptionId,
     });
 
-    this.sendWsMessage({
-      id: subscriptionId,
-      type: "SUBSCRIBE",
-      ...query,
-    });
-
     const isNewSubscription = !this.remoteSubscriptions.has(key);
 
     if (this.remoteSubscriptions.has(key)) {
@@ -441,6 +446,16 @@ class InnerClient implements QueryExecutor {
       this.remoteSubscriptions.get(key)!.subCounter += 1;
     } else {
       this.remoteSubscriptions.set(key, { query, subCounter: 1 });
+      this.store.activateRemoteQuery(key);
+    }
+
+    if (this.ws.connected()) {
+      this.subscriptionRequestQueries[subscriptionId] = key;
+      this.sendWsMessage({
+        id: subscriptionId,
+        type: "SUBSCRIBE",
+        ...query,
+      });
     }
 
     if (isNewSubscription) {
@@ -460,6 +475,7 @@ class InnerClient implements QueryExecutor {
         // biome-ignore lint/style/noNonNullAssertion: false positive
         if (this.remoteSubscriptions.get(key)!.subCounter <= 0) {
           this.remoteSubscriptions.delete(key);
+          this.store.deactivateRemoteQuery(key);
           this.sendWsMessage({
             id: generateId(),
             type: "UNSUBSCRIBE",
@@ -474,6 +490,16 @@ class InnerClient implements QueryExecutor {
         }
       }
     };
+  }
+
+  private sendSubscription(query: CustomQueryRequest, queryHash: string) {
+    const id = generateId();
+    this.subscriptionRequestQueries[id] = queryHash;
+    this.sendWsMessage({
+      id,
+      type: "SUBSCRIBE",
+      ...query,
+    });
   }
 
   public subscribe(
