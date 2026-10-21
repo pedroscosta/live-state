@@ -131,6 +131,11 @@ export const createWebSocketConnection = (
 						}
 
 						if (result.unsubscribe) {
+							// The connection may have closed while the subscription was pending.
+							if (!isOpen) {
+								result.unsubscribe();
+								return;
+							}
 							subscriptions.set(hash(queryOrCustom), result.unsubscribe);
 						}
 
