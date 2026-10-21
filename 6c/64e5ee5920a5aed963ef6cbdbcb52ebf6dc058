@@ -1,0 +1,19 @@
+packages/live-state/src/server/transport-layers/web-socket.ts
+  s_27dbdf2579994f::t_3d72c9b56e51e7 134-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6c64e5ee5920a5aed963ef6cbdbcb52ebf6dc058",
+  "prompts": {},
+  "sessions": {
+    "s_27dbdf2579994f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4d867501-912f-40d8-ab4a-1971a8e51893",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
