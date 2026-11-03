@@ -1,0 +1,34 @@
+docs/partial-sync-frontier.md
+  s_3f734e1a1dba4e::t_e400c2ccfe4088 1-2,4,7-144,146-257
+  s_3f734e1a1dba4e::t_c5973090262c50 3,5-6,145,258-265
+docs/partial-sync-implementation-brief.md
+  s_3f734e1a1dba4e::t_770dd659473243 1-134
+docs/plans/partial-sync.md
+  s_727efb5bf9469e::t_9179dc4ef92973 1-101
+docs/adr/0006-partial-sync-query-window-log.md
+  s_727efb5bf9469e::t_a0d0f6f19cd697 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "64b840327c60618f32240c2cdf7db9da44ffa252",
+  "prompts": {},
+  "sessions": {
+    "s_3f734e1a1dba4e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed39353d-3305-4190-ba30-974cfb649330",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    },
+    "s_727efb5bf9469e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "39ed8ecc-e4d9-442d-a10f-06d45fd0c685",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Costa <scosta.pedro.manoel@gmail.com>"
+    }
+  }
+}
