@@ -41,7 +41,7 @@ authorization changes while offline.
 | id | title | deps | state | owner | pr | dod |
 |---|---|---|---|---|---|---|
 | U00 | Commit plan, ADR-0006, and design docs | - | in-review | - | https://github.com/pedroscosta/live-state/pull/223 | Plan and ADR on main; check: files present |
-| U01 | Fix projection identity: hash the full query tree, projections own their step nodes | - | todo | - | - | `limit(10)`/`limit(20)` and two roots sharing an include get separate nodes and correct deltas; check: engine tests |
+| U01 | Fix projection identity: hash the full query tree, projections own their step nodes | - | claimed | session-2 | - | `limit(10)`/`limit(20)` and two roots sharing an include get separate nodes and correct deltas; check: engine tests |
 | U02 | Fix backfillWindow to emit rows with their full include subtree | U01 | todo | - | - | Backfilled and promoted rows arrive with includes; check: windowed-includes e2e test |
 | U03 | Assign one source position per committed transaction and deliver batches to the server | - | todo | - | - | Positions strictly increase, one per transaction, one per non-transaction write; check: storage tests |
 | U04 | Process batches serially in the engine with output into a collector | U02, U03 | todo | - | - | `handleMutation` awaitable; transactions never interleave; existing suite unchanged; check: interleaving test + full suite |

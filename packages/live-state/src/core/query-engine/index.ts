@@ -17,7 +17,7 @@ import { generateId, toPromiseLike } from '../utils';
 import { RelationGraph } from './relation-graph';
 import { relationalColumns } from './schema-relations';
 import type { DataSource, QueryStep } from './types';
-import { hashStep } from './utils';
+import { projectionIdFor, stepNodeKey } from './utils';
 import { type OrderBy, type SortKey, WindowIndex } from './window-index';
 
 export type SyncDeltaHandler = (delta: SyncDelta) => void;
@@ -407,12 +407,14 @@ export class QueryEngine {
 	 * objects). Replaces the per-step side effects of the old resolution path.
 	 */
 	private ingest(query: RawQueryRequest, results: any[]): void {
-		for (const step of this.buildSteps({ query })) {
+		const steps = this.buildSteps({ query });
+		const projectionId = projectionIdFor(steps);
+		for (const step of steps) {
 			const objects =
 				step.stepPath.length === 0
 					? results
 					: this.extractByPath(results, query.resource, step.stepPath);
-			this.trackObjects(step, objects);
+			this.trackObjects(stepNodeKey(projectionId, step.stepPath), objects);
 		}
 	}
 
@@ -461,8 +463,10 @@ export class QueryEngine {
 		_context: any = {},
 	): () => void {
 		const queryPlan = this.buildSteps({ query });
-
-		const stepHashes: Record<string, string> = {};
+		// Step nodes are owned by their projection: two roots that share an
+		// include path still get separate include nodes, each pointing at its own
+		// root as `parentQuery` (ADR-0006 §1).
+		const projectionId = projectionIdFor(queryPlan);
 
 		const unsubscribeFunctions: (() => void)[] = [];
 
@@ -472,8 +476,11 @@ export class QueryEngine {
 				step.stepPath.join('.'),
 			);
 
-			const stepHash = hashStep(step);
-			const lastStepHash = stepHashes[step.stepPath.at(-2) ?? ''];
+			const stepHash = stepNodeKey(projectionId, step.stepPath);
+			const lastStepHash =
+				step.stepPath.length > 0
+					? stepNodeKey(projectionId, step.stepPath.slice(0, -1))
+					: undefined;
 
 			const currentRelationName = step.stepPath.at(-1) ?? '';
 
@@ -509,8 +516,6 @@ export class QueryEngine {
 					}
 				}
 			}
-
-			stepHashes[currentRelationName] = stepHash;
 
 			unsubscribeFunctions.push(() => {
 				const queryNode = this.queryNodes.get(stepHash);
@@ -623,19 +628,18 @@ export class QueryEngine {
 	 * their relations, and the step's tracked-object set. Called per step by
 	 * `ingest` over the nested storage result.
 	 */
-	private trackObjects(step: QueryStep, results: any[]): void {
+	private trackObjects(stepHash: string, results: any[]): void {
 		this.logger.debug(
 			'[QueryEngine] Tracking step objects',
-			step.stepPath.join('.'),
+			stepHash,
 			'with results',
 			JSON.stringify(results, null, 2),
 		);
 
-		const stepHash = hashStep(step);
 		const queryNode = this.queryNodes.get(stepHash);
-		const resourceName = step.query.resource;
-
 		if (!queryNode) return;
+
+		const resourceName = queryNode.queryStep.query.resource;
 
 		for (const rawResult of results) {
 			const result = inferValue(rawResult);
