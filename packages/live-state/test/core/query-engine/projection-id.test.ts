@@ -59,6 +59,12 @@ describe('projectionIdFor', () => {
 		);
 	});
 
+	test('treats empty where and sort as absent', () => {
+		expect(projectionIdFor([root({ where: {}, sort: [] })])).toBe(
+			projectionIdFor([root()]),
+		);
+	});
+
 	test.each([
 		['root limit', [root({ where: { status: 'a' }, limit: 10 }), child(['author'])]],
 		[
@@ -83,5 +89,6 @@ describe('stepNodeKey', () => {
 		expect(stepNodeKey('p1', ['author'])).not.toBe(stepNodeKey('p2', ['author']));
 		expect(stepNodeKey('p1', [])).not.toBe(stepNodeKey('p1', ['author']));
 		expect(stepNodeKey('p1', ['a', 'b'])).not.toBe(stepNodeKey('p1', ['a']));
+		expect(stepNodeKey('p1', ['a.b'])).not.toBe(stepNodeKey('p1', ['a', 'b']));
 	});
 });

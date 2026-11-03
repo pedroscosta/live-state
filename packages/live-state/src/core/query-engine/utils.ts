@@ -12,9 +12,17 @@ const sortKeys = (_key: string, value: unknown) =>
 			)
 		: value;
 
-/** A hash that ignores object key order, so equal queries hash equally. */
+/**
+ * A hash that ignores object key order, so equal queries hash equally. It is
+ * 64 bits wide (two seeded xxHash32 passes) because a collision silently merges
+ * two projections; 32 bits gets likely at tens of thousands of live queries.
+ */
 export function canonicalHash(value: unknown): string {
-	return xxHash32(JSON.stringify(value, sortKeys) ?? 'undefined').toString(32);
+	const json = JSON.stringify(value, sortKeys) ?? 'undefined';
+	return (
+		xxHash32(json, 0).toString(36).padStart(7, '0') +
+		xxHash32(json, 0x9e3779b9).toString(36).padStart(7, '0')
+	);
 }
 
 /**
@@ -28,19 +36,24 @@ export function projectionIdFor(steps: QueryStep[]): string {
 			.map((step) => ({
 				path: step.stepPath,
 				resource: step.query.resource,
-				where: step.query.where,
+				// `{}` and `[]` mean the same as absent; keep them from splitting a projection.
+				where:
+					step.query.where && Object.keys(step.query.where).length > 0
+						? step.query.where
+						: undefined,
 				limit: step.query.limit,
-				sort: step.query.sort,
+				sort: step.query.sort?.length ? step.query.sort : undefined,
 			}))
 			.sort((a, b) => {
-				const pa = a.path.join('.');
-				const pb = b.path.join('.');
+				const pa = JSON.stringify(a.path);
+				const pb = JSON.stringify(b.path);
 				return pa < pb ? -1 : pa > pb ? 1 : 0;
 			}),
 	);
 }
 
-/** Key of a projection's step node. Paths are relation names, which cannot contain `.`. */
+// Paths are encoded structurally: relation names may contain any character,
+// so a delimiter join could make `['a.b']` and `['a', 'b']` collide.
 export function stepNodeKey(projectionId: string, stepPath: string[]): string {
-	return `${projectionId}:${stepPath.join('.')}`;
+	return `${projectionId}:${JSON.stringify(stepPath)}`;
 }

@@ -247,6 +247,18 @@ describe('Projection identity', () => {
 		expect(idsOf(qa.deltas, 'UPDATE')).toEqual([]);
 		expect(idsOf(qb.deltas, 'UPDATE')).toContain('u3');
 
+		// And the other way round: a comment on qa's post reaches only qa.
+		await storage.insert(testSchema.comments, {
+			id: 'c2',
+			body: 'on a',
+			postId: 'p10',
+			authorId: 'u2',
+		});
+		await settle();
+
+		expect(idsOf(qa.deltas, 'INSERT')).toContain('c2');
+		expect(idsOf(qb.deltas, 'INSERT')).not.toContain('c2');
+
 		qa.unsubscribe();
 		qb.unsubscribe();
 	});
