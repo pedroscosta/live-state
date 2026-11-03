@@ -26,12 +26,18 @@ type RawObjPool = Record<
   Record<string, MaterializedLiveType<LiveObjectAny> | undefined> | undefined
 >;
 
+type MembershipSets = Record<string, Record<string, Set<string>>>;
+type PersistedMembershipSets = Record<string, Record<string, string[]>>;
+
 export class OptimisticStore {
   private rawObjPool: RawObjPool = {} as RawObjPool;
   public optimisticMutationStack: Record<string, SyncDeltaMessage[]> = {};
   public customMutationStack: MutationMessage[] = [];
   private optimisticObjGraph: ObjectGraph;
   private optimisticRawObjPool: RawObjPool = {} as RawObjPool;
+  private membershipSets: MembershipSets = {};
+  private deactivatedRemoteQueries = new Set<string>();
+  private repliedRemoteQueries = new Set<string>();
   private logger: Logger;
   private onQuerySubscriptionTriggered?: (query: RawQueryRequest) => void;
   public customMutationIndex: Record<
@@ -78,8 +84,9 @@ export class OptimisticStore {
           this.kvStorage.getMeta<typeof this.customMutationIndex>(
             "customMutationIndex",
           ),
+          this.kvStorage.getMeta<PersistedMembershipSets>("membershipSets"),
         ])
-          .then(([mutStack, customStack, customIndex]) => {
+          .then(([mutStack, customStack, customIndex, membershipSets]) => {
             if (mutStack && Object.keys(mutStack).length > 0) {
               this.optimisticMutationStack = mutStack;
             }
@@ -88,6 +95,25 @@ export class OptimisticStore {
             }
             if (customIndex && Object.keys(customIndex).length > 0) {
               this.customMutationIndex = customIndex;
+            }
+            if (membershipSets) {
+              Object.entries(membershipSets).forEach(
+                ([queryHash, resources]) => {
+                  if (
+                    this.deactivatedRemoteQueries.has(queryHash) ||
+                    this.repliedRemoteQueries.has(queryHash)
+                  )
+                    return;
+
+                  const restoredResources = Object.fromEntries(
+                    Object.entries(resources).map(([resource, ids]) => [
+                      resource,
+                      new Set(ids),
+                    ]),
+                  );
+                  this.membershipSets[queryHash] = restoredResources;
+                },
+              );
             }
             afterLoadMutations?.(
               this.optimisticMutationStack,
@@ -221,10 +247,29 @@ export class OptimisticStore {
     };
   }
 
+  public activateRemoteQuery(queryHash: string) {
+    this.deactivatedRemoteQueries.delete(queryHash);
+    if (this.membershipSets[queryHash]) return;
+
+    this.membershipSets[queryHash] = {};
+    this.persistMembershipSets();
+  }
+
+  public deactivateRemoteQuery(queryHash: string) {
+    this.deactivatedRemoteQueries.add(queryHash);
+    this.repliedRemoteQueries.delete(queryHash);
+    if (!this.membershipSets[queryHash]) return;
+
+    delete this.membershipSets[queryHash];
+    this.persistMembershipSets();
+    this.trimUnreferencedRows();
+  }
+
   public addMutation(
     routeName: string,
     mutation: SyncDeltaMessage,
     optimistic: boolean = false,
+    trackMembership: boolean = true,
   ) {
     const schema = this.schema[routeName];
 
@@ -232,12 +277,10 @@ export class OptimisticStore {
 
     if (!schema) throw new Error("Schema not found");
 
-    // A scope-out delta (window eviction or a visible row leaving scope) carries
-    // only the id: drop the row from the local store so windowed queries re-sort
-    // the rows they still hold. The row may still exist server-side, outside
-    // this query's scope (see ADR-0003).
+    // Sync deltas do not identify their subscription yet. A scope-out therefore
+    // cannot safely remove the row: another active query may still retain it.
+    // The next complete query reply will correct the relevant membership set.
     if (mutation.op === "DELETE") {
-      this.removeFromPool(routeName, mutation.resourceId);
       return;
     }
 
@@ -246,8 +289,7 @@ export class OptimisticStore {
     let undidMatchingOptimistic = false;
 
     if (optimistic) {
-      this.optimisticMutationStack[routeName] ??=
-        [] as SyncDeltaMessage[];
+      this.optimisticMutationStack[routeName] ??= [] as SyncDeltaMessage[];
       this.optimisticMutationStack[routeName].push(mutation);
     } else {
       this.optimisticMutationStack[routeName] =
@@ -256,18 +298,16 @@ export class OptimisticStore {
         ) ?? [];
 
       const originId = (mutation as any).meta?.originMutationId;
-      this.logger.debug(
-        "Broadcast mutation received",
-        {
-          mutationId: mutation.id,
-          resource: routeName,
-          resourceId: mutation.resourceId,
-          op: mutation.op,
-          originMutationId: originId ?? "(none)",
-          customMutationIndexKeys: Object.keys(this.customMutationIndex),
-          optimisticStackSize: this.optimisticMutationStack[routeName]?.length ?? 0,
-        },
-      );
+      this.logger.debug("Broadcast mutation received", {
+        mutationId: mutation.id,
+        resource: routeName,
+        resourceId: mutation.resourceId,
+        op: mutation.op,
+        originMutationId: originId ?? "(none)",
+        customMutationIndexKeys: Object.keys(this.customMutationIndex),
+        optimisticStackSize:
+          this.optimisticMutationStack[routeName]?.length ?? 0,
+      });
       if (originId && this.customMutationIndex[originId]) {
         const entries = this.customMutationIndex[originId];
         const matchingEntries = entries.filter((e) => e.resource === routeName);
@@ -287,7 +327,10 @@ export class OptimisticStore {
           ) {
             this.logger.debug(
               "Removing optimistic mutation (resourceId match)",
-              { optimisticMutationId: entry.mutationId, resourceId: mutation.resourceId },
+              {
+                optimisticMutationId: entry.mutationId,
+                resourceId: mutation.resourceId,
+              },
             );
             this.undoMutation(routeName, entry.mutationId);
             undidMatchingOptimistic = true;
@@ -361,6 +404,12 @@ export class OptimisticStore {
       mutation.payload,
       relationPrevValue,
     );
+
+    // Scope-in is conservative until deltas carry subscription identity. Adding
+    // the id to every active set can over-retain, but cannot wrongly evict.
+    if (!optimistic && trackMembership && mutation.op === "INSERT") {
+      this.addToActiveMembershipSets(routeName, mutation.resourceId);
+    }
   }
 
   public undoMutation(routeName: string, mutationId: string) {
@@ -410,24 +459,22 @@ export class OptimisticStore {
 
   public confirmCustomMutation(messageId: string) {
     const mutations = this.customMutationIndex[messageId];
-    this.logger.debug(
-      "confirmCustomMutation called",
-      {
-        messageId,
-        hasIndex: !!mutations,
-        mutations: mutations ?? [],
-      },
-    );
+    this.logger.debug("confirmCustomMutation called", {
+      messageId,
+      hasIndex: !!mutations,
+      mutations: mutations ?? [],
+    });
     if (!mutations) return;
 
     for (const { resource, mutationId } of mutations) {
       const stillInStack = !!this.optimisticMutationStack[resource]?.find(
         (m) => m.id === mutationId,
       );
-      this.logger.debug(
-        "confirmCustomMutation: undoing mutation",
-        { resource, mutationId, stillInStack },
-      );
+      this.logger.debug("confirmCustomMutation: undoing mutation", {
+        resource,
+        mutationId,
+        stillInStack,
+      });
       this.undoMutation(resource, mutationId);
     }
 
@@ -488,10 +535,17 @@ export class OptimisticStore {
   public loadConsolidatedState(
     resourceType: string,
     data: SyncDeltaMessage["payload"][],
+    queryHash?: string,
   ) {
+    const replyMembership: Record<string, Set<string>> = {
+      [resourceType]: new Set(),
+    };
+
     data.forEach((payload) => {
       const id = payload.id?.value as string | undefined;
       if (!id) return;
+
+      replyMembership[resourceType].add(id);
 
       const { cleanedPayload, nestedMutations } = this.extractNestedRelations(
         resourceType,
@@ -499,18 +553,28 @@ export class OptimisticStore {
       );
 
       nestedMutations.forEach((mutation) => {
-        this.addMutation(mutation.resource, mutation);
+        replyMembership[mutation.resource] ??= new Set();
+        replyMembership[mutation.resource].add(mutation.resourceId);
+        this.addMutation(mutation.resource, mutation, false, false);
       });
 
-      this.addMutation(resourceType, {
+      const rootMutation: SyncDeltaMessage = {
         id,
         type: "SYNC",
         resource: resourceType,
         resourceId: id,
         op: "INSERT",
         payload: cleanedPayload,
-      });
+      };
+      this.addMutation(resourceType, rootMutation, false, false);
     });
+
+    if (queryHash) {
+      this.repliedRemoteQueries.add(queryHash);
+      this.membershipSets[queryHash] = replyMembership;
+      this.persistMembershipSets();
+      this.trimUnreferencedRows();
+    }
   }
 
   private extractNestedRelations(
@@ -606,12 +670,6 @@ export class OptimisticStore {
     return { cleanedPayload, nestedMutations };
   }
 
-  /**
-   * Drop a row from every local store surface in response to a scope-out
-   * (`DELETE`) delta, then notify subscribers so windowed queries re-derive.
-   * Any pending optimistic mutation for the row is left untouched — it is
-   * reconciled through its own reply/reject path.
-   */
   private removeFromPool(routeName: string, resourceId: string) {
     if (!this.schema[routeName]) return;
 
@@ -622,6 +680,73 @@ export class OptimisticStore {
 
     this.notifyCollectionSubscribers(routeName);
     this.optimisticObjGraph.notifySubscribers(resourceId);
+  }
+
+  private addToActiveMembershipSets(resource: string, resourceId: string) {
+    let changed = false;
+
+    Object.values(this.membershipSets).forEach((membership) => {
+      membership[resource] ??= new Set();
+      if (membership[resource].has(resourceId)) return;
+
+      membership[resource].add(resourceId);
+      changed = true;
+    });
+
+    if (changed) this.persistMembershipSets();
+  }
+
+  private persistMembershipSets() {
+    const persisted = Object.fromEntries(
+      Object.entries(this.membershipSets).map(([queryHash, resources]) => [
+        queryHash,
+        Object.fromEntries(
+          Object.entries(resources).map(([resource, ids]) => [
+            resource,
+            Array.from(ids),
+          ]),
+        ),
+      ]),
+    );
+
+    this.kvStorage.setMeta("membershipSets", persisted);
+  }
+
+  private trimUnreferencedRows() {
+    const retainedIds: Record<string, Set<string>> = {};
+
+    Object.values(this.membershipSets).forEach((membership) => {
+      Object.entries(membership).forEach(([resource, ids]) => {
+        retainedIds[resource] ??= new Set();
+        ids.forEach((id) => {
+          retainedIds[resource].add(id);
+        });
+      });
+    });
+
+    const resources = new Set([
+      ...Object.keys(this.rawObjPool),
+      ...Object.keys(this.optimisticRawObjPool),
+    ]);
+
+    resources.forEach((resource) => {
+      const ids = new Set([
+        ...Object.keys(this.rawObjPool[resource] ?? {}),
+        ...Object.keys(this.optimisticRawObjPool[resource] ?? {}),
+      ]);
+
+      ids.forEach((id) => {
+        if (retainedIds[resource]?.has(id)) return;
+        if (
+          this.optimisticMutationStack[resource]?.some(
+            (mutation) => mutation.resourceId === id,
+          )
+        )
+          return;
+
+        this.removeFromPool(resource, id);
+      });
+    });
   }
 
   private updateRawObjPool(
@@ -769,7 +894,8 @@ export class OptimisticStore {
             this.materializeOneWithInclude(
               node.references.get(refName),
               isSubQueryInclude(nestedInclude)
-                ? ((nestedInclude.include ?? {}) as IncludeClause<LiveObjectAny>)
+                ? ((nestedInclude.include ??
+                    {}) as IncludeClause<LiveObjectAny>)
                 : typeof nestedInclude === "object" && nestedInclude !== null
                   ? (nestedInclude as IncludeClause<LiveObjectAny>)
                   : {},
@@ -790,7 +916,8 @@ export class OptimisticStore {
                       this.materializeOneWithInclude(
                         v,
                         isSubQueryInclude(nestedInclude)
-                          ? ((nestedInclude.include ?? {}) as IncludeClause<LiveObjectAny>)
+                          ? ((nestedInclude.include ??
+                              {}) as IncludeClause<LiveObjectAny>)
                           : typeof nestedInclude === "object" &&
                               nestedInclude !== null
                             ? (nestedInclude as IncludeClause<LiveObjectAny>)
@@ -801,8 +928,10 @@ export class OptimisticStore {
                 : this.materializeOneWithInclude(
                     referencedBy,
                     isSubQueryInclude(nestedInclude)
-                      ? ((nestedInclude.include ?? {}) as IncludeClause<LiveObjectAny>)
-                      : typeof nestedInclude === "object" && nestedInclude !== null
+                      ? ((nestedInclude.include ??
+                          {}) as IncludeClause<LiveObjectAny>)
+                      : typeof nestedInclude === "object" &&
+                          nestedInclude !== null
                         ? (nestedInclude as IncludeClause<LiveObjectAny>)
                         : {},
                   ),
@@ -851,7 +980,9 @@ export class OptimisticStore {
       result.push(targetEntityName);
 
       if (typeof value === "object" && value !== null) {
-        const nestedInclude = isSubQueryInclude(value) ? (value.include ?? {}) : value;
+        const nestedInclude = isSubQueryInclude(value)
+          ? (value.include ?? {})
+          : value;
         result.push(
           ...this.flattenIncludes(
             nestedInclude as IncludeClause<LiveObjectAny>,

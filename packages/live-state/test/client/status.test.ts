@@ -167,4 +167,48 @@ describe('client bootstrap status', () => {
 
 		client.client.ws.disconnect();
 	});
+
+	test('reconnect reply trims rows that left a remote query scope', async () => {
+		const { client, ws } = await makeClient();
+		const query = { resource: 'posts', procedure: 'list', input: {} };
+		const unload = client.client.load(query);
+		const firstSubscribe = JSON.parse(ws.send.mock.calls.at(-1)?.[0]);
+
+		ws.simulateMessage(
+			JSON.stringify({
+				type: 'REPLY',
+				id: firstSubscribe.id,
+				data: {
+					resource: 'posts',
+					data: [
+						{
+							id: { value: 'post-1' },
+							title: { value: 'Open before disconnect' },
+						},
+					],
+				},
+			}),
+		);
+		expect(client.store.query.posts.one('post-1').get()).toBeDefined();
+
+		ws.close();
+		await client.client.ws.connect();
+		const reconnectedWs = (client.client.ws as any).ws as MockWebSocket;
+		reconnectedWs.simulateOpen();
+		const reconnectSubscribe = JSON.parse(
+			reconnectedWs.send.mock.calls.at(-1)?.[0],
+		);
+		reconnectedWs.simulateMessage(
+			JSON.stringify({
+				type: 'REPLY',
+				id: reconnectSubscribe.id,
+				data: { resource: 'posts', data: [] },
+			}),
+		);
+
+		expect(client.store.query.posts.one('post-1').get()).toBeUndefined();
+
+		unload();
+		client.client.ws.disconnect();
+	});
 });

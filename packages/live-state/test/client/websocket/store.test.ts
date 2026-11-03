@@ -23,12 +23,12 @@ import { hash } from "../../../src/utils";
 
 // Mock the hash function
 vi.mock("../../../src/utils", async () => {
-	const actual = await vi.importActual("../../../src/utils");
-	return {
-		...actual,
-		hash: vi.fn(),
-		applyWhere: vi.fn(),
-	};
+  const actual = await vi.importActual("../../../src/utils");
+  return {
+    ...actual,
+    hash: vi.fn(),
+    applyWhere: vi.fn(),
+  };
 });
 
 // Mock fast-deep-equal
@@ -99,6 +99,7 @@ describe("OptimisticStore", () => {
       getMeta: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue({}),
       set: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
       setMeta: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -110,6 +111,7 @@ describe("OptimisticStore", () => {
       subscribe: vi.fn().mockReturnValue(() => {}),
       createLink: vi.fn(),
       removeLink: vi.fn(),
+      removeNode: vi.fn(),
       notifySubscribers: vi.fn(),
     };
 
@@ -673,22 +675,32 @@ describe("OptimisticStore", () => {
     store.loadConsolidatedState("users", data);
 
     expect(addMutationSpy).toHaveBeenCalledTimes(2);
-    expect(addMutationSpy).toHaveBeenCalledWith("users", {
-      id: "user1",
-      type: "SYNC",
-      resource: "users",
-      resourceId: "user1",
-      payload: data[0],
-      op: "INSERT",
-    });
-    expect(addMutationSpy).toHaveBeenCalledWith("users", {
-      id: "user2",
-      type: "SYNC",
-      resource: "users",
-      resourceId: "user2",
-      payload: data[1],
-      op: "INSERT",
-    });
+    expect(addMutationSpy).toHaveBeenCalledWith(
+      "users",
+      {
+        id: "user1",
+        type: "SYNC",
+        resource: "users",
+        resourceId: "user1",
+        payload: data[0],
+        op: "INSERT",
+      },
+      false,
+      false,
+    );
+    expect(addMutationSpy).toHaveBeenCalledWith(
+      "users",
+      {
+        id: "user2",
+        type: "SYNC",
+        resource: "users",
+        resourceId: "user2",
+        payload: data[1],
+        op: "INSERT",
+      },
+      false,
+      false,
+    );
   });
 
   test("should handle empty mutation stack during initialization", async () => {
@@ -1784,6 +1796,211 @@ describe("OptimisticStore", () => {
 
       expect(result).toBeDefined();
       expect(result?.value).toHaveProperty("posts");
+    });
+  });
+
+  describe("Remote query membership", () => {
+    const userPayload = (idValue: string, name: string) => ({
+      id: { value: idValue },
+      name: { value: name, _meta: { timestamp: "2023-01-01" } },
+    });
+
+    beforeEach(() => {
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger,
+      );
+    });
+
+    test("replaces a query membership set and trims rows omitted by its reply", () => {
+      store.activateRemoteQuery("open-users");
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("user1", "John"), userPayload("user2", "Jane")],
+        "open-users",
+      );
+
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("user2", "Jane")],
+        "open-users",
+      );
+
+      expect(store["rawObjPool"].users?.user1).toBeUndefined();
+      expect(store["rawObjPool"].users?.user2).toBeDefined();
+      expect(mockKVStorage.delete).toHaveBeenCalledWith("users", "user1");
+      expect(mockKVStorage.setMeta).toHaveBeenCalledWith("membershipSets", {
+        "open-users": { users: ["user2"] },
+      });
+    });
+
+    test("retains a row named by another active query", () => {
+      store.activateRemoteQuery("query-a");
+      store.activateRemoteQuery("query-b");
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("shared", "Shared")],
+        "query-a",
+      );
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("shared", "Shared")],
+        "query-b",
+      );
+
+      store.loadConsolidatedState("users", [], "query-a");
+
+      expect(store["rawObjPool"].users?.shared).toBeDefined();
+
+      store.loadConsolidatedState("users", [], "query-b");
+
+      expect(store["rawObjPool"].users?.shared).toBeUndefined();
+    });
+
+    test("trims only after the last retaining query is deactivated", () => {
+      store.activateRemoteQuery("query-a");
+      store.activateRemoteQuery("query-b");
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("shared", "Shared")],
+        "query-a",
+      );
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("shared", "Shared")],
+        "query-b",
+      );
+
+      store.deactivateRemoteQuery("query-a");
+      expect(store["rawObjPool"].users?.shared).toBeDefined();
+
+      store.deactivateRemoteQuery("query-b");
+      expect(store["rawObjPool"].users?.shared).toBeUndefined();
+    });
+
+    test("does not trim a row with a pending optimistic mutation", () => {
+      store.activateRemoteQuery("query-a");
+      store.loadConsolidatedState(
+        "users",
+        [userPayload("user1", "John")],
+        "query-a",
+      );
+      store.addMutation(
+        "users",
+        {
+          id: "optimistic-1",
+          type: "SYNC",
+          resource: "users",
+          resourceId: "user1",
+          op: "UPDATE",
+          payload: {
+            name: {
+              value: "Johnny",
+              _meta: { timestamp: "2023-01-02" },
+            },
+          },
+        },
+        true,
+      );
+
+      store.loadConsolidatedState("users", [], "query-a");
+
+      expect(store["rawObjPool"].users?.user1).toBeDefined();
+      expect(store["optimisticRawObjPool"].users?.user1).toBeDefined();
+      expect(mockKVStorage.delete).not.toHaveBeenCalledWith("users", "user1");
+    });
+
+    test("records nested include rows under their own resource", () => {
+      store.activateRemoteQuery("users-with-posts");
+      store.loadConsolidatedState(
+        "users",
+        [
+          {
+            ...userPayload("user1", "John"),
+            posts: {
+              value: [
+                {
+                  value: {
+                    id: { value: "post1" },
+                    title: { value: "Post one" },
+                    userId: { value: "user1" },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        "users-with-posts",
+      );
+
+      expect(store["membershipSets"]["users-with-posts"]).toEqual({
+        users: new Set(["user1"]),
+        posts: new Set(["post1"]),
+      });
+      expect(store["rawObjPool"].posts?.post1).toBeDefined();
+    });
+
+    test("handles unidentified deltas conservatively", () => {
+      store.activateRemoteQuery("query-a");
+      store.activateRemoteQuery("query-b");
+      store.loadConsolidatedState("users", [], "query-a");
+      store.loadConsolidatedState("users", [], "query-b");
+
+      store.addMutation("users", {
+        id: "scope-in",
+        type: "SYNC",
+        resource: "users",
+        resourceId: "user1",
+        op: "INSERT",
+        payload: userPayload("user1", "John"),
+      });
+
+      expect(store["membershipSets"]["query-a"].users).toEqual(
+        new Set(["user1"]),
+      );
+      expect(store["membershipSets"]["query-b"].users).toEqual(
+        new Set(["user1"]),
+      );
+
+      store.addMutation("users", {
+        id: "scope-out",
+        type: "SYNC",
+        resource: "users",
+        resourceId: "user1",
+        op: "DELETE",
+        payload: {},
+      });
+
+      expect(store["rawObjPool"].users?.user1).toBeDefined();
+      expect(store["membershipSets"]["query-a"].users).toEqual(
+        new Set(["user1"]),
+      );
+      expect(mockKVStorage.delete).not.toHaveBeenCalledWith("users", "user1");
+    });
+
+    test("restores persisted membership sets alongside the pool", async () => {
+      mockKVStorage.getMeta.mockImplementation((key: string) => {
+        if (key === "membershipSets") {
+          return Promise.resolve({ query: { users: ["user1"] } });
+        }
+        return Promise.resolve(undefined);
+      });
+      mockKVStorage.get.mockImplementation((resource: string) =>
+        Promise.resolve(
+          resource === "users" ? { user1: { name: { value: "John" } } } : {},
+        ),
+      );
+
+      store = new OptimisticStore(
+        mockSchema,
+        { name: "test-storage" },
+        mockLogger,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(store["membershipSets"].query.users).toEqual(new Set(["user1"]));
+      expect(store["rawObjPool"].users?.user1).toBeDefined();
     });
   });
 
