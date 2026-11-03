@@ -41,7 +41,7 @@ authorization changes while offline.
 | id | title | deps | state | owner | pr | dod |
 |---|---|---|---|---|---|---|
 | U00 | Commit plan, ADR-0006, and design docs | - | in-review | - | https://github.com/pedroscosta/live-state/pull/223 | Plan and ADR on main; check: files present |
-| U01 | Fix projection identity: hash the full query tree, projections own their step nodes | - | todo | - | - | `limit(10)`/`limit(20)` and two roots sharing an include get separate nodes and correct deltas; check: engine tests |
+| U01 | Fix projection identity: hash the full query tree, projections own their step nodes | - | in-review | session-2 | https://github.com/pedroscosta/live-state/pull/224 | `limit(10)`/`limit(20)` and two roots sharing an include get separate nodes and correct deltas; check: engine tests |
 | U02 | Fix backfillWindow to emit rows with their full include subtree | U01 | todo | - | - | Backfilled and promoted rows arrive with includes; check: windowed-includes e2e test |
 | U03 | Assign one source position per committed transaction and deliver batches to the server | - | todo | - | - | Positions strictly increase, one per transaction, one per non-transaction write; check: storage tests |
 | U04 | Process batches serially in the engine with output into a collector | U02, U03 | todo | - | - | `handleMutation` awaitable; transactions never interleave; existing suite unchanged; check: interleaving test + full suite |
@@ -91,6 +91,7 @@ States: todo, claimed, in-review, done, blocked.
 - 2026-11-03: Query-engine deepening (TotalOrder next) is paused; U04 replaces its "split `handleMutation`" step.
 - 2026-11-03: Projection identity is the full resolved tree hash; auth scope is the handler-built `where`; resume re-runs the handler. (ADR-0006 §1, §5)
 - 2026-11-03: Boundary reads may see later commits; serial processing plus idempotent client apply converge, guarded by U09. (ADR-0006 §7)
+- 2026-11-03 (U01): Projection id is a 64-bit canonical hash (two seeded xxHash32 passes, 14 base-36 chars); empty `where`/`sort` hash as absent; step node key is `${projectionId}:${JSON.stringify(path)}`. U06/U08 can use the projection id as the wire `queryId`.
 
 ## Open questions
 
@@ -99,3 +100,4 @@ States: todo, claimed, in-review, done, blocked.
 ## Session log
 
 - 2026-11-03 planning: grilled, probed engine identity bugs, wrote plan and ADR-0006. Next: start U01, U03, or U07 (independent) via `bun ~/.claude/skills/pedro-mode/scripts/program.ts docs/plans/partial-sync.md next`.
+- 2026-11-03 session-2: U01 done in review as PR #224, stacked on #223. Two review rounds; e2e tests need Postgres 16 on :5432 with DBs `live_state_e2e_test`, `live_state_query_engine_test`, `live_state_benchmark_test`. Next: U02 (stack on `feat/u01-projection-identity`) or the independent U03/U07; run `bun ~/.claude/skills/pedro-mode/scripts/program.ts docs/plans/partial-sync.md next`.
