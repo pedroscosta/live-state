@@ -206,6 +206,17 @@ describe('Projection identity', () => {
 			include: { author: true },
 		});
 
+		// Two projections, each owning its own root and author node.
+		const nodes = [...testServer.queryEngine['queryNodes'].values()];
+		expect(nodes).toHaveLength(4);
+		for (const node of nodes.filter((n) => n.queryStep.stepPath.length > 0)) {
+			const parent = testServer.queryEngine['queryNodes'].get(
+				node.parentQuery as string,
+			);
+			expect(parent?.childQueries.has(node.hash)).toBe(true);
+		}
+		expect(new Set(nodes.map((n) => n.parentQuery)).size).toBe(3);
+
 		// u2 is only reachable from qb's posts; u1 only from qa's.
 		await storage.update(testSchema.users, 'u2', { name: 'Bobby' });
 		await storage.update(testSchema.users, 'u1', { name: 'Annie' });
